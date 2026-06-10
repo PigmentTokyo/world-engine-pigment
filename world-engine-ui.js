@@ -1436,9 +1436,7 @@ window.WORLD_ENGINE_UI = (function() {
       evolveBtn.onclick = async () => {
         if (isEvolving) return;
         isEvolving = true;
-        evolveBtn.disabled = true;
-        evolveBtn.textContent = '⏳ 推演中...';
-        if (abortBtn) abortBtn.style.display = '';
+        setEvolvingUI(true);
         if (window.__WE_SetExternalStatus) window.__WE_SetExternalStatus('⏳ 推演中...');
         try {
           const ctx = SillyTavern.getContext();
@@ -1455,9 +1453,7 @@ window.WORLD_ENGINE_UI = (function() {
           showToast('❌ ' + e.message, true);
         }
         isEvolving = false;
-        evolveBtn.disabled = false;
-        evolveBtn.innerHTML = '🌀 手动推演';
-        if (abortBtn) abortBtn.style.display = 'none';
+        setEvolvingUI(false);
         refresh();
       };
 
@@ -1972,5 +1968,62 @@ window.WORLD_ENGINE_UI = (function() {
     };
   });
 
-  return { buildPanel, showPanel, hidePanel, togglePanel, refresh, setStatus };
+  // ========== 推演 UI 状态切换 ==========
+  function setEvolvingUI(active) {
+    const abortBtn = document.getElementById('we-btn-abort');
+    const evolveBtn = document.getElementById('we-btn-evolve');
+    if (abortBtn) abortBtn.style.display = active ? '' : 'none';
+    if (evolveBtn) {
+      evolveBtn.disabled = active;
+      evolveBtn.textContent = active ? '⏳ 推演中...' : '🌀 手动推演';
+    }
+  }
+
+  // ========== 输入栏地球按钮 ==========
+  function buildInputButton() {
+    if (document.getElementById('we-input-btn')) return;
+
+    const selectors = ['#quickReplyBlock', '#send_but'];
+    let container = null;
+    for (const sel of selectors) {
+      const el = document.querySelector(sel);
+      if (el) { container = el; break; }
+    }
+    if (!container) return;
+    if (container.id === 'send_but') container = container.parentNode;
+
+    const btn = document.createElement('button');
+    btn.id = 'we-input-btn';
+    btn.type = 'button';
+    btn.className = 'menu_button interactable';
+    btn.innerHTML = '<i class="fa-solid fa-earth-asia"></i>';
+    btn.title = '世界引擎';
+    Object.assign(btn.style, {
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+      margin: '0 4px', padding: '4px 8px', cursor: 'pointer'
+    });
+    btn.addEventListener('click', () => {
+      buildPanel();
+      togglePanel();
+    });
+    container.appendChild(btn);
+
+    const statusIndicator = document.createElement('span');
+    statusIndicator.id = 'we-external-status';
+    container.appendChild(statusIndicator);
+
+    window.__WE_SetExternalStatus = function(text, isError) {
+      const el = document.getElementById('we-external-status');
+      if (!el) return;
+      el.textContent = text;
+      el.className = 'we-external-status' + (isError ? ' error' : '');
+      if (!isError && text.includes('完成')) {
+        setTimeout(() => {
+          if (el) { el.textContent = ''; el.className = 'we-external-status'; }
+        }, 3000);
+      }
+    };
+  }
+
+  return { buildPanel, buildInputButton, showPanel, hidePanel, togglePanel, refresh, setStatus, setEvolvingUI };
 })();

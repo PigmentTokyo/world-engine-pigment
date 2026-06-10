@@ -180,6 +180,7 @@
 
           // 显示推演中
           if (window.__WE_SetExternalStatus) window.__WE_SetExternalStatus('⏳ 推演中...');
+          if (ui && ui.setEvolvingUI) ui.setEvolvingUI(true);
 
           // 1. 世界推演
           const success = await evolution.evolve(state, userMsg, aiMsg);
@@ -188,7 +189,7 @@
           if (success) ledger.recordChanges(state);
 
           // 3. API 返回后刷新 UI 并显示状态
-          if (ui) ui.refresh();
+          if (ui) { ui.setEvolvingUI(false); ui.refresh(); }
           if (window.__WE_SetExternalStatus) window.__WE_SetExternalStatus(success ? '✅ 推演完成' : '❌ 推演失败', !success);
 
           if (success) {
@@ -235,58 +236,14 @@
       }
 
       // ========== 添加面板入口按钮到酒馆输入栏 ==========
-      function addPanelButton() {
-        const selectors = ['#quickReplyBlock', '#send_but'];
-        let container = null;
-        for (const sel of selectors) {
-          const el = document.querySelector(sel);
-          if (el) { container = el; break; }
-        }
-        if (!container) return;
-        if (container.id === 'send_but') container = container.parentNode;
-        if (document.getElementById('we-input-btn')) return;
-
-        const btn = document.createElement('button');
-        btn.id = 'we-input-btn';
-        btn.type = 'button';
-        btn.className = 'menu_button interactable';
-        btn.innerHTML = '<i class="fa-solid fa-earth-asia"></i>';
-        btn.title = '世界引擎';
-        Object.assign(btn.style, {
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          margin: '0 4px', padding: '4px 8px', cursor: 'pointer'
-        });
-        btn.addEventListener('click', () => {
-          window.WORLD_ENGINE_UI.buildPanel();
-          window.WORLD_ENGINE_UI.togglePanel();
-        });
-        container.appendChild(btn);
-
-        // 外部状态指示器（面板关闭时也能看到推演状态）
-        const statusIndicator = document.createElement('span');
-        statusIndicator.id = 'we-external-status';
-        container.appendChild(statusIndicator);
-
-        window.__WE_SetExternalStatus = function(text, isError) {
-          const el = document.getElementById('we-external-status');
-          if (!el) return;
-          el.textContent = text;
-          el.className = 'we-external-status' + (isError ? ' error' : '');
-          if (!isError && text.includes('完成')) {
-            setTimeout(() => {
-              if (el) { el.textContent = ''; el.className = 'we-external-status'; }
-            }, 3000);
-          }
-        };
-      }
+      // 已移至 world-engine-ui.js 的 buildInputButton()，下面直接调用
 
       // 先构建面板（隐藏），再添加按钮
       ui.buildPanel();
-      // 默认面板隐藏，由按钮点击切换
+      ui.buildInputButton();
+      // DOM 可能已 ready 也可能还没，兜底一次
       if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', addPanelButton);
-      } else {
-        addPanelButton();
+        document.addEventListener('DOMContentLoaded', () => ui.buildInputButton());
       }
 
       // 每隔 30 秒自动刷新面板（如果可见）
