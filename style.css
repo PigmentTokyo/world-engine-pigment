@@ -525,6 +525,10 @@
   position: sticky;
   top: 0;
   z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   padding: 6px 8px;
   background: var(--we-bg2);
   color: var(--we-text2);
@@ -535,6 +539,28 @@
 .we-worldbook-group-title span {
   color: var(--we-text3);
   font-weight: 400;
+}
+
+.we-worldbook-group-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 4px;
+}
+
+.we-worldbook-group-actions button {
+  padding: 1px 5px;
+  border: 1px solid var(--we-border);
+  border-radius: 4px;
+  background: var(--we-surface);
+  color: var(--we-text3);
+  font-size: 9px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.we-worldbook-group-actions button:hover {
+  border-color: var(--we-accent);
+  color: var(--we-text);
 }
 
 .we-worldbook-entry {

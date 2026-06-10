@@ -1513,7 +1513,13 @@ window.WORLD_ENGINE_UI = (function() {
           }
           worldbookList.innerHTML = [...groups.entries()].map(([world, worldEntries]) => `
             <div class="we-worldbook-group">
-              <div class="we-worldbook-group-title">${u(world)} <span>${worldEntries.length}条</span></div>
+              <div class="we-worldbook-group-title">
+                <div>${u(world)} <span>${worldEntries.length}条</span></div>
+                <div class="we-worldbook-group-actions">
+                  <button type="button" data-worldbook-group-action="select">全选</button>
+                  <button type="button" data-worldbook-group-action="clear">取消全选</button>
+                </div>
+              </div>
               ${worldEntries.map(entry => `
                 <label class="we-worldbook-entry${entry.disabled ? ' is-disabled' : ''}">
                   <input class="we-worldbook-entry-check" type="checkbox" value="${u(entry.id)}" data-chars="${entry.content.length}" ${selectedIds.has(entry.id) ? 'checked' : ''}>
@@ -1525,6 +1531,15 @@ window.WORLD_ENGINE_UI = (function() {
             </div>`).join('');
           worldbookList.querySelectorAll('.we-worldbook-entry-check').forEach(checkbox => {
             checkbox.onchange = updateWorldbookSummary;
+          });
+          worldbookList.querySelectorAll('[data-worldbook-group-action]').forEach(button => {
+            button.onclick = () => {
+              const group = button.closest('.we-worldbook-group');
+              if (!group) return;
+              const checked = button.dataset.worldbookGroupAction === 'select';
+              group.querySelectorAll('.we-worldbook-entry-check').forEach(checkbox => checkbox.checked = checked);
+              updateWorldbookSummary();
+            };
           });
           updateWorldbookSummary();
         } catch(error) {
