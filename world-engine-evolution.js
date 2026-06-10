@@ -608,7 +608,7 @@ ${OUTPUT_INSTRUCTIONS}
 ${JSON_EXAMPLE}
 ${extraInstruction ? '\n' + extraInstruction : ''}`;
 
-    const rawResult = await api.callApi(prompt, 5000, 0.7);
+    const rawResult = await api.callApi(prompt, 5000, 0.7, _abortController.signal);
     _lastPrompt = prompt;
     _lastRawResult = rawResult;
     const update = api.parseJSON(rawResult) || {};
@@ -630,14 +630,14 @@ ${extraInstruction ? '\n' + extraInstruction : ''}`;
     return update;
   }
 
+  let _abortController = null;
+
   async function evolve(state, userMsg, aiMsg) {
     const backup = JSON.parse(JSON.stringify(state));
     const isNew = core.isNewRound();
 
-    // 新轮次 → 先保存存档点（当前状态作为本轮起点 a）
     if (isNew) {
-      core.saveCheckpoint(state);
-      console.log('[世界引擎] 📌 新轮次，存档点已保存');
+      console.log('[世界引擎] 📌 新轮次');
     } else {
       // 重roll/手动 → 从存档点 a 恢复
       const cp = core.restoreCheckpoint();
@@ -653,6 +653,8 @@ ${extraInstruction ? '\n' + extraInstruction : ''}`;
         console.log('[世界引擎] 🔄 检测到重roll，从存档点恢复');
       }
     }
+
+    _abortController = new AbortController();
 
     try {
       // 第1步：本地骰子推进事件链（全部在 b 上操作）
@@ -798,21 +800,35 @@ ${extraInstruction ? '\n' + extraInstruction : ''}`;
       state.round++;
       state.lastEvolveResult = update;
 
-      // 更新指纹。新轮次 → 更新存档点指纹；重roll → 指纹不动（存档点已经是最新的）
+      // 推演成功 → 存档点推进（backup 即推演前状态）
       if (isNew) {
+        core.saveCheckpoint(backup);
         core.saveFingerprint(core.getChatFingerprint());
-        console.log('[世界引擎] ✅ 推演完成，新轮次第', state.round, '轮');
+        console.log('[世界引擎] ✅ 推演完成，新轮次第', state.round, '轮，存档点已推进');
       } else {
         console.log('[世界引擎] ✅ 推演完成（重roll），轮次不变');
       }
       core.saveStateWithLayer(state);
+      _abortController = null;
       return true;
 
     } catch(e) {
-      console.error('[世界引擎] 推演失败', e);
+      if (e.name === 'AbortError') {
+        console.log('[世界引擎] 🛑 推演已中止');
+      } else {
+        console.error('[世界引擎] 推演失败', e);
+      }
       Object.assign(state, backup);
       core.saveState(state);
+      _abortController = null;
       return false;
+    }
+  }
+
+  function abort() {
+    if (_abortController) {
+      _abortController.abort();
+      console.log('[世界引擎] 🛑 发出中止信号');
     }
   }
 
@@ -824,5 +840,5 @@ ${extraInstruction ? '\n' + extraInstruction : ''}`;
     state: () => core.loadState()
   };
 
-  return { evolve, getLastDebug };
+  return { evolve, getLastDebug, abort };
 })();

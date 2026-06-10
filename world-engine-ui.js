@@ -103,6 +103,7 @@ window.WORLD_ENGINE_UI = (function() {
       <div class="we-tab-content" id="we-tab-current" style="${_activeTab === 'current' ? 'display:block' : 'display:none'}">
         <div class="we-actions-bar" style="margin-bottom:8px;">
           <button class="we-btn we-btn-primary" id="we-btn-evolve">🌀 手动推演</button>
+          <button class="we-btn we-btn-danger" id="we-btn-abort" style="background:var(--we-danger);color:#fff;display:none;">⏹ 停止推演</button>
           <button class="we-btn" id="we-btn-refresh">🔄 刷新</button>
         </div>
         ${renderFullState(state, curLayer, 'state')}
@@ -1430,11 +1431,14 @@ window.WORLD_ENGINE_UI = (function() {
     });
 
     if (evolveBtn) {
+      const abortBtn = document.getElementById('we-btn-abort');
+
       evolveBtn.onclick = async () => {
         if (isEvolving) return;
         isEvolving = true;
         evolveBtn.disabled = true;
         evolveBtn.textContent = '⏳ 推演中...';
+        if (abortBtn) abortBtn.style.display = '';
         if (window.__WE_SetExternalStatus) window.__WE_SetExternalStatus('⏳ 推演中...');
         try {
           const ctx = SillyTavern.getContext();
@@ -1453,8 +1457,16 @@ window.WORLD_ENGINE_UI = (function() {
         isEvolving = false;
         evolveBtn.disabled = false;
         evolveBtn.innerHTML = '🌀 手动推演';
+        if (abortBtn) abortBtn.style.display = 'none';
         refresh();
       };
+
+      if (abortBtn) {
+        abortBtn.onclick = () => {
+          evolution.abort();
+          showToast('已发送停止信号');
+        };
+      }
     }
 
     const refreshBtn = document.getElementById('we-btn-refresh');

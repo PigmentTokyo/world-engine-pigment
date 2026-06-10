@@ -30,7 +30,7 @@ window.WORLD_ENGINE_API = (function() {
   /**
    * 调用独立 API（非酒馆自带），OpenAI 兼容格式
    */
-  async function callApi(prompt, maxTokens, temperature) {
+  async function callApi(prompt, maxTokens, temperature, signal) {
     const settings = getSettings();
     const url = normalizeUrl(settings.apiUrl);
     if (!url) throw new Error('❌ 未配置 API URL，请在设置中填写');
@@ -54,7 +54,8 @@ window.WORLD_ENGINE_API = (function() {
     const resp = await fetch(url, {
       method: 'POST',
       headers: headers,
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      signal: signal || null
     });
 
     if (!resp.ok) {
