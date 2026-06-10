@@ -521,19 +521,49 @@
   border-top: 1px solid var(--we-border);
 }
 
-.we-worldbook-group-title {
+.we-worldbook-group-header {
   position: sticky;
   top: 0;
   z-index: 1;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
   padding: 6px 8px;
   background: var(--we-bg2);
+  cursor: pointer;
+  user-select: none;
+}
+
+.we-worldbook-group-header:hover {
+  background: var(--we-surface);
+}
+
+.we-worldbook-group-header > span {
+  color: var(--we-text3);
+  font-size: 10px;
+  width: 12px;
+  flex-shrink: 0;
+  transition: transform 0.15s;
+}
+
+.we-worldbook-group-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: transparent;
   color: var(--we-text2);
   font-size: 11px;
   font-weight: 700;
+  flex: 1;
+  min-width: 0;
+}
+
+.we-worldbook-group-title > div {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .we-worldbook-group-title span {
@@ -545,6 +575,7 @@
   display: flex;
   flex-shrink: 0;
   gap: 4px;
+  margin-left: auto;
 }
 
 .we-worldbook-group-actions button {

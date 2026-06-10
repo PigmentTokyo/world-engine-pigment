@@ -1495,6 +1495,10 @@ window.WORLD_ENGINE_UI = (function() {
       const clearAllBtn = document.getElementById('we-worldbook-clear-all');
       const saveWorldbookBtn = document.getElementById('we-worldbook-save');
 
+      // 缓存世界书条目和已选 ID，避免 refresh() 重建列表时滚动到顶部
+      let _cachedEntries = null;
+      let _cachedSelectedIds = null;
+
       function updateWorldbookSummary() {
         const checkboxes = [...worldbookList.querySelectorAll('.we-worldbook-entry-check')];
         const selected = checkboxes.filter(checkbox => checkbox.checked);
@@ -1510,47 +1514,82 @@ window.WORLD_ENGINE_UI = (function() {
         worldbookList.innerHTML = '<div class="we-empty">正在读取当前聊天世界书...</div>';
         if (reloadBtn) reloadBtn.disabled = true;
         try {
-          const entries = await worldbook.loadCurrentEntries();
-          const selectedIds = new Set(worldbook.getSelectedIds());
-          if (!entries.length) {
-            worldbookList.innerHTML = '<div class="we-empty">当前聊天未关联可读取的世界书条目</div>';
-            if (summary) summary.textContent = '0 条可选';
-            return;
-          }
+          _cachedEntries = await worldbook.loadCurrentEntries();
+          _cachedSelectedIds = new Set(worldbook.getSelectedIds());
+          renderWorldbookList();
+        } catch(error) {
+          worldbookList.innerHTML = `<div class="we-empty">读取失败：${u(error.message)}</div>`;
+          if (summary) summary.textContent = '读取失败';
+          _cachedEntries = null;
+          _cachedSelectedIds = null;
+        } finally {
+          if (reloadBtn) reloadBtn.disabled = false;
+        }
+      }
 
-          const groups = new Map();
-          for (const entry of entries) {
-            if (!groups.has(entry.world)) groups.set(entry.world, []);
-            groups.get(entry.world).push(entry);
-          }
-          worldbookList.innerHTML = [...groups.entries()].map(([world, worldEntries]) => `
-            <div class="we-worldbook-group">
+      function renderWorldbookList() {
+        const entries = _cachedEntries;
+        const selectedIds = _cachedSelectedIds || new Set();
+        if (!entries || !entries.length) {
+          worldbookList.innerHTML = '<div class="we-empty">当前聊天未关联可读取的世界书条目</div>';
+          if (summary) summary.textContent = '0 条可选';
+          return;
+        }
+        const groups = new Map();
+        for (const entry of entries) {
+          if (!groups.has(entry.world)) groups.set(entry.world, []);
+          groups.get(entry.world).push(entry);
+        }
+        worldbookList.innerHTML = [...groups.entries()].map(([world, worldEntries]) => `
+          <div class="we-worldbook-group">
+            <div class="we-worldbook-group-header">
+              <span>▶</span>
               <div class="we-worldbook-group-title">
                 <div>${u(world)} <span>${worldEntries.length}条</span></div>
-                <div class="we-worldbook-group-actions">
-                  <button type="button" data-worldbook-group-action="select">全选</button>
-                  <button type="button" data-worldbook-group-action="clear">取消全选</button>
-                </div>
               </div>
-              ${worldEntries.map(entry => `
-                <label class="we-worldbook-entry${entry.disabled ? ' is-disabled' : ''}">
-                  <input class="we-worldbook-entry-check" type="checkbox" value="${u(entry.id)}" data-chars="${entry.content.length}" ${selectedIds.has(entry.id) ? 'checked' : ''}>
-                  <span>
-                    <strong>${u(entry.title)}</strong>
-                    <small>${entry.content.length} 字符${entry.disabled ? ' · 世界书内已停用' : ''}</small>
-                  </span>
-                </label>`).join('')}
-            </div>`).join('');
+              <div class="we-worldbook-group-actions">
+                <button type="button" data-worldbook-group-action="select">全选</button>
+                <button type="button" data-worldbook-group-action="clear">取消全选</button>
+              </div>
+            </div>
+            <div class="we-worldbook-group-body" style="display:none;">
+            ${worldEntries.map(entry => `
+              <label class="we-worldbook-entry${entry.disabled ? ' is-disabled' : ''}">
+                <input class="we-worldbook-entry-check" type="checkbox" value="${u(entry.id)}" data-chars="${entry.content.length}" ${selectedIds.has(entry.id) ? 'checked' : ''}>
+                <span>
+                  <strong>${u(entry.title)}</strong>
+                  <small>${entry.content.length} 字符${entry.disabled ? ' · 世界书内已停用' : ''}</small>
+                </span>
+              </label>`).join('')}
+            </div>
+          </div>`).join('');
           worldbookList.querySelectorAll('.we-worldbook-entry-check').forEach(checkbox => {
-            checkbox.onchange = updateWorldbookSummary;
+            checkbox.onchange = () => {
+              _cachedSelectedIds = new Set([...worldbookList.querySelectorAll('.we-worldbook-entry-check:checked')].map(cb => cb.value));
+              updateWorldbookSummary();
+            };
+          });
+          worldbookList.querySelectorAll('.we-worldbook-group-header').forEach(header => {
+            header.onclick = () => {
+              const body = header.nextElementSibling;
+              const arrow = header.querySelector('span');
+              if (body) {
+                const isHidden = body.style.display === 'none';
+                body.style.display = isHidden ? '' : 'none';
+                if (arrow) arrow.textContent = isHidden ? '▼' : '▶';
+              }
+            };
           });
           worldbookList.querySelectorAll('[data-worldbook-group-action]').forEach(button => {
-            button.onclick = () => {
+            button.onclick = (e) => {
+              e.stopPropagation();
               const group = button.closest('.we-worldbook-group');
               if (!group) return;
               const checked = button.dataset.worldbookGroupAction === 'select';
-              group.querySelectorAll('.we-worldbook-entry-check').forEach(checkbox => checkbox.checked = checked);
-              updateWorldbookSummary();
+              group.querySelectorAll('.we-worldbook-entry-check').forEach(checkbox => {
+                checkbox.checked = checked;
+                checkbox.onchange();
+              });
             };
           });
           updateWorldbookSummary();
@@ -1562,19 +1601,22 @@ window.WORLD_ENGINE_UI = (function() {
         }
       }
 
-      if (reloadBtn) reloadBtn.onclick = loadWorldbookEntries;
+      if (reloadBtn) reloadBtn.onclick = () => { _cachedEntries = null; loadWorldbookEntries(); };
       if (selectAllBtn) selectAllBtn.onclick = () => {
-        worldbookList.querySelectorAll('.we-worldbook-entry-check').forEach(checkbox => checkbox.checked = true);
-        updateWorldbookSummary();
+        worldbookList.querySelectorAll('.we-worldbook-entry-check').forEach(checkbox => {
+          checkbox.checked = true;
+          checkbox.onchange();
+        });
       };
       if (clearAllBtn) clearAllBtn.onclick = () => {
-        worldbookList.querySelectorAll('.we-worldbook-entry-check').forEach(checkbox => checkbox.checked = false);
-        updateWorldbookSummary();
+        worldbookList.querySelectorAll('.we-worldbook-entry-check').forEach(checkbox => {
+          checkbox.checked = false;
+          checkbox.onchange();
+        });
       };
       if (saveWorldbookBtn) saveWorldbookBtn.onclick = () => {
-        const selectedIds = [...worldbookList.querySelectorAll('.we-worldbook-entry-check:checked')].map(checkbox => checkbox.value);
-        worldbook.saveSelectedIds(selectedIds);
-        showToast(`✅ 已保存 ${selectedIds.length} 条后台世界书条目`);
+        worldbook.saveSelectedIds([..._cachedSelectedIds]);
+        showToast(`✅ 已保存 ${_cachedSelectedIds.size} 条后台世界书条目`);
         updateWorldbookSummary();
       };
       loadWorldbookEntries();
