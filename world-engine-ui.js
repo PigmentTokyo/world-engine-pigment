@@ -647,7 +647,7 @@ window.WORLD_ENGINE_UI = (function() {
     const editHtml = isEditing ? renderRIEditor(ri) : '';
 
     if (ri.active) {
-      return `<div class="we-accident-item we-accident-triggered">
+      return `<div class="we-accident-item we-regional-incident-item we-accident-triggered">
         ${actionHtml}
         ⚠️ ${u(ri.title)}<br>
         <span style="font-size:11px;color:var(--we-text3);">类型: ${u(ri.type||'?')} | 范围: ${u(ri.scope||'?')} | 冷却: ${ri.cooldown||0}轮</span><br>
@@ -656,16 +656,16 @@ window.WORLD_ENGINE_UI = (function() {
       </div>`;
     }
     if (ri.title && ri.title.includes('重试')) {
-      return `<div class="we-accident-item" style="border-left:3px solid var(--we-gold);">
+      return `<div class="we-accident-item we-regional-incident-item" style="border-left:3px solid var(--we-gold);">
         ${actionHtml}
         ⚠️ ${u(ri.title)}（类型: ${u(ri.type||'?')}）
         ${editHtml}
       </div>`;
     }
     if (ri.cooldown > 0) {
-      return `<div class="we-accident-item">${actionHtml}✅ 本轮无区域突发事件（剩余冷却 ${ri.cooldown} 轮）${editHtml}</div>`;
+      return `<div class="we-accident-item we-regional-incident-item">${actionHtml}✅ 本轮无区域突发事件（剩余冷却 ${ri.cooldown} 轮）${editHtml}</div>`;
     }
-    return `<div class="we-accident-item">${actionHtml}✅ 本轮无区域突发事件${editHtml}</div>`;
+    return `<div class="we-accident-item we-regional-incident-item">${actionHtml}✅ 本轮无区域突发事件${editHtml}</div>`;
   }
 
   function renderRIEditor(ri) {
@@ -677,6 +677,10 @@ window.WORLD_ENGINE_UI = (function() {
       <div class="we-event-editor" data-ri-edit="1">
         <button class="we-event-editor-close we-ri-editor-close"><i class="fa-solid fa-xmark"></i></button>
         <div class="we-event-editor-grid">
+          <label>状态<select class="we-ri-edit-active">
+            <option value="true" ${ri.active ? 'selected' : ''}>激活并显示事件</option>
+            <option value="false" ${!ri.active ? 'selected' : ''}>未激活</option>
+          </select></label>
           <label class="we-event-editor-wide">标题<input class="we-ri-edit-title" type="text" value="${u(ri.title||'')}"></label>
           <label>类型<select class="we-ri-edit-type">${typeOptions}</select></label>
           <label>范围<input class="we-ri-edit-scope" type="text" value="${u(ri.scope||'')}"></label>
@@ -703,7 +707,7 @@ window.WORLD_ENGINE_UI = (function() {
             <button class="we-icon-btn we-bba-edit" data-bba-index="${actIndex}" title="编辑隐秘行为"><i class="fa-solid fa-pen"></i></button>
           </div>`;
         const editHtml = isEditing ? renderBBActionEditor(a, actIndex) : '';
-        return `<div class="we-accident-item" style="margin:2px 0;font-size:12px;position:relative;">
+        return `<div class="we-accident-item we-blackbox-item" style="margin:2px 0;font-size:12px;position:relative;">
           ${actionHtml}
           🔒 ${u(a.action||a)} — 知情者: ${u(a.witnesses||'无')}
           ${editHtml}
@@ -723,7 +727,7 @@ window.WORLD_ENGINE_UI = (function() {
             <button class="we-icon-btn we-bbs-edit" data-bbs-index="${astIndex}" title="编辑隐秘资产"><i class="fa-solid fa-pen"></i></button>
           </div>`;
         const editHtml = isEditing ? renderBBAssetEditor(a, astIndex) : '';
-        return `<div class="we-accident-item" style="margin:2px 0;font-size:12px;position:relative;">
+        return `<div class="we-accident-item we-blackbox-item" style="margin:2px 0;font-size:12px;position:relative;">
           ${actionHtml}
           📦 ${u(a.name||a)} — 暴露度: ${a.exposure||0}%, <span style="color:${sc}">${u(a.status||'有效')}</span>
           ${editHtml}
@@ -1275,6 +1279,7 @@ window.WORLD_ENGINE_UI = (function() {
           state.regionalIncident = { active: false, title: '', type: '', scope: '', impact: '', cooldown: 0, _retry: false, _retryType: '' };
         }
         const ri = state.regionalIncident;
+        ri.active = editor.querySelector('.we-ri-edit-active').value === 'true';
         ri.title = editor.querySelector('.we-ri-edit-title').value.trim();
         ri.type = editor.querySelector('.we-ri-edit-type').value;
         ri.scope = editor.querySelector('.we-ri-edit-scope').value.trim();
@@ -1732,6 +1737,27 @@ window.WORLD_ENGINE_UI = (function() {
         reader.onload = (ev) => {
           try {
             const data = JSON.parse(ev.target.result);
+            const isRegionalIncident = data && typeof data === 'object' &&
+              Object.prototype.hasOwnProperty.call(data, 'active') &&
+              Object.prototype.hasOwnProperty.call(data, 'title') &&
+              Object.prototype.hasOwnProperty.call(data, 'impact');
+            if (isRegionalIncident) {
+              const state = core.loadState();
+              state.regionalIncident = {
+                active: data.active === true || data.active === 'true',
+                title: String(data.title || ''),
+                type: String(data.type || 'other'),
+                scope: String(data.scope || ''),
+                impact: String(data.impact || ''),
+                cooldown: Math.max(0, Number(data.cooldown) || 0),
+                _retry: data._retry === true || data._retry === 'true',
+                _retryType: String(data._retryType || '')
+              };
+              core.saveState(state);
+              showToast('✅ 区域突发事件导入成功');
+              refresh();
+              return;
+            }
             if (data.version !== '1.2') { showToast('❌ 不支持的存档格式版本', true); return; }
             if (!data.state) { showToast('❌ 无效的导入文件', true); return; }
             const s = data.state;

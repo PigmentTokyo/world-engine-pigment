@@ -279,6 +279,16 @@
   gap: 3px;
 }
 
+.we-accident-item.we-regional-incident-item,
+.we-accident-item.we-blackbox-item {
+  padding-right: 94px;
+}
+
+.we-regional-incident-item > .we-event-editor,
+.we-blackbox-item > .we-event-editor {
+  margin-right: -84px;
+}
+
 /* ===== 信息网格 ===== */
 .we-info-grid {
   display: grid;

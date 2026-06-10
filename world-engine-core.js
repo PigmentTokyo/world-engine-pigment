@@ -153,6 +153,7 @@ window.WORLD_ENGINE_CORE = (function() {
     if (!state.regionalIncident) {
       state.regionalIncident = { active: false, title: '', type: '', scope: '', impact: '', cooldown: 0, _retry: false, _retryType: '' };
     }
+    state.regionalIncident.active = state.regionalIncident.active === true || state.regionalIncident.active === 'true';
     if (state.regionalIncident.cooldown === undefined) state.regionalIncident.cooldown = 0;
     if (state.regionalIncident._retry === undefined) state.regionalIncident._retry = false;
     if (state.regionalIncident._retryType === undefined) state.regionalIncident._retryType = '';
