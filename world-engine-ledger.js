@@ -4,25 +4,34 @@ window.WORLD_ENGINE_LEDGER = (function() {
   const MAX_LEDGER_ROUNDS = 20;
 
   const EVENT_TYPE_NAMES = { conflict: '冲突型', progress: '推进型' };
+  const TERMINAL_STAGES = new Set(['已完成', '已失败', '已消散', '已爆发']);
 
   /**
    * 对比存档点（推演前）与当前状态（推演后），记录 Lv3/4 变化。
    * 所有变化合并为一条，按轮次分组。
    */
   function recordChanges(state) {
+    const removedTerminalEvents = state._terminalEventsThisRound || [];
+    delete state._terminalEventsThisRound;
+
     const cp = core.restoreCheckpoint();
-    if (!cp) return;
+    if (!cp) {
+      core.saveState(state);
+      return;
+    }
 
     const changes = [];
 
-    // —— 事件链：新增 Lv3/4，或 Lv3/4 阶段变化 ——
+    // —— 事件链：普通变化记录 Lv3/4，任何等级的终局都记录 ——
     const cpEventMap = new Map((cp.events || []).map(e => [e.name, e]));
-    for (const ev of (state.events || [])) {
-      if (!ev.level || ev.level < 3) continue;
+    const currentEvents = state.events || [];
+    for (const ev of [...currentEvents, ...removedTerminalEvents]) {
+      const isTerminal = TERMINAL_STAGES.has(ev.stage);
+      if ((!ev.level || ev.level < 3) && !isTerminal) continue;
       const cpEv = cpEventMap.get(ev.name);
       if (!cpEv) {
         changes.push({
-          type: 'event_new',
+          type: isTerminal ? 'event_terminal' : 'event_new',
           name: ev.name,
           eventType: ev.type || 'conflict',
           level: ev.level,
@@ -31,16 +40,16 @@ window.WORLD_ENGINE_LEDGER = (function() {
         });
       } else if (cpEv.stage !== ev.stage) {
         changes.push({
-          type: 'event_advance',
+          type: isTerminal ? 'event_terminal' : 'event_advance',
           name: ev.name,
           level: ev.level,
           fromStage: cpEv.stage || '?',
           toStage: ev.stage || '?',
+          stage: ev.stage || '?',
           desc: ev.desc || ''
         });
       }
     }
-
     // —— 风声：新增 Lv3/4 ——
     const cpWindTopics = new Set((cp.winds || []).map(w => w.topic));
     for (const wind of (state.winds || [])) {
@@ -55,7 +64,10 @@ window.WORLD_ENGINE_LEDGER = (function() {
       }
     }
 
-    if (changes.length === 0) return;
+    if (changes.length === 0) {
+      core.saveState(state);
+      return;
+    }
 
     // 清理旧格式记忆，移除同轮已有记录（处理重roll覆盖）
     state.memories = (state.memories || []).filter(m => {
@@ -92,6 +104,8 @@ window.WORLD_ENGINE_LEDGER = (function() {
           lines.push(`  [新增Lv${c.level}${tn}事件链] ${c.name} - ${c.stage} - ${c.desc}`);
         } else if (c.type === 'event_advance') {
           lines.push(`  [事件链推进] ${c.name}(Lv${c.level}) ${c.fromStage}->${c.toStage} - ${c.desc}`);
+        } else if (c.type === 'event_terminal') {
+          lines.push(`  [事件链终局] ${c.name}(Lv${c.level}) ${c.fromStage ? c.fromStage + '->' : ''}${c.stage || c.toStage} - ${c.desc}`);
         } else if (c.type === 'wind_new') {
           lines.push(`  [新增Lv${c.level}风声] ${c.topic} - ${c.content}`);
         }

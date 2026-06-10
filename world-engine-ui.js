@@ -799,6 +799,9 @@ window.WORLD_ENGINE_UI = (function() {
           lines.push(`[新增Lv${c.level}${tn}] ${u(c.name)} - ${u(c.stage)} - ${u(c.desc||'')}`);
         } else if (c.type === 'event_advance') {
           lines.push(`[推进] ${u(c.name)}(Lv${c.level}) ${u(c.fromStage)}->${u(c.toStage)} - ${u(c.desc||'')}`);
+        } else if (c.type === 'event_terminal') {
+          const transition = c.fromStage ? `${u(c.fromStage)}->${u(c.stage||c.toStage)}` : u(c.stage||c.toStage);
+          lines.push(`[终局] ${u(c.name)}(Lv${c.level}) ${transition} - ${u(c.desc||'')}`);
         } else if (c.type === 'wind_new') {
           lines.push(`[新增Lv${c.level}风声] ${u(c.topic)} - ${u(c.content||'')}`);
         }
@@ -1471,6 +1474,7 @@ window.WORLD_ENGINE_UI = (function() {
           const userMsg = lastMsg?.is_user ? (lastMsg.mes || '') : '';
           const aiMsg = !lastMsg?.is_user ? (lastMsg?.mes || '') : '';
           const ok = await evolution.evolve(s, userMsg, aiMsg);
+          if (ok && window.WORLD_ENGINE_LEDGER) window.WORLD_ENGINE_LEDGER.recordChanges(s);
           if (window.__WE_SetExternalStatus) window.__WE_SetExternalStatus(ok ? '✅ 推演完成' : '❌ 推演失败', !ok);
           if (ok) showToast('✅ 推演完成');
         } catch(e) {

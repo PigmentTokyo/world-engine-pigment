@@ -392,6 +392,7 @@ window.WORLD_ENGINE_CORE = (function() {
     delete s.lastEvolveResult;
     delete s.lastInjection;
     delete s.lastUpdated;
+    delete s._terminalEventsThisRound;
 
     // 修复事件 stageRound>=9
     if (s.events) {
@@ -410,6 +411,7 @@ window.WORLD_ENGINE_CORE = (function() {
     delete clean.lastEvolveResult;
     delete clean.lastInjection;
     delete clean.lastUpdated;
+    delete clean._terminalEventsThisRound;
     // 修复事件
     if (clean.events) {
       for (const ev of clean.events) ensureEventFields(ev);

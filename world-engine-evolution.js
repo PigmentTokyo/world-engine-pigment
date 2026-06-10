@@ -639,6 +639,7 @@ ${extraInstruction ? '\n' + extraInstruction : ''}`;
       return false;
     }
 
+    delete state._terminalEventsThisRound;
     const backup = JSON.parse(JSON.stringify(state));
     const isNew = core.isNewRound();
 
@@ -793,6 +794,7 @@ ${extraInstruction ? '\n' + extraInstruction : ''}`;
       });
       if (cleanedEvents.length !== (state.events || []).length) {
         const removed = (state.events || []).filter(e => !cleanedEvents.includes(e));
+        state._terminalEventsThisRound = removed.map(e => JSON.parse(JSON.stringify(e)));
         console.log('[世界引擎] 🧹 自动清理事件链:', removed.map(e => e.name).join('、'));
       }
       state.events = cleanedEvents;
