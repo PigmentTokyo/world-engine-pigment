@@ -1173,4 +1173,7 @@
     width: 100vw;
     height: calc(100dvh - 60px);
     border-radius: 0;
-    top: 0
+    top: 0;
+    bottom: auto;
+  }
+}
