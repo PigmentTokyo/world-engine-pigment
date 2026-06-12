@@ -84,17 +84,28 @@
 }
 #we-input-btn.we-ball-counting .we-ball-ring { opacity: 1; }
 
-/* 轮次进度数字 */
+/* 轮次进度数字（右下角） */
 .we-ball-count {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
+  inset: auto -2px -2px auto;
+  width: auto;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: rgba(13,24,32,0.85);
+  border: 1px solid var(--we-border);
   font-size: 9px;
   font-weight: 700;
-  color: #fff;
-  text-shadow: 0 1px 2px rgba(0,0,0,0.8);
-  padding-bottom: 3px;
+  line-height: 1;
+  color: var(--we-gold);
 }
+.we-ball-count:empty { display: none; }
+/* 角标出现时让位给角标 */
+#we-input-btn.we-ball-success .we-ball-count,
+#we-input-btn.we-ball-fail .we-ball-count { display: none; }
 
 /* 成功/失败角标 */
 .we-ball-badge {
@@ -121,23 +132,8 @@
   transform: scale(1);
 }
 
-/* 悬停/状态提示气泡 */
-.we-ball-tip {
-  display: none;
-  position: absolute;
-  inset: auto 0 calc(100% + 8px) auto;
-  width: max-content;
-  max-width: 220px;
-  padding: 4px 9px;
-  border-radius: 8px;
-  background: rgba(13,24,32,0.95);
-  border: 1px solid var(--we-border);
-  color: var(--we-text);
-  font-size: 11px;
-  white-space: nowrap;
-  pointer-events: none;
-}
-#we-input-btn.we-ball:hover .we-ball-tip:not(:empty) { display: block; }
+/* 不显示文字气泡 */
+.we-ball-tip { display: none !important; }
 
 /* 兼容旧元素 */
 .we-external-status { display: none !important; }
