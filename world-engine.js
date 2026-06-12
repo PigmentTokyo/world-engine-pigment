@@ -70,28 +70,32 @@
       // ========== 注入管理 ==========
       const INJECTION_NAME = 'world-engine-world';
 
+      // position=2 为 in-chat（插入聊天流），depth=1 为用户消息正前一位
+      const INJ_POSITION = 2;
+      const INJ_DEPTH = 1;
+
       function registerInjection(content) {
         try {
           const ctx = SillyTavern.getContext();
-          // 新版 ST: registerInjection，depth:0 插到聊天末尾（用户消息之后），对缓存影响最小
+          // setExtensionPrompt 是最通用的方式，优先使用
+          if (typeof ctx.setExtensionPrompt === 'function') {
+            ctx.setExtensionPrompt(INJECTION_NAME, content, INJ_POSITION, INJ_DEPTH);
+            return true;
+          }
+          // 新版 ST: registerInjection
           if (typeof ctx.registerInjection === 'function') {
             if (typeof ctx.unregisterInjection === 'function') {
               ctx.unregisterInjection(INJECTION_NAME);
             }
-            ctx.registerInjection(INJECTION_NAME, content, { position: 'in_chat', depth: 1, role: 'system' });
-            return true;
-          }
-          // 中版 ST: setExtensionPrompt，position=2 为 in-chat，depth=1 为用户消息正前一位
-          if (typeof ctx.setExtensionPrompt === 'function') {
-            ctx.setExtensionPrompt(INJECTION_NAME, content, 2, 1);
+            ctx.registerInjection(INJECTION_NAME, content, { position: INJ_POSITION, depth: INJ_DEPTH, role: 'system' });
             return true;
           }
           // 旧版 ST: extensionPrompts 数组
           if (Array.isArray(ctx.extensionPrompts)) {
             ctx.extensionPrompts = ctx.extensionPrompts.filter(p => p.name !== INJECTION_NAME);
             ctx.extensionPrompts.push({
-              name: INJECTION_NAME, content: content,
-              role: 'system', position: 2, depth: 1
+              name: INJECTION_NAME, content,
+              role: 'system', position: INJ_POSITION, depth: INJ_DEPTH
             });
             return true;
           }
@@ -106,7 +110,9 @@
       function unregisterInjection() {
         try {
           const ctx = SillyTavern.getContext();
-          if (typeof ctx.unregisterInjection === 'function') {
+          if (typeof ctx.setExtensionPrompt === 'function') {
+            ctx.setExtensionPrompt(INJECTION_NAME, '', INJ_POSITION, INJ_DEPTH);
+          } else if (typeof ctx.unregisterInjection === 'function') {
             ctx.unregisterInjection(INJECTION_NAME);
           } else if (Array.isArray(ctx.extensionPrompts)) {
             ctx.extensionPrompts = ctx.extensionPrompts.filter(p => p.name !== INJECTION_NAME);
