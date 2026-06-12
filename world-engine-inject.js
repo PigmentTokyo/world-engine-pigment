@@ -38,6 +38,14 @@ window.WORLD_ENGINE_INJECT = (function() {
   // 旧存档兼容：六级时期的"小有名气"归入"受人尊敬"
   const REP_LEGACY = { 小有名气: '受人尊敬' };
 
+  // 经济气候判词：把单个气候词翻译成给正文模型看的市面描述
+  const CLIMATE_VERDICT = {
+    繁荣: '市面繁盛，商路通畅、百业兴旺，钱货流转顺畅，物价稳中偏高',
+    平稳: '市面如常，物价随时节自然起落，没有大的波动',
+    衰退: '市面萧条，需求萎缩、商号接连倒闭，少数刚需之物反而紧俏涨价',
+    动荡: '经济秩序濒临崩坏，物价失控、商路受阻，人心惶惶，以物易物回潮',
+  };
+
   function buildContext(worldState, tags) {
     const rulesLoader = window.WORLD_ENGINE_RULES;
     const rulesSummary = rulesLoader ? rulesLoader.getCoreRulesSummary() : '';
@@ -98,7 +106,9 @@ window.WORLD_ENGINE_INJECT = (function() {
     // 经济信号：全注入
     const econ = worldState.economy || {};
     const signalsText = (econ.signals || []).map(s => `${s.summary}（${s.scope}）`).join('；');
-    const econText = `气候:${econ.climate||'平稳'}${signalsText ? '，信号:'+signalsText : ''}`;
+    const climate = econ.climate || '平稳';
+    const climateText = `市面${climate}，${CLIMATE_VERDICT[climate] || CLIMATE_VERDICT['平稳']}`;
+    const econText = `${climateText}${signalsText ? '。信号:' + signalsText : ''}`;
 
     // 仇敌录
     let enemiesText = '无';
