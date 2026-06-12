@@ -22,9 +22,9 @@ window.WORLD_ENGINE_INJECT = (function() {
       return txt;
     }).join('；') || '无';
 
-    // 势力：排除友好/中立/冷淡/紧张，只注入极端关系
+    // 势力：排除友好/中立/冷淡，只注入极端关系
     const visibleFactions = (worldState.factions || []).filter(f =>
-      !['友好','中立','冷淡','紧张'].includes(f.relation)
+      !['友好','中立','冷淡'].includes(f.relation)
     );
     const factionsText = visibleFactions.map(f => {
       let txt = `${f.name}`;

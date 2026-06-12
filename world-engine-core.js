@@ -118,10 +118,12 @@ window.WORLD_ENGINE_CORE = (function() {
       }
     }
     state.factions = state.factions || [];
-    const FACTION_RELATIONS = ['血盟', '盟友', '友好', '中立', '冷淡', '紧张', '敌对', '世仇'];
+    const FACTION_RELATIONS = ['血盟', '盟友', '友好', '中立', '冷淡', '敌对', '世仇'];
     const FACTION_STATUSES = ['鼎盛', '稳固', '倾轧', '困顿', '衰落', '瓦解'];
     for (const f of state.factions) {
       f.status = FACTION_STATUSES.includes(f.status) ? f.status : '稳固';
+      // 八级→七级迁移：旧存档的"紧张"归并到"冷淡"
+      if (f.relation === '紧张') f.relation = '冷淡';
       f.relation = FACTION_RELATIONS.includes(f.relation) ? f.relation : '中立';
       f.scope = f.scope || '';
       if (!Array.isArray(f.powerPillars)) f.powerPillars = [];
@@ -331,9 +333,10 @@ window.WORLD_ENGINE_CORE = (function() {
 
   function addFaction(state, faction) {
     if (!state.factions) state.factions = [];
-    const FACTION_RELATIONS = ['血盟', '盟友', '友好', '中立', '冷淡', '紧张', '敌对', '世仇'];
+    const FACTION_RELATIONS = ['血盟', '盟友', '友好', '中立', '冷淡', '敌对', '世仇'];
     const FACTION_STATUSES = ['鼎盛', '稳固', '倾轧', '困顿', '衰落', '瓦解'];
     if (!FACTION_STATUSES.includes(faction.status)) faction.status = '稳固';
+    if (faction.relation === '紧张') faction.relation = '冷淡';
     if (!FACTION_RELATIONS.includes(faction.relation)) faction.relation = '中立';
     faction.scope = faction.scope || '';
     if (!Array.isArray(faction.powerPillars)) faction.powerPillars = [];

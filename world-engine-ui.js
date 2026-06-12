@@ -337,7 +337,7 @@ window.WORLD_ENGINE_UI = (function() {
     return renderPagedList(factions, 'factions', (f, factionIndex) => {
       const relationColors = {
         血盟:'#2563eb', 盟友:'#0ea5e9', 友好:'#06b6d4', 中立:'#94a3b8',
-        冷淡:'#f59e0b', 紧张:'#f97316', 敌对:'#ef4444', 世仇:'#991b1b'
+        冷淡:'#f59e0b', 紧张:'#f59e0b', 敌对:'#ef4444', 世仇:'#991b1b'
       };
       const statusIcons = { 鼎盛:'🔥', 稳固:'⚖️', 倾轧:'⚔️', 困顿:'💧', 衰落:'🍂', 瓦解:'💀' };
       const statusColors = { 鼎盛:'#d0aa58', 稳固:'#69b68e', 倾轧:'#cf5f3f', 困顿:'#70a8d2', 衰落:'#a6a6ad', 瓦解:'#888888' };
@@ -379,7 +379,7 @@ window.WORLD_ENGINE_UI = (function() {
   function renderFactionEditor(f, index) {
     const statusOptions = ['鼎盛','稳固','倾轧','困顿','衰落','瓦解'].map(s =>
       `<option value="${s}" ${f.status === s ? 'selected' : ''}>${s}</option>`).join('');
-    const relationOptions = ['血盟','盟友','友好','中立','冷淡','紧张','敌对','世仇'].map(r =>
+    const relationOptions = ['血盟','盟友','友好','中立','冷淡','敌对','世仇'].map(r =>
       `<option value="${r}" ${f.relation === r ? 'selected' : ''}>${r}</option>`).join('');
     const pillars = [];
     for (let i = 0; i < 3; i++) pillars.push(f.powerPillars?.[i] || '');
