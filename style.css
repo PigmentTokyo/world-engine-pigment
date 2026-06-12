@@ -38,7 +38,7 @@
 #we-input-btn.we-ball.we-ball-dragging { cursor: grabbing; transform: scale(1.1); }
 #we-input-btn.we-ball > span { position: absolute; inset: 0; pointer-events: none; }
 
-/* 地球本体：海洋 + 自转大陆 */
+/* 地球本体：海洋打底 */
 .we-ball-globe {
   border-radius: 50%;
   overflow: hidden;
@@ -46,19 +46,16 @@
     radial-gradient(circle at 34% 30%, #8fd3ff 0%, #3b8fd6 38%, #1c5fa6 72%, #0d2f5c 100%);
   box-shadow: inset -6px -6px 14px rgba(0,0,0,0.5), inset 4px 4px 10px rgba(255,255,255,0.25);
 }
+/* 陆地：用真实地球剪影做遮罩，绿色填充 */
 .we-ball-globe::before {
   content: "";
   position: absolute;
-  inset: 0;
+  inset: 11%;
   border-radius: 50%;
-  background-repeat: repeat-x;
-  background-size: 50% 100%;
-  background-image:
-    radial-gradient(ellipse 22% 30% at 12% 42%, #4caf6a 0%, #3c9457 60%, transparent 70%),
-    radial-gradient(ellipse 16% 22% at 30% 68%, #5cb878 0%, transparent 70%),
-    radial-gradient(ellipse 18% 26% at 44% 30%, #4caf6a 0%, transparent 72%),
-    radial-gradient(ellipse 12% 18% at 60% 60%, #57b074 0%, transparent 70%);
-  opacity: 0.92;
+  background: linear-gradient(160deg, #6fcf86 0%, #4caf6a 45%, #3c9457 100%);
+  -webkit-mask: url("earth.svg") center/contain no-repeat;
+          mask: url("earth.svg") center/contain no-repeat;
+  transform-origin: 50% 50%;
 }
 /* 高光 */
 .we-ball-globe::after {
@@ -66,18 +63,18 @@
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  background: radial-gradient(circle at 32% 26%, rgba(255,255,255,0.45) 0%, transparent 34%);
+  background: radial-gradient(circle at 32% 26%, rgba(255,255,255,0.4) 0%, transparent 34%);
 }
-/* 推演中：自转 + 微微发光脉动 */
+/* 推演中：整球自转 + 微微发光脉动 */
 #we-input-btn.we-ball-evolving .we-ball-globe::before {
-  animation: we-globe-spin 3.2s linear infinite;
+  animation: we-globe-spin 4s linear infinite;
 }
 #we-input-btn.we-ball-evolving .we-ball-globe {
   animation: we-globe-glow 1.8s ease-in-out infinite;
 }
 @keyframes we-globe-spin {
-  from { background-position: 0 0; }
-  to   { background-position: -100% 0; }
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
 }
 @keyframes we-globe-glow {
   0%,100% { box-shadow: inset -6px -6px 14px rgba(0,0,0,0.5), inset 4px 4px 10px rgba(255,255,255,0.25), 0 0 0 rgba(88,184,169,0); }
