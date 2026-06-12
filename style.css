@@ -824,13 +824,12 @@
 .we-relation-pair { flex: 1; color: var(--we-text); }
 .we-relation-trend { font-size: 11px; color: var(--we-text3); }
 
-/* ===== 风声 ===== */
+/* ===== 风声（基础结构，气质见主题层） ===== */
 .we-wind-item {
   background: var(--we-bg);
-  border-left: 3px solid;
-  border-radius: 6px;
-  padding: 8px 10px;
-  margin-bottom: 6px;
+  border-radius: 8px;
+  padding: 9px 12px;
+  margin-bottom: 7px;
   position: relative;
 }
 .we-wind-item > .we-event-actions { bottom: 6px; top: auto; }
@@ -1387,49 +1386,124 @@
 .we-stage-done { background: #1f3a2c !important; }
 .we-stage-failed { background: #3a2630 !important; filter: grayscale(0.3); }
 
-/* —— 风声四态：公告 / 消息 / 流言 / 舆情 —— */
-/* 公告：官府张榜，端正、有压痕 */
+/* —— 风声四态：以「形态 + 材质 + 字态」区分，不靠左色条 ——
+   公告＝张榜布告 / 消息＝电文实录 / 流言＝耳语 / 舆情＝众潮     */
+
+/* 公告：官府张榜。顶端整幅压边、内文端正、右上一枚朱印 */
 .we-wind-announcement {
-  background: linear-gradient(var(--we-bg), var(--we-bg)) padding-box;
-  box-shadow: inset 0 1px 0 rgba(111,159,216,0.18), 0 1px 0 rgba(0,0,0,0.25);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--wind-accent) 9%, var(--we-bg)) 0%, var(--we-bg) 38%);
+  border-top: 2px solid color-mix(in srgb, var(--wind-accent) 60%, transparent);
+  border-radius: 3px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
 }
-.we-wind-announcement .we-wind-topic { letter-spacing: 0.5px; }
-/* 消息：朴素如实，clean */
-.we-wind-report .we-wind-topic { font-weight: 600; }
-/* 流言：耳语，斜体、低对比、隐约浮动 */
+.we-wind-announcement .we-wind-topic {
+  letter-spacing: 1px;
+  font-weight: 800;
+}
+.we-wind-announcement .we-wind-header::after {
+  content: "印";
+  margin-left: auto;
+  width: 17px; height: 17px;
+  display: grid; place-items: center;
+  font-size: 10px; font-weight: 700;
+  color: color-mix(in srgb, var(--wind-accent) 85%, #fff);
+  border: 1px solid color-mix(in srgb, var(--wind-accent) 55%, transparent);
+  border-radius: 3px;
+  opacity: 0.8;
+}
+
+/* 消息：电文实录。素白、等宽标签、字段间细分割线，毫无修饰 */
+.we-wind-report {
+  background: var(--we-bg);
+  border: 1px solid var(--we-border);
+}
+.we-wind-report .we-wind-topic { font-weight: 600; letter-spacing: 0.2px; }
+.we-wind-report .we-wind-label {
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  letter-spacing: 0;
+  opacity: 0.75;
+}
+
+/* 流言：耳语。无边界、融进暗处、斜体低语、隐隐起伏 */
 .we-wind-rumor {
-  border-left-style: dashed;
-  background: repeating-linear-gradient(
-    -45deg, rgba(217,138,61,0.035) 0 6px, transparent 6px 12px), var(--we-bg);
+  background: transparent;
+  padding-left: 14px;
+}
+.we-wind-rumor::before {
+  content: "“";
+  position: absolute;
+  left: -1px; top: 2px;
+  font-size: 26px; line-height: 1;
+  color: var(--wind-accent);
+  opacity: 0.35;
 }
 .we-wind-rumor .we-wind-topic {
   font-style: italic;
-  font-weight: 600;
-  opacity: 0.92;
+  font-weight: 500;
+  opacity: 0.9;
 }
 .we-wind-rumor .we-wind-content span:last-child {
   font-style: italic;
   color: var(--we-text3);
 }
-.we-wind-rumor:hover { animation: we-rumor-waver 3s ease-in-out infinite; }
+.we-wind-rumor .we-wind-field { border-top-color: rgba(255,255,255,0.03); }
+.we-wind-rumor:hover { animation: we-rumor-waver 3.4s ease-in-out infinite; }
 @keyframes we-rumor-waver {
-  0%,100% { opacity: 0.94; }
-  50%     { opacity: 1; }
+  0%,100% { opacity: 0.9; transform: translateX(0); }
+  50%     { opacity: 1; transform: translateX(0.6px); }
 }
-/* 舆情：众口成潮，底部一道缓缓涌动的紫波 */
-.we-wind-sentiment { overflow: hidden; }
+
+/* 舆情：众潮。整幅色洗、底部一道涌动的潮线，色面最满 */
+.we-wind-sentiment {
+  overflow: hidden;
+  background:
+    radial-gradient(120% 140% at 100% 0%, color-mix(in srgb, var(--wind-accent) 16%, transparent), transparent 55%),
+    var(--we-bg);
+}
 .we-wind-sentiment::after {
   content: "";
   position: absolute;
   left: 0; right: 0; bottom: 0;
   height: 2px;
-  background: linear-gradient(90deg, transparent, rgba(168,128,196,0.7), transparent);
-  background-size: 50% 100%;
+  background: linear-gradient(90deg, transparent, var(--wind-accent), transparent);
+  background-size: 45% 100%;
+  opacity: 0.8;
   animation: we-sentiment-tide 4.5s linear infinite;
 }
 @keyframes we-sentiment-tide {
-  from { background-position: -50% 0; }
-  to   { background-position: 150% 0; }
+  from { background-position: -45% 0; }
+  to   { background-position: 145% 0; }
+}
+
+/* —— 风声等级 Lv1-4：以「存在感」escalate，不另起色相 ——
+   Lv1 私语将熄 → Lv2 寻常 → Lv3 引人侧目 → Lv4 满城风雨        */
+.we-wind-lv1 { opacity: 0.74; }
+.we-wind-lv1 .we-wind-topic { font-size: 12px; font-weight: 500; color: var(--we-text2); }
+.we-wind-lv2 .we-wind-topic { font-size: 13px; }
+.we-wind-lv3 .we-wind-topic {
+  font-size: 14px;
+  font-weight: 800;
+  color: color-mix(in srgb, var(--wind-level-color) 70%, var(--we-text));
+}
+.we-wind-lv4 {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--wind-level-color) 13%, var(--we-bg)), var(--we-bg) 60%);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--wind-level-color) 35%, transparent);
+}
+.we-wind-lv4 .we-wind-topic {
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: color-mix(in srgb, var(--wind-level-color) 80%, var(--we-text));
+}
+.we-wind-lv4::before { opacity: 0.85; }  /* 流言到 Lv4 引号更显 */
+/* Lv4 满城风雨：极轻的呼吸光圈 */
+.we-wind-lv4 { animation: we-wind-clamor 3.6s ease-in-out infinite; }
+@keyframes we-wind-clamor {
+  0%,100% { box-shadow: 0 0 0 1px color-mix(in srgb, var(--wind-level-color) 28%, transparent); }
+  50%     { box-shadow: 0 0 12px -2px color-mix(in srgb, var(--wind-level-color) 45%, transparent),
+                        0 0 0 1px color-mix(in srgb, var(--wind-level-color) 45%, transparent); }
 }
 
 /* —— 声誉：四维量表，去圆点为段条，更克制 —— */
@@ -1445,7 +1519,8 @@
   .we-stage-erupt .we-event-stamp,
   .we-stage-fade .we-event-stamp,
   .we-wind-rumor:hover,
-  .we-wind-sentiment::after {
+  .we-wind-sentiment::after,
+  .we-wind-lv4 {
     animation: none !important;
   }
 }

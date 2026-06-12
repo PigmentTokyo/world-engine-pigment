@@ -501,7 +501,8 @@ window.WORLD_ENGINE_UI = (function() {
       const editHtml = isEditing ? renderWindEditor(w, windIndex) : '';
 
       const windTypeClass = { announcement:'we-wind-announcement', report:'we-wind-report', rumor:'we-wind-rumor', sentiment:'we-wind-sentiment' }[w.type] || '';
-      let html = '<div class="we-wind-item ' + windTypeClass + '" style="border-left-color:' + typeColor + ';">';
+      const windLvClass = 'we-wind-lv' + (w.level || 1);
+      let html = '<div class="we-wind-item ' + windTypeClass + ' ' + windLvClass + '" style="--wind-accent:' + typeColor + ';--wind-level-color:' + levelColor + ';">';
       html += '<div class="we-wind-header">';
       html += '<span class="we-wind-topic">' + u(w.topic || '未命名风声') + '</span>';
       html += '<span class="we-badge" style="background:' + typeColor + '22;color:' + typeColor + ';">' + (typeNames[w.type] || '风声') + '</span>';
