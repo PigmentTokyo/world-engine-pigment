@@ -1567,7 +1567,12 @@ window.WORLD_ENGINE_UI = (function() {
             _wbCachedSelectedIds = new Set(allIds);
             showToast(`✅ 已自动全选 ${allIds.length} 条世界书条目`);
           } else {
-            _wbCachedSelectedIds = new Set(savedIds);
+            const enabledIds = new Set(entries.filter(e => !e.disabled).map(e => e.id));
+            const validSavedIds = savedIds.filter(id => enabledIds.has(id));
+            _wbCachedSelectedIds = new Set(validSavedIds);
+            if (validSavedIds.length !== savedIds.length) {
+              worldbook.saveSelectedIds(validSavedIds);
+            }
           }
           renderWorldbookList();
         } catch(error) {
@@ -1611,7 +1616,7 @@ window.WORLD_ENGINE_UI = (function() {
             <div class="we-worldbook-group-body" style="${expanded ? '' : 'display:none;'}">
             ${worldEntries.map(entry => `
               <label class="we-worldbook-entry${entry.disabled ? ' is-disabled' : ''}">
-                <input class="we-worldbook-entry-check" type="checkbox" value="${u(entry.id)}" data-chars="${entry.content.length}" ${selectedIds.has(entry.id) ? 'checked' : ''}>
+                <input class="we-worldbook-entry-check" type="checkbox" value="${u(entry.id)}" data-chars="${entry.content.length}" ${selectedIds.has(entry.id) && !entry.disabled ? 'checked' : ''} ${entry.disabled ? 'disabled' : ''}>
                 <span>
                   <strong>${u(entry.title)}</strong>
                   <small>${entry.content.length} 字符${entry.disabled ? ' · 世界书内已停用' : ''}</small>
@@ -1648,7 +1653,7 @@ window.WORLD_ENGINE_UI = (function() {
               const group = button.closest('.we-worldbook-group');
               if (!group) return;
               const checked = button.dataset.worldbookGroupAction === 'select';
-              group.querySelectorAll('.we-worldbook-entry-check').forEach(checkbox => {
+              group.querySelectorAll('.we-worldbook-entry-check:not(:disabled)').forEach(checkbox => {
                 checkbox.checked = checked;
                 checkbox.onchange();
               });
@@ -1661,7 +1666,7 @@ window.WORLD_ENGINE_UI = (function() {
 
       if (reloadBtn) reloadBtn.onclick = () => { _wbCachedEntries = null; _wbCachedChatId = null; loadWorldbookEntries(); };
       if (selectAllBtn) selectAllBtn.onclick = () => {
-        worldbookList.querySelectorAll('.we-worldbook-entry-check').forEach(checkbox => {
+        worldbookList.querySelectorAll('.we-worldbook-entry-check:not(:disabled)').forEach(checkbox => {
           checkbox.checked = true;
           checkbox.onchange();
         });
