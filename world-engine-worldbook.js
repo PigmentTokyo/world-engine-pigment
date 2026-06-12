@@ -11,18 +11,56 @@ window.WORLD_ENGINE_WORLDBOOK = (function() {
     return STORAGE_PREFIX + getChatId();
   }
 
-  function getSelectedIds() {
+  // 解析存储值，兼容老格式（纯数组）与新格式（{ids, t}）
+  function parseStored(raw) {
     try {
-      const saved = JSON.parse(localStorage.getItem(getSelectionKey()) || '[]');
-      return Array.isArray(saved) ? saved.filter(id => typeof id === 'string') : [];
-    } catch(e) {
-      return [];
+      const data = JSON.parse(raw || '[]');
+      if (Array.isArray(data)) return { ids: data.filter(id => typeof id === 'string'), t: 0 };
+      if (data && Array.isArray(data.ids)) {
+        return { ids: data.ids.filter(id => typeof id === 'string'), t: Number(data.t) || 0 };
+      }
+    } catch (e) {}
+    return { ids: [], t: 0 };
+  }
+
+  function getSelectedIds() {
+    return parseStored(localStorage.getItem(getSelectionKey())).ids;
+  }
+
+  // 找出最老的一条其它聊天的选择记录（按保存时间戳；老格式无时间戳视为最老）
+  function removeOldestOtherSelection() {
+    const currentKey = getSelectionKey();
+    let oldestKey = null;
+    let oldestT = Infinity;
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key || !key.startsWith(STORAGE_PREFIX) || key === currentKey) continue;
+      const t = parseStored(localStorage.getItem(key)).t;
+      if (t < oldestT) {
+        oldestT = t;
+        oldestKey = key;
+      }
     }
+    if (oldestKey) {
+      localStorage.removeItem(oldestKey);
+      return true;
+    }
+    return false;
   }
 
   function saveSelectedIds(ids) {
     const uniqueIds = [...new Set(Array.isArray(ids) ? ids.filter(id => typeof id === 'string') : [])];
-    localStorage.setItem(getSelectionKey(), JSON.stringify(uniqueIds));
+    const value = JSON.stringify({ ids: uniqueIds, t: Date.now() });
+    const currentKey = getSelectionKey();
+    // 配额超限：每次只删掉最老的一条其它聊天记录，删到塞得下为止
+    while (true) {
+      try {
+        localStorage.setItem(currentKey, value);
+        return;
+      } catch (e) {
+        if (!removeOldestOtherSelection()) throw e;
+      }
+    }
   }
 
   function getEntryId(entry) {
