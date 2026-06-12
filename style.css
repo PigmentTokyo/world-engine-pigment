@@ -19,23 +19,142 @@
   --we-red: #d66f68;
 }
 
-/* ===== 外部状态指示器 ===== */
-.we-external-status {
-  display: inline-block;
-  font-size: 11px;
-  margin: 0 4px;
-  padding: 2px 8px;
-  border-radius: 10px;
-  background: rgba(88,184,169,0.12);
-  color: var(--we-accent);
-  white-space: nowrap;
-  vertical-align: middle;
+/* ===== 世界引擎悬浮球 ===== */
+#we-input-btn.we-ball {
+  position: fixed;
+  width: 52px;
+  height: 52px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  cursor: grab;
+  z-index: 9999;
+  -webkit-tap-highlight-color: transparent;
+  filter: drop-shadow(0 4px 10px rgba(0,0,0,0.45));
+  transition: filter 0.2s, transform 0.15s;
+}
+#we-input-btn.we-ball:hover { transform: scale(1.06); }
+#we-input-btn.we-ball.we-ball-dragging { cursor: grabbing; transform: scale(1.1); }
+#we-input-btn.we-ball > span { position: absolute; inset: 0; pointer-events: none; }
+
+/* 地球本体：海洋 + 自转大陆 */
+.we-ball-globe {
+  border-radius: 50%;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 34% 30%, #8fd3ff 0%, #3b8fd6 38%, #1c5fa6 72%, #0d2f5c 100%);
+  box-shadow: inset -6px -6px 14px rgba(0,0,0,0.5), inset 4px 4px 10px rgba(255,255,255,0.25);
+}
+.we-ball-globe::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background-repeat: repeat-x;
+  background-size: 50% 100%;
+  background-image:
+    radial-gradient(ellipse 22% 30% at 12% 42%, #4caf6a 0%, #3c9457 60%, transparent 70%),
+    radial-gradient(ellipse 16% 22% at 30% 68%, #5cb878 0%, transparent 70%),
+    radial-gradient(ellipse 18% 26% at 44% 30%, #4caf6a 0%, transparent 72%),
+    radial-gradient(ellipse 12% 18% at 60% 60%, #57b074 0%, transparent 70%);
+  opacity: 0.92;
+}
+/* 高光 */
+.we-ball-globe::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 26%, rgba(255,255,255,0.45) 0%, transparent 34%);
+}
+/* 推演中：自转 + 微微发光脉动 */
+#we-input-btn.we-ball-evolving .we-ball-globe::before {
+  animation: we-globe-spin 3.2s linear infinite;
+}
+#we-input-btn.we-ball-evolving .we-ball-globe {
+  animation: we-globe-glow 1.8s ease-in-out infinite;
+}
+@keyframes we-globe-spin {
+  from { background-position: 0 0; }
+  to   { background-position: -100% 0; }
+}
+@keyframes we-globe-glow {
+  0%,100% { box-shadow: inset -6px -6px 14px rgba(0,0,0,0.5), inset 4px 4px 10px rgba(255,255,255,0.25), 0 0 0 rgba(88,184,169,0); }
+  50%     { box-shadow: inset -6px -6px 14px rgba(0,0,0,0.5), inset 4px 4px 10px rgba(255,255,255,0.25), 0 0 14px 2px rgba(88,184,169,0.7); }
+}
+
+/* 进度环（每 X 轮推演计数） */
+.we-ball-ring {
+  inset: -4px;
+  border-radius: 50%;
+  --we-ring-pct: 0deg;
+  background: conic-gradient(var(--we-gold) var(--we-ring-pct), rgba(255,255,255,0.12) 0);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3px));
+          mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3px));
+  opacity: 0;
   transition: opacity 0.3s;
 }
-.we-external-status.error {
-  background: rgba(214,111,104,0.15);
-  color: var(--we-danger);
+#we-input-btn.we-ball-counting .we-ball-ring { opacity: 1; }
+
+/* 轮次进度数字 */
+.we-ball-count {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+  padding-bottom: 3px;
 }
+
+/* 成功/失败角标 */
+.we-ball-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px; height: 18px;
+  inset: auto -2px -2px auto;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 800;
+  color: #fff;
+  transform: scale(0);
+  transition: transform 0.2s cubic-bezier(.34,1.56,.64,1);
+}
+#we-input-btn.we-ball-success .we-ball-badge {
+  background: var(--we-success);
+  border: 1.5px solid #0d1820;
+  transform: scale(1);
+}
+#we-input-btn.we-ball-fail .we-ball-badge {
+  background: var(--we-danger);
+  border: 1.5px solid #0d1820;
+  transform: scale(1);
+}
+
+/* 悬停/状态提示气泡 */
+.we-ball-tip {
+  display: none;
+  position: absolute;
+  inset: auto 0 calc(100% + 8px) auto;
+  width: max-content;
+  max-width: 220px;
+  padding: 4px 9px;
+  border-radius: 8px;
+  background: rgba(13,24,32,0.95);
+  border: 1px solid var(--we-border);
+  color: var(--we-text);
+  font-size: 11px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.we-ball-tip:not(:empty) { display: block; }
+#we-input-btn.we-ball:hover .we-ball-tip:not(:empty) { display: block; }
+
+/* 兼容旧元素 */
+.we-external-status { display: none !important; }
 
 /* ===== 面板容器 ===== */
 #we-panel {

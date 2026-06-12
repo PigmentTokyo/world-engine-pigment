@@ -2156,40 +2156,150 @@ window.WORLD_ENGINE_UI = (function() {
       evolveBtn.disabled = active;
       evolveBtn.textContent = active ? '⏳ 推演中...' : '🌀 手动推演';
     }
+    const ball = document.getElementById('we-input-btn');
+    if (ball && active) {
+      ball.classList.add('we-ball-evolving');
+      ball.classList.remove('we-ball-success', 'we-ball-fail');
+    } else if (ball && !active) {
+      ball.classList.remove('we-ball-evolving');
+    }
   }
 
-  // ========== 输入栏地球按钮 ==========
+  // ========== 世界引擎悬浮球 ==========
   let inputButtonObserver = null;
   let inputButtonRetryTimer = null;
+  const WE_BALL_POS_KEY = 'we-ball-pos';
+  let _ballStatusTimer = null;
 
-  function findInputButtonMount() {
-    const sendButton = document.querySelector('#send_but');
-    if (sendButton?.parentElement) {
-      return { container: sendButton.parentElement, before: sendButton };
-    }
-
-    const container = document.querySelector('#send_form, #form_sheld, #chatbar, #quickReplyBlock');
-    if (container) return { container, before: null };
-
-    const textarea = document.querySelector('#send_textarea, textarea');
-    if (textarea?.parentElement) return { container: textarea.parentElement, before: null };
-
+  function loadBallPos() {
+    try {
+      const raw = localStorage.getItem(WE_BALL_POS_KEY);
+      if (raw) {
+        const p = JSON.parse(raw);
+        if (typeof p.left === 'number' && typeof p.top === 'number') return p;
+      }
+    } catch (_) {}
     return null;
+  }
+
+  function saveBallPos(left, top) {
+    try { localStorage.setItem(WE_BALL_POS_KEY, JSON.stringify({ left, top })); } catch (_) {}
+  }
+
+  function applyBallPos(ball) {
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const size = ball.offsetWidth || 52;
+    let pos = loadBallPos();
+    if (!pos) pos = { left: vw - size - 18, top: vh - size - 90 };
+    // 钳制进可视区域，避免拖出屏幕后找不到
+    pos.left = Math.max(4, Math.min(pos.left, vw - size - 4));
+    pos.top = Math.max(4, Math.min(pos.top, vh - size - 4));
+    ball.style.left = pos.left + 'px';
+    ball.style.top = pos.top + 'px';
+    ball.style.right = 'auto';
+    ball.style.bottom = 'auto';
+  }
+
+  function makeBallDraggable(ball) {
+    let dragging = false, moved = false, sx = 0, sy = 0, ox = 0, oy = 0;
+    const onDown = (e) => {
+      const pt = e.touches ? e.touches[0] : e;
+      dragging = true; moved = false;
+      sx = pt.clientX; sy = pt.clientY;
+      const rect = ball.getBoundingClientRect();
+      ox = rect.left; oy = rect.top;
+      ball.classList.add('we-ball-dragging');
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+      document.addEventListener('touchmove', onMove, { passive: false });
+      document.addEventListener('touchend', onUp);
+    };
+    const onMove = (e) => {
+      if (!dragging) return;
+      const pt = e.touches ? e.touches[0] : e;
+      const dx = pt.clientX - sx, dy = pt.clientY - sy;
+      if (Math.abs(dx) > 4 || Math.abs(dy) > 4) moved = true;
+      if (e.cancelable) e.preventDefault();
+      const size = ball.offsetWidth || 52;
+      let left = Math.max(4, Math.min(ox + dx, window.innerWidth - size - 4));
+      let top = Math.max(4, Math.min(oy + dy, window.innerHeight - size - 4));
+      ball.style.left = left + 'px';
+      ball.style.top = top + 'px';
+    };
+    const onUp = () => {
+      if (!dragging) return;
+      dragging = false;
+      ball.classList.remove('we-ball-dragging');
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.removeEventListener('touchmove', onMove);
+      document.removeEventListener('touchend', onUp);
+      if (moved) saveBallPos(parseFloat(ball.style.left), parseFloat(ball.style.top));
+    };
+    ball.addEventListener('mousedown', onDown);
+    ball.addEventListener('touchstart', onDown, { passive: true });
+    // 仅在没拖动时才视为点击
+    ball.addEventListener('click', (e) => {
+      if (moved) { e.preventDefault(); e.stopImmediatePropagation(); moved = false; }
+    }, true);
   }
 
   function observeInputButton() {
     if (inputButtonObserver || !document.body) return;
-
     inputButtonObserver = new MutationObserver(() => {
-      const btn = document.getElementById('we-input-btn');
-      const status = document.getElementById('we-external-status');
-      const mount = findInputButtonMount();
-      if (!btn || !status || (mount && btn.parentElement !== mount.container)) {
+      if (!document.getElementById('we-input-btn')) {
         clearTimeout(inputButtonRetryTimer);
         inputButtonRetryTimer = setTimeout(buildInputButton, 50);
       }
     });
     inputButtonObserver.observe(document.body, { childList: true, subtree: true });
+  }
+
+  // 解析推演状态文本 → 切换地球形态 + 进度环
+  function setBallState(text, isError) {
+    const ball = document.getElementById('we-input-btn');
+    if (!ball) return;
+    const tip = ball.querySelector('.we-ball-tip');
+    const ring = ball.querySelector('.we-ball-ring');
+    const badge = ball.querySelector('.we-ball-badge');
+    if (tip) tip.textContent = text || '';
+
+    ball.classList.remove('we-ball-evolving', 'we-ball-success', 'we-ball-fail');
+    clearTimeout(_ballStatusTimer);
+
+    if (/推演中|⏳/.test(text)) {
+      ball.classList.add('we-ball-evolving');
+      if (badge) badge.textContent = '';
+    } else if (isError || /失败|异常|❌/.test(text)) {
+      ball.classList.add('we-ball-fail');
+      if (badge) badge.textContent = '✕';
+      _ballStatusTimer = setTimeout(() => clearBallBadge(), 6000);
+    } else if (/完成|✅/.test(text)) {
+      ball.classList.add('we-ball-success');
+      if (badge) badge.textContent = '✓';
+      _ballStatusTimer = setTimeout(() => clearBallBadge(), 4000);
+    }
+
+    // 解析「第 N/X 轮」→ 进度环 + 数字
+    const m = /第\s*(\d+)\s*\/\s*(\d+)\s*轮/.exec(text || '');
+    if (ring && m) {
+      const cur = Number(m[1]), total = Number(m[2]) || 1;
+      const pct = Math.max(0, Math.min(1, cur / total));
+      ring.style.setProperty('--we-ring-pct', (pct * 360) + 'deg');
+      ball.classList.toggle('we-ball-counting', cur > 0 && cur < total);
+      const count = ball.querySelector('.we-ball-count');
+      if (count) count.textContent = (cur < total) ? `${cur}/${total}` : '';
+    }
+  }
+
+  function clearBallBadge() {
+    const ball = document.getElementById('we-input-btn');
+    if (!ball) return;
+    ball.classList.remove('we-ball-success', 'we-ball-fail');
+    const badge = ball.querySelector('.we-ball-badge');
+    if (badge) badge.textContent = '';
+    const tip = ball.querySelector('.we-ball-tip');
+    if (tip) tip.textContent = '';
   }
 
   function buildInputButton() {
@@ -2202,57 +2312,36 @@ window.WORLD_ENGINE_UI = (function() {
       btn.type = 'button';
       btn.title = '世界引擎';
       btn.setAttribute('aria-label', '世界引擎');
-      btn.textContent = '🌐';
-      btn.className = 'menu_button interactable';
-      btn.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;margin:0 4px;padding:4px 8px;cursor:pointer;';
+      btn.className = 'we-ball';
+      btn.innerHTML =
+        '<span class="we-ball-ring"></span>' +
+        '<span class="we-ball-globe"></span>' +
+        '<span class="we-ball-count"></span>' +
+        '<span class="we-ball-badge"></span>' +
+        '<span class="we-ball-tip"></span>';
       btn.onclick = () => togglePanel();
+      document.body.appendChild(btn);
+      applyBallPos(btn);
+      makeBallDraggable(btn);
+      window.addEventListener('resize', () => applyBallPos(btn));
+    } else if (btn.parentElement !== document.body) {
+      document.body.appendChild(btn);
+      applyBallPos(btn);
     }
-    btn.textContent = '🌐';
 
+    // 兼容旧的外部状态接口：保留隐藏元素，转发到地球状态机
     let statusIndicator = document.getElementById('we-external-status');
     if (!statusIndicator) {
       statusIndicator = document.createElement('span');
       statusIndicator.id = 'we-external-status';
-      statusIndicator.className = 'we-external-status';
-    }
-
-    const mount = findInputButtonMount();
-    if (mount) {
-      btn.dataset.weFallback = 'false';
-      btn.style.position = '';
-      btn.style.right = '';
-      btn.style.bottom = '';
-      btn.style.zIndex = '';
-      statusIndicator.style.position = '';
-      statusIndicator.style.right = '';
-      statusIndicator.style.bottom = '';
-      statusIndicator.style.zIndex = '';
-      mount.container.insertBefore(statusIndicator, mount.before);
-      mount.container.insertBefore(btn, mount.before);
-    } else {
-      btn.dataset.weFallback = 'true';
+      statusIndicator.style.display = 'none';
       document.body.appendChild(statusIndicator);
-      document.body.appendChild(btn);
-      btn.style.position = 'fixed';
-      btn.style.right = '72px';
-      btn.style.bottom = '16px';
-      btn.style.zIndex = '9999';
-      statusIndicator.style.position = 'fixed';
-      statusIndicator.style.right = '108px';
-      statusIndicator.style.bottom = '18px';
-      statusIndicator.style.zIndex = '9999';
     }
 
     window.__WE_SetExternalStatus = function(text, isError) {
       const el = document.getElementById('we-external-status');
-      if (!el) return;
-      el.textContent = text;
-      el.className = 'we-external-status' + (isError ? ' error' : '');
-      if (!isError && text.includes('完成')) {
-        setTimeout(() => {
-          if (el) { el.textContent = ''; el.className = 'we-external-status'; }
-        }, 3000);
-      }
+      if (el) el.textContent = text;
+      setBallState(text || '', !!isError);
     };
 
     buildPanel();
