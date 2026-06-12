@@ -1117,7 +1117,9 @@
 }
 
 .we-input-group input[type="text"],
-.we-input-group input[type="password"] {
+.we-input-group input[type="password"],
+.we-input-group input[type="number"],
+.we-input-group select {
   width: 100%;
   padding: 6px 10px;
   background: var(--we-bg);
@@ -1128,7 +1130,8 @@
   box-sizing: border-box;
 }
 
-.we-input-group input:focus {
+.we-input-group input:focus,
+.we-input-group select:focus {
   outline: none;
   border-color: var(--we-accent);
 }
