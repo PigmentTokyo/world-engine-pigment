@@ -88,8 +88,11 @@ window.WORLD_ENGINE_UI = (function() {
 
   let _activeTab = 'current';
 
-  function refresh() {
+  function refresh(auto) {
     if (!panelElement || !panelVisible) return;
+    // 后台自动刷新（30s 定时、推演完成）时，若正停留在设置页则跳过：
+    // 设置页是静态表单，重建会清掉正在输入的 API 信息和刚获取到的模型列表
+    if (auto && _activeTab === 'settings') return;
     const body = document.getElementById('we-panel-body');
     if (!body) return;
     listPagerCounter = 0;

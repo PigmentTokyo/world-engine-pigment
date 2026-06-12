@@ -261,7 +261,7 @@
           if (window.__WE_SetExternalStatus) window.__WE_SetExternalStatus('❌ 推演异常: ' + e.message, true);
         } finally {
           isEvolving = false;
-          if (ui) { ui.setEvolvingUI(false); ui.refresh(); }
+          if (ui) { ui.setEvolvingUI(false); ui.refresh(true); }
         }
       }
 
@@ -317,7 +317,7 @@
       }
 
       // 每隔 30 秒自动刷新面板（如果可见）
-      setInterval(() => { if (ui) ui.refresh(); }, 30000);
+      setInterval(() => { if (ui) ui.refresh(true); }, 30000);
 
       console.log('[世界引擎] 初始化完成 ✅');
     } catch(err) {
