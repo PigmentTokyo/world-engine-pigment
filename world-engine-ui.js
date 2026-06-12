@@ -330,6 +330,18 @@ window.WORLD_ENGINE_UI = (function() {
       `<option value="${stage}" ${event.stage === stage ? 'selected' : ''}>${stage}</option>`
     ).join('');
 
+    // 正面终局倒计时：默认值取当前剩余，非终局事件留空
+    const POSITIVE_TERMINALS = ['已爆发', '已完成'];
+    const keepRounds = 2 + (Number(event.level) || 1) * 2;
+    let leftValue = '';
+    if (POSITIVE_TERMINALS.includes(event.stage)) {
+      const curRound = (core.loadState() || {}).round || 0;
+      const left = event._terminalSince !== undefined
+        ? keepRounds - (curRound - event._terminalSince) + 1
+        : keepRounds;
+      leftValue = Math.min(keepRounds, Math.max(1, left));
+    }
+
     return `
       <div class="we-event-editor" data-event-scope="${scope}" data-event-index="${eventIndex}">
         <button class="we-event-editor-close" title="取消修改"><i class="fa-solid fa-xmark"></i></button>
@@ -339,6 +351,7 @@ window.WORLD_ENGINE_UI = (function() {
           <label>类型<select class="we-event-edit-type">${typeOptions}</select></label>
           <label>阶段<select class="we-event-edit-stage">${stageOptions}</select></label>
           <label>阶段进度<input class="we-event-edit-round" type="number" min="1" max="9" value="${event.stageRound || 1}"></label>
+          <label title="仅正面终局（已爆发/已完成）生效，到期自动清退；非终局留空">剩余轮数<input class="we-event-edit-left" type="number" min="1" placeholder="终局专用" value="${leftValue}"></label>
           <label class="we-event-editor-wide">描述<textarea class="we-event-edit-desc" rows="3">${u(event.desc || '')}</textarea></label>
         </div>
         <div class="we-event-editor-footer">
@@ -1047,6 +1060,18 @@ window.WORLD_ENGINE_UI = (function() {
         event.desc = editor.querySelector('.we-event-edit-desc').value.trim();
         event.consecutiveFails = 0;
         delete event.evolveResult;
+
+        // 剩余轮数 → 反推 _terminalSince（仅正面终局）
+        const POSITIVE_TERMINALS = ['已爆发', '已完成'];
+        if (POSITIVE_TERMINALS.includes(event.stage)) {
+          const K = 2 + (event.level || 1) * 2;
+          const curRound = scopedState.round || 0;
+          let left = Number(editor.querySelector('.we-event-edit-left').value);
+          left = Number.isFinite(left) && left >= 1 ? Math.min(K, left) : K;
+          event._terminalSince = curRound - K + left - 1;
+        } else {
+          delete event._terminalSince;
+        }
         core.ensureEventFields(event);
         saveScopedState(scope, scopedState);
         editingEvent = null;
