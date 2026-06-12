@@ -1337,48 +1337,106 @@
 .we-trend-ended::before,
 .we-trend-ended::after { display: none; }
 
-/* —— 事件链阶段：从萌芽到爆发、再到消散，各有体感 —— */
+/* —— 事件链：高级重做。去左色条，阶段色下放为 --event-accent，
+   以「顶端细光 + 整卡材质 + 进度条」承载阶段，不再用左侧色条 —— */
+.we-event-item {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--event-accent) 7%, var(--we-bg)), var(--we-bg) 55%);
+  border: 1px solid var(--we-border);
+  border-radius: 9px;
+  padding: 9px 12px 10px;
+}
+/* 顶端一道随阶段染色的细光，取代左色条 */
+.we-event-item::before {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; top: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent,
+    color-mix(in srgb, var(--event-accent) 78%, transparent) 18%,
+    color-mix(in srgb, var(--event-accent) 78%, transparent) 82%, transparent);
+}
+.we-event-item-terminal { overflow: hidden; }
+
+/* 进度条：细、圆、领头微光 */
+.we-event-progress {
+  height: 3px;
+  margin-top: 9px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 999px;
+}
+.we-event-progress > div {
+  border-radius: 999px;
+  box-shadow: 0 0 7px -1px var(--event-accent);
+}
+
 /* 萌芽：刚起，气息微弱 */
-.we-stage-sprout { box-shadow: inset 2px 0 0 -1px rgba(214,184,90,0.5); }
-.we-stage-sprout .we-event-name > span:first-child { opacity: 0.92; }
-/* 发酵：温度上来 */
-.we-stage-ferment { background: linear-gradient(100deg, rgba(217,138,61,0.06), var(--we-bg) 55%); }
-/* 逼近：临界，左缘缓缓搏动 */
+.we-stage-sprout::before { opacity: 0.5; }
+.we-stage-sprout .we-event-name > span:first-child { opacity: 0.95; }
+/* 发酵：温度渐起，卡面染色更明 */
+.we-stage-ferment {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--event-accent) 12%, var(--we-bg)), var(--we-bg) 60%);
+}
+/* 逼近：临界，整卡缓缓搏动（描边呼吸，非左条） */
 .we-stage-loom { animation: we-loom-pulse 2.4s ease-in-out infinite; }
 @keyframes we-loom-pulse {
-  0%,100% { box-shadow: inset 3px 0 0 -1px rgba(207,95,63,0.55), -1px 0 10px -6px rgba(207,95,63,0.0); }
-  50%     { box-shadow: inset 3px 0 0 -1px rgba(207,95,63,0.95), -1px 0 14px -4px rgba(207,95,63,0.55); }
+  0%,100% { box-shadow: 0 0 0 1px color-mix(in srgb, var(--event-accent) 22%, transparent); }
+  50%     { box-shadow: 0 0 13px -3px color-mix(in srgb, var(--event-accent) 55%, transparent),
+                        0 0 0 1px color-mix(in srgb, var(--event-accent) 52%, transparent); }
 }
-/* 爆发：出现时一记火光闪现，随后余烬般缓慢明灭 */
+
+/* 爆发：出现时一记火光，随后余烬般明灭（红） */
 .we-stage-erupt {
-  background:
-    radial-gradient(120% 80% at 0% 50%, rgba(224,116,101,0.26), transparent 60%),
-    #4a2326 !important;
-  animation: we-erupt-flash 0.85s ease-out 1, we-erupt-ember 3.4s ease-in-out 0.85s infinite;
-}
-@keyframes we-erupt-flash {
-  0%   { box-shadow: inset 0 0 0 0 rgba(255,140,90,0); transform: translateX(0); }
-  12%  { box-shadow: inset 0 0 28px 2px rgba(255,150,90,0.55); transform: translateX(1px); }
-  24%  { transform: translateX(-1px); }
-  36%  { transform: translateX(0); }
-  100% { box-shadow: inset 0 0 0 0 rgba(255,140,90,0); }
+  background: radial-gradient(130% 90% at 50% 0%, rgba(224,116,101,0.28), transparent 60%), #462326;
+  border-color: color-mix(in srgb, #e07465 42%, var(--we-border));
+  animation: we-burst-flash 0.9s ease-out 1, we-erupt-ember 3.4s ease-in-out 0.9s infinite;
 }
 @keyframes we-erupt-ember {
-  0%,100% { border-left-color: #b93f3f; }
-  50%     { border-left-color: #e88a5a; }
+  0%,100% { box-shadow: 0 0 0 1px rgba(185,63,63,0.5); }
+  50%     { box-shadow: 0 0 14px -3px rgba(232,138,90,0.6), 0 0 0 1px rgba(232,138,90,0.6); }
 }
-.we-stage-erupt .we-event-stamp { animation: we-stamp-slam 0.5s cubic-bezier(.2,1.4,.4,1) 1; }
+
+/* 成功（已完成）：同样来一记爆发，但是绿色的捷报上扬 */
+.we-stage-done {
+  background: radial-gradient(130% 90% at 50% 0%, rgba(111,194,138,0.26), transparent 60%), #1d3a2b;
+  border-color: color-mix(in srgb, #6fc28a 42%, var(--we-border));
+  animation: we-burst-flash-up 0.9s ease-out 1, we-done-glow 3.4s ease-in-out 0.9s infinite;
+}
+@keyframes we-done-glow {
+  0%,100% { box-shadow: 0 0 0 1px rgba(35,122,77,0.5); }
+  50%     { box-shadow: 0 0 14px -3px rgba(111,194,138,0.62), 0 0 0 1px rgba(111,194,138,0.62); }
+}
+
+/* 爆发/成功 共用：入场火光（红向中性、绿向上扬） */
+@keyframes we-burst-flash {
+  0%   { box-shadow: inset 0 0 0 0 rgba(255,150,100,0); transform: scale(1); }
+  10%  { box-shadow: inset 0 0 30px 4px rgba(255,150,100,0.55), 0 0 18px -2px rgba(255,120,80,0.45); transform: scale(1.012); }
+  30%  { transform: scale(0.997); }
+  100% { box-shadow: inset 0 0 0 0 rgba(255,150,100,0); transform: scale(1); }
+}
+@keyframes we-burst-flash-up {
+  0%   { box-shadow: inset 0 0 0 0 rgba(130,225,160,0); transform: translateY(0) scale(1); }
+  12%  { box-shadow: inset 0 0 30px 4px rgba(130,225,160,0.5), 0 0 18px -2px rgba(110,200,140,0.45); transform: translateY(-2px) scale(1.012); }
+  40%  { transform: translateY(0) scale(0.998); }
+  100% { box-shadow: inset 0 0 0 0 rgba(130,225,160,0); transform: translateY(0) scale(1); }
+}
+/* 终局印章：砸下定格 */
+.we-stage-erupt .we-event-stamp,
+.we-stage-done .we-event-stamp { animation: we-stamp-slam 0.5s cubic-bezier(.2,1.4,.4,1) 1; }
 @keyframes we-stamp-slam {
   0%   { transform: rotate(14deg) scale(2.1); opacity: 0; }
   60%  { transform: rotate(11deg) scale(0.92); opacity: 1; }
   100% { transform: rotate(14deg) scale(1); opacity: 0.78; }
 }
-/* 消散：色褪、字淡、缓缓飘散归于沉寂 */
+
+/* 消散：色褪、字淡、印章缓缓飘散归寂 */
 .we-stage-fade {
-  background: #2c2c30 !important;
+  background: #2b2b30;
+  border-color: var(--we-border);
   filter: grayscale(0.7);
-  opacity: 0.8;
+  opacity: 0.82;
 }
+.we-stage-fade::before { opacity: 0.3; }
 .we-stage-fade .we-event-name,
 .we-stage-fade .we-event-meta { opacity: 0.72; }
 .we-stage-fade .we-event-stamp {
@@ -1389,9 +1447,12 @@
   0%,100% { opacity: 0.32; transform: rotate(14deg) translateY(0); }
   50%     { opacity: 0.62; transform: rotate(14deg) translateY(-2px); }
 }
-/* 已完成 / 已失败：正负终局，沉稳收束 */
-.we-stage-done { background: #1f3a2c !important; }
-.we-stage-failed { background: #3a2630 !important; filter: grayscale(0.3); }
+/* 已失败：负向终局，沉郁收束 */
+.we-stage-failed {
+  background: #392631;
+  border-color: color-mix(in srgb, #c08aaa 25%, var(--we-border));
+  filter: grayscale(0.35);
+}
 
 /* —— 风声四态：以「形态 + 材质 + 字态」区分，不靠左色条 ——
    公告＝张榜布告 / 消息＝电文实录 / 流言＝耳语 / 舆情＝众潮     */
@@ -1568,7 +1629,9 @@
   .we-trend-item:not(.we-trend-ended)::after,
   .we-stage-loom,
   .we-stage-erupt,
+  .we-stage-done,
   .we-stage-erupt .we-event-stamp,
+  .we-stage-done .we-event-stamp,
   .we-stage-fade .we-event-stamp,
   .we-wind-rumor:hover,
   .we-wind-sentiment::after,

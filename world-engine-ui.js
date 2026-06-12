@@ -268,12 +268,6 @@ window.WORLD_ENGINE_UI = (function() {
           countdownHtml = ` <span class="we-badge we-event-countdown" style="color:${cdColor};" title="该事件在 ${left} 轮后自动清退"><i class="fa-regular fa-clock"></i>剩余${left}轮</span>`;
         }
       }
-      const terminalBg = {
-        已完成: '#244a34',
-        已爆发: '#5a2528',
-        已消散: '#34343a',
-        已失败: '#3a3038'
-      }[e.stage] || '#34343a';
       const terminalStamp = {
         已完成: { text: '完成', color: '#6fc28a' },
         已爆发: { text: '爆发', color: '#e07465' },
@@ -281,9 +275,8 @@ window.WORLD_ENGINE_UI = (function() {
         已失败: { text: '失败', color: '#c08aaa' }
       }[e.stage];
       const isEditing = editingEvent?.scope === scope && editingEvent?.index === eventIndex;
-      const itemStyle = isTerminal
-        ? `border-left:3px solid ${color};background:${terminalBg};position:relative;overflow:hidden;`
-        : `border-left:3px solid ${color};position:relative;`;
+      // 颜色作为 CSS 变量下放，描边/底色/光效全交由样式层处理（不再内联左色条）
+      const itemStyle = `--event-accent:${color};--event-type:${typeColor};--event-level:${levelColor};`;
       const stageClassMap = {
         萌芽: 'we-stage-sprout', 发酵: 'we-stage-ferment', 逼近: 'we-stage-loom',
         已爆发: 'we-stage-erupt', 已消散: 'we-stage-fade',
