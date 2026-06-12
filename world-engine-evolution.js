@@ -608,10 +608,21 @@ ${OUTPUT_INSTRUCTIONS}
 ${JSON_EXAMPLE}
 ${extraInstruction ? '\n' + extraInstruction : ''}`;
 
-    const rawResult = await api.callApi(prompt, 5000, 0.7, _abortController.signal);
+    const rawResult = await api.callApi(prompt, 8000, 0.7, _abortController.signal);
     _lastPrompt = prompt;
     _lastRawResult = rawResult;
-    const update = api.parseJSON(rawResult) || {};
+    const update = api.parseJSON(rawResult);
+    if (!update || typeof update !== 'object' || Array.isArray(update)) {
+      throw new Error('API 返回无法解析为有效 JSON，已保留重 roll 前的当前状态');
+    }
+    const knownFields = [
+      'events', 'factions', 'worldTrends', 'winds', 'economy', 'reputation',
+      'world_digest', 'enemies', 'influenceChain', 'regionalIncident', 'blackbox'
+    ];
+    if (!knownFields.some(field => Object.prototype.hasOwnProperty.call(update, field))) {
+      throw new Error('API 返回不包含任何世界状态字段，已保留重 roll 前的当前状态');
+    }
+    console.log('[世界引擎] API JSON 解析成功，世界摘要:', update.world_digest || '[未返回]');
 
     update.events = update.events || [];
     update.factions = update.factions || [];

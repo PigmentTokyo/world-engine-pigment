@@ -65,24 +65,55 @@ window.WORLD_ENGINE_API = (function() {
     }
 
     const data = await resp.json();
-    return data.choices[0].message.content;
+    const choice = data.choices?.[0];
+    if (!choice) throw new Error('API 返回缺少 choices[0]');
+    if (choice.finish_reason === 'length') {
+      throw new Error('API 输出达到长度上限并被截断，请提高输出 token 上限或减少世界状态内容');
+    }
+    return choice.message?.content || '';
   }
 
   /**
    * 解析 API 返回的 JSON（容错处理）
    */
   function parseJSON(text) {
-    let content = text.trim();
+    let content = String(text || '').trim();
     content = content.replace(/^```json\s*/i, '').replace(/\s*```\s*$/, '').trim();
     try {
       return JSON.parse(content);
-    } catch(e) {
-      const match = content.match(/\{[\s\S]*\}/);
-      if (match) {
-        try { return JSON.parse(match[0]); } catch(e2) {}
+    } catch(e) {}
+
+    // 从夹杂说明、思考文本或多个代码块的返回中提取顶层 JSON；
+    // 模型的最终答案通常位于最后，因此采用最后一个有效对象。
+    let depth = 0;
+    let start = -1;
+    let inString = false;
+    let escaped = false;
+    let result = null;
+    for (let i = 0; i < content.length; i++) {
+      const char = content[i];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (char === '\\') escaped = true;
+        else if (char === '"') inString = false;
+        continue;
+      }
+      if (char === '"') {
+        inString = true;
+      } else if (char === '{') {
+        if (depth === 0) start = i;
+        depth++;
+      } else if (char === '}' && depth > 0) {
+        depth--;
+        if (depth === 0 && start !== -1) {
+          try {
+            result = JSON.parse(content.slice(start, i + 1));
+          } catch(e2) {}
+          start = -1;
+        }
       }
     }
-    return null;
+    return result;
   }
 
   /**
