@@ -57,6 +57,10 @@ window.WORLD_ENGINE_CORE = (function() {
       },
       lastEvolveResult: null,
       lastInjection: null,
+      // 每 X 轮自动推演的计数（按聊天独立）：
+      // roundCounter = 当前已累计的向前轮数；lastCountedLayer = 已计数的最高对话层数（防重 roll 重复计数）
+      roundCounter: 0,
+      lastCountedLayer: 0,
       lastUpdated: {}
     };
   }
@@ -170,6 +174,8 @@ window.WORLD_ENGINE_CORE = (function() {
       state.blackbox.secretAssets = state.blackbox.secretAssets || [];
     }
     state.lastInjection = state.lastInjection || null;
+    if (!Number.isFinite(Number(state.roundCounter))) state.roundCounter = 0;
+    if (!Number.isFinite(Number(state.lastCountedLayer))) state.lastCountedLayer = 0;
     return state;
   }
 

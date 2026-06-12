@@ -236,6 +236,45 @@
           return;
         }
 
+        // ===== 推演模式与计数：决定本条消息是否自动推演 =====
+        const settings = api.getSettings(true);
+        if (settings.evolveMode === 'manual') {
+          // 手动模式：只由「手动推演」按钮触发，这里不做任何自动推演
+          lastProcessedMessageKey = currentKey;
+          return;
+        }
+        const everyX = Math.max(1, parseInt(settings.evolveEveryX) || 1);
+        {
+          const cs = core.loadState();
+          const L = Number(core.getChatFingerprint()) || 0;        // = chat.length
+          const lastCounted = Number(cs.lastCountedLayer) || 0;
+          const lastEvolved = Number(core.loadFingerprint()) || 0; // 上次推演时的 chat.length
+          let doEvolve;
+          if (L > lastCounted) {
+            // 向前推进一轮：计数 +1（重 roll 不会进这里）
+            cs.roundCounter = (Number(cs.roundCounter) || 0) + 1;
+            cs.lastCountedLayer = L;
+            if (cs.roundCounter >= everyX) {
+              cs.roundCounter = 0;
+              doEvolve = true;
+            } else {
+              doEvolve = false;
+            }
+            core.saveState(cs);
+          } else {
+            // 重 roll（层数没增长）：只有重 roll 的正是「推演轮」才重推，计数器不动
+            doEvolve = (lastEvolved > 0 && L === lastEvolved);
+          }
+          if (!doEvolve) {
+            lastProcessedMessageKey = currentKey;
+            if (window.__WE_SetExternalStatus) {
+              window.__WE_SetExternalStatus(`⏸ 第 ${cs.roundCounter || everyX}/${everyX} 轮，未到推演`);
+            }
+            if (ui) ui.refresh(true);
+            return;
+          }
+        }
+
         isEvolving = true;
         try {
           const state = core.loadState();

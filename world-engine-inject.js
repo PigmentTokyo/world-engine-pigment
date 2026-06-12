@@ -161,7 +161,6 @@ window.WORLD_ENGINE_INJECT = (function() {
 【近期重大事件账本】
 ${ledgerText}
 
-【活体核心规则】
 ${rulesSummary}
     `.trim();
 

@@ -5,18 +5,21 @@ window.WORLD_ENGINE_API = (function() {
   function getSettings(forceRefresh) {
     if (forceRefresh) cachedSettings = null;
     if (cachedSettings) return cachedSettings;
-    const raw = window.WORLD_ENGINE_STORE.getItem('world_engine_settings');
-    if (raw) {
-      try { cachedSettings = JSON.parse(raw); return cachedSettings; } catch(e) {}
-    }
-    cachedSettings = {
+    const defaults = {
       apiUrl: '',
       apiKey: '',
       model: 'gpt-3.5-turbo',
       temperature: 0.7,
       maxTokens: 2000,
-      injectIntoPrompt: true
+      injectIntoPrompt: true,
+      evolveMode: 'auto',
+      evolveEveryX: 1
     };
+    const raw = window.WORLD_ENGINE_STORE.getItem('world_engine_settings');
+    if (raw) {
+      try { cachedSettings = { ...defaults, ...JSON.parse(raw) }; return cachedSettings; } catch(e) {}
+    }
+    cachedSettings = defaults;
     return cachedSettings;
   }
 

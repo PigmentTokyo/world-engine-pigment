@@ -851,8 +851,17 @@ window.WORLD_ENGINE_UI = (function() {
   }
 
   function renderSettingsForm() {
-    const settings = JSON.parse(window.WORLD_ENGINE_STORE.getItem('world_engine_settings') || '{}');
-    return `
+    const settings = window.WORLD_ENGINE_API
+      ? window.WORLD_ENGINE_API.getSettings(true)
+      : JSON.parse(window.WORLD_ENGINE_STORE.getItem('world_engine_settings') || '{}');
+    const mode = settings.evolveMode === 'manual' ? 'manual' : 'auto';
+    const everyX = Math.max(1, parseInt(settings.evolveEveryX) || 1);
+
+    const sec = (id, title, body) =>
+      '<div class="we-section"><div class="we-section-title">' + sectionHeader(title, id) + '</div>' +
+      sectionBody(id, body) + '</div>';
+
+    const apiBody = `
       <div class="we-input-group">
         <label>API URL（OpenAI 兼容）</label>
         <input type="text" id="we-api-url" value="${u(settings.apiUrl||'')}" placeholder="https://api.openai.com/v1">
@@ -872,22 +881,35 @@ window.WORLD_ENGINE_UI = (function() {
         <select id="we-model-list" style="display:none;width:100%;margin-top:4px;">
           <option value="">-- 选择模型 --</option>
         </select>
+      </div>`;
+
+    const evolveBody = `
+      <div class="we-input-group">
+        <label>推演模式</label>
+        <select id="we-evolve-mode" style="width:100%;">
+          <option value="auto" ${mode === 'auto' ? 'selected' : ''}>自动（每 X 轮推演一次）</option>
+          <option value="manual" ${mode === 'manual' ? 'selected' : ''}>手动（仅点「手动推演」才触发）</option>
+        </select>
       </div>
+      <div class="we-input-group" id="we-evolve-everyx-group" style="${mode === 'manual' ? 'display:none;' : ''}">
+        <label>每几轮推演一次（X）</label>
+        <input type="number" id="we-evolve-everyx" min="1" step="1" value="${everyX}" style="width:100%;">
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">填 1 = 每轮推演；填 3 = 每向前 3 轮推演一次。重 roll 不计入轮数。</div>
+      </div>`;
+
+    const injectBody = `
       <div class="we-input-group">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
           <input type="checkbox" id="we-inject-into-prompt" ${settings.injectIntoPrompt !== false ? 'checked' : ''}>
           注入正文
         </label>
         <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">关闭后不会将当前状态或存档点注入聊天正文。</div>
-      </div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;">
-        <button class="we-btn" id="we-save-settings">💾 保存设置</button>
-        <button class="we-btn we-btn-danger" id="we-reset-world" style="margin-left:0;">🗑️ 重置世界</button>
-      </div>
+      </div>`;
+
+    const worldbookBody = `
       <div class="we-worldbook-settings">
         <div class="we-worldbook-header">
           <div>
-            <div class="we-worldbook-title">📚 后台推演世界书</div>
             <div class="we-worldbook-summary" id="we-worldbook-summary">正在读取当前聊天世界书...</div>
           </div>
           <button class="we-icon-btn" id="we-worldbook-reload" title="重新读取当前聊天世界书"><i class="fa-solid fa-rotate"></i></button>
@@ -900,16 +922,24 @@ window.WORLD_ENGINE_UI = (function() {
         <div class="we-worldbook-list" id="we-worldbook-list">
           <div class="we-empty">正在读取...</div>
         </div>
-      </div>
-      <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--we-border);">
-        <div style="font-size:12px;color:var(--we-text2);margin-bottom:6px;">📦 数据导入/导出</div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;">
-          <button class="we-btn" id="we-export-data">📤 导出 JSON</button>
-          <button class="we-btn" id="we-import-data">📥 导入 JSON</button>
-          <input type="file" id="we-import-file" accept=".json" style="display:none;">
-        </div>
-      </div>
-    `;
+      </div>`;
+
+    const dataBody = `
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="we-btn" id="we-export-data">📤 导出 JSON</button>
+        <button class="we-btn" id="we-import-data">📥 导入 JSON</button>
+        <input type="file" id="we-import-file" accept=".json" style="display:none;">
+      </div>`;
+
+    return sec('set-api', '🔌 API 配置', apiBody)
+      + sec('set-evolve', '⚙️ 推演模式', evolveBody)
+      + sec('set-inject', '💉 正文注入', injectBody)
+      + `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:10px 0;">
+           <button class="we-btn" id="we-save-settings">💾 保存设置</button>
+           <button class="we-btn we-btn-danger" id="we-reset-world" style="margin-left:0;">🗑️ 重置世界</button>
+         </div>`
+      + sec('set-worldbook', '📚 后台推演世界书', worldbookBody)
+      + sec('set-data', '📦 数据导入/导出', dataBody);
   }
 
   function bindEvents(state) {
@@ -1527,12 +1557,23 @@ window.WORLD_ENGINE_UI = (function() {
           apiUrl: document.getElementById('we-api-url')?.value || '',
           apiKey: document.getElementById('we-api-key')?.value || '',
           model: document.getElementById('we-model')?.value || 'gpt-3.5-turbo',
-          injectIntoPrompt: document.getElementById('we-inject-into-prompt')?.checked !== false
+          injectIntoPrompt: document.getElementById('we-inject-into-prompt')?.checked !== false,
+          evolveMode: document.getElementById('we-evolve-mode')?.value === 'manual' ? 'manual' : 'auto',
+          evolveEveryX: Math.max(1, parseInt(document.getElementById('we-evolve-everyx')?.value) || 1)
         };
         window.WORLD_ENGINE_STORE.setItem('world_engine_settings', JSON.stringify(ns));
         if (window.WORLD_ENGINE_API) window.WORLD_ENGINE_API.getSettings(true);
         window.WORLD_ENGINE?.applyInjection?.();
         showToast('✅ 设置已保存');
+      };
+    }
+
+    // 推演模式切换：手动时隐藏 X 输入
+    const evolveModeSel = document.getElementById('we-evolve-mode');
+    if (evolveModeSel) {
+      evolveModeSel.onchange = () => {
+        const group = document.getElementById('we-evolve-everyx-group');
+        if (group) group.style.display = evolveModeSel.value === 'manual' ? 'none' : '';
       };
     }
 
@@ -1741,6 +1782,7 @@ window.WORLD_ENGINE_UI = (function() {
         const api = window.WORLD_ENGINE_API;
         if (!api) { showToast('❌ API 模块未加载', true); return; }
         window.WORLD_ENGINE_STORE.setItem('world_engine_settings', JSON.stringify({
+          ...(api.getSettings ? api.getSettings(true) : {}),
           apiUrl: document.getElementById('we-api-url')?.value || '',
           apiKey: document.getElementById('we-api-key')?.value || '',
           model: document.getElementById('we-model')?.value || '',
