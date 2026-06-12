@@ -24,7 +24,7 @@ window.WORLD_ENGINE_WORLDBOOK = (function() {
   }
 
   function getSelectedIds() {
-    return parseStored(localStorage.getItem(getSelectionKey())).ids;
+    return parseStored(window.WORLD_ENGINE_STORE.getItem(getSelectionKey())).ids;
   }
 
   // 找出最老的一条其它聊天的选择记录（按保存时间戳；老格式无时间戳视为最老）
@@ -32,17 +32,16 @@ window.WORLD_ENGINE_WORLDBOOK = (function() {
     const currentKey = getSelectionKey();
     let oldestKey = null;
     let oldestT = Infinity;
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
+    for (const key of window.WORLD_ENGINE_STORE.keys()) {
       if (!key || !key.startsWith(STORAGE_PREFIX) || key === currentKey) continue;
-      const t = parseStored(localStorage.getItem(key)).t;
+      const t = parseStored(window.WORLD_ENGINE_STORE.getItem(key)).t;
       if (t < oldestT) {
         oldestT = t;
         oldestKey = key;
       }
     }
     if (oldestKey) {
-      localStorage.removeItem(oldestKey);
+      window.WORLD_ENGINE_STORE.removeItem(oldestKey);
       return true;
     }
     return false;
@@ -52,10 +51,10 @@ window.WORLD_ENGINE_WORLDBOOK = (function() {
     const uniqueIds = [...new Set(Array.isArray(ids) ? ids.filter(id => typeof id === 'string') : [])];
     const value = JSON.stringify({ ids: uniqueIds, t: Date.now() });
     const currentKey = getSelectionKey();
-    // 配额超限：每次只删掉最老的一条其它聊天记录，删到塞得下为止
+    // 改用 IndexedDB 后基本不会再满；若回退 localStorage 仍超限，则每次删最老一条再重试（FIFO 兜底）
     while (true) {
       try {
-        localStorage.setItem(currentKey, value);
+        window.WORLD_ENGINE_STORE.setItem(currentKey, value);
         return;
       } catch (e) {
         if (!removeOldestOtherSelection()) throw e;

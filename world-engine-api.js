@@ -5,7 +5,7 @@ window.WORLD_ENGINE_API = (function() {
   function getSettings(forceRefresh) {
     if (forceRefresh) cachedSettings = null;
     if (cachedSettings) return cachedSettings;
-    const raw = localStorage.getItem('world_engine_settings');
+    const raw = window.WORLD_ENGINE_STORE.getItem('world_engine_settings');
     if (raw) {
       try { cachedSettings = JSON.parse(raw); return cachedSettings; } catch(e) {}
     }

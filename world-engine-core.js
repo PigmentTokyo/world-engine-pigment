@@ -176,7 +176,7 @@ window.WORLD_ENGINE_CORE = (function() {
   function loadState() {
     const chatId = getChatId();
     const key = STORAGE_PREFIX + chatId;
-    const raw = localStorage.getItem(key);
+    const raw = window.WORLD_ENGINE_STORE.getItem(key);
     if (raw) {
       try {
         const saved = JSON.parse(raw);
@@ -195,7 +195,7 @@ window.WORLD_ENGINE_CORE = (function() {
     const key = STORAGE_PREFIX + chatId;
     ensureArrays(state);
     state.lastUpdated = { chatId, timestamp: Date.now() };
-    localStorage.setItem(key, JSON.stringify(state));
+    window.WORLD_ENGINE_STORE.setItem(key, JSON.stringify(state));
   }
 
   /** 保存状态并记录当前对话层数（evolve 完成后调用） */
@@ -221,13 +221,13 @@ window.WORLD_ENGINE_CORE = (function() {
     const key = getCheckpointKey();
     const cp = JSON.parse(JSON.stringify(state));
     ensureArrays(cp);
-    localStorage.setItem(key, JSON.stringify(cp));
+    window.WORLD_ENGINE_STORE.setItem(key, JSON.stringify(cp));
   }
 
   /** 从存档点 a 恢复状态 */
   function restoreCheckpoint() {
     const key = getCheckpointKey();
-    const raw = localStorage.getItem(key);
+    const raw = window.WORLD_ENGINE_STORE.getItem(key);
     if (raw) {
       try {
         const cp = JSON.parse(raw);
@@ -239,7 +239,7 @@ window.WORLD_ENGINE_CORE = (function() {
 
   /** 删除存档点 */
   function clearCheckpoint() {
-    localStorage.removeItem(getCheckpointKey());
+    window.WORLD_ENGINE_STORE.removeItem(getCheckpointKey());
   }
 
   /** 获取当前对话层数（从 0 开始计数） */
@@ -263,12 +263,12 @@ window.WORLD_ENGINE_CORE = (function() {
 
   /** 保存指纹到 localStorage */
   function saveFingerprint(fp) {
-    localStorage.setItem(getFingerprintKey(), fp);
+    window.WORLD_ENGINE_STORE.setItem(getFingerprintKey(), fp);
   }
 
   /** 读取上次保存的指纹 */
   function loadFingerprint() {
-    return localStorage.getItem(getFingerprintKey()) || '';
+    return window.WORLD_ENGINE_STORE.getItem(getFingerprintKey()) || '';
   }
 
   /** 判断是否为新对话轮次（指纹变了 → 新轮次；没变 → 重roll） */

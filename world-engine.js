@@ -4,6 +4,7 @@
   window.__WORLD_ENGINE_LOADED__ = true;
 
   const MODULES = [
+    'world-engine-store.js',
     'world-engine-core.js',
     'world-engine-api.js',
     'world-engine-rules-loader.js',
@@ -43,6 +44,11 @@
       for (const mod of MODULES) {
         await loadScript(baseUrl + '/' + mod);
         console.log('[世界引擎] 已加载:', mod);
+      }
+
+      // 先把存储灌入内存镜像（并迁移旧 localStorage 存档），之后所有同步读写才有数据
+      if (window.WORLD_ENGINE_STORE) {
+        await window.WORLD_ENGINE_STORE.hydrate();
       }
 
       const core = window.WORLD_ENGINE_CORE;

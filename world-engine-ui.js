@@ -848,7 +848,7 @@ window.WORLD_ENGINE_UI = (function() {
   }
 
   function renderSettingsForm() {
-    const settings = JSON.parse(localStorage.getItem('world_engine_settings') || '{}');
+    const settings = JSON.parse(window.WORLD_ENGINE_STORE.getItem('world_engine_settings') || '{}');
     return `
       <div class="we-input-group">
         <label>API URL（OpenAI 兼容）</label>
@@ -1526,7 +1526,7 @@ window.WORLD_ENGINE_UI = (function() {
           model: document.getElementById('we-model')?.value || 'gpt-3.5-turbo',
           injectIntoPrompt: document.getElementById('we-inject-into-prompt')?.checked !== false
         };
-        localStorage.setItem('world_engine_settings', JSON.stringify(ns));
+        window.WORLD_ENGINE_STORE.setItem('world_engine_settings', JSON.stringify(ns));
         if (window.WORLD_ENGINE_API) window.WORLD_ENGINE_API.getSettings(true);
         window.WORLD_ENGINE?.applyInjection?.();
         showToast('✅ 设置已保存');
@@ -1737,7 +1737,7 @@ window.WORLD_ENGINE_UI = (function() {
       fetchBtn.onclick = async () => {
         const api = window.WORLD_ENGINE_API;
         if (!api) { showToast('❌ API 模块未加载', true); return; }
-        localStorage.setItem('world_engine_settings', JSON.stringify({
+        window.WORLD_ENGINE_STORE.setItem('world_engine_settings', JSON.stringify({
           apiUrl: document.getElementById('we-api-url')?.value || '',
           apiKey: document.getElementById('we-api-key')?.value || '',
           model: document.getElementById('we-model')?.value || '',
