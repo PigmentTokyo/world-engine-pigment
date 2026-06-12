@@ -19,6 +19,10 @@ window.WORLD_ENGINE_UI = (function() {
   const listPageState = {};
   const sectionCollapsed = {};
   const expandedWorldbookGroups = new Set();
+  // 世界书缓存（模块级，跨 refresh() 存活）
+  let _wbCachedEntries = null;
+  let _wbCachedSelectedIds = null;
+  let _wbCachedChatId = null;
 
   function h(str) {
     if (!str) return '';
@@ -1521,10 +1525,6 @@ window.WORLD_ENGINE_UI = (function() {
       const clearAllBtn = document.getElementById('we-worldbook-clear-all');
       const saveWorldbookBtn = document.getElementById('we-worldbook-save');
 
-      // 缓存世界书条目和已选 ID，避免 refresh() 重建列表时滚动到顶部
-      let _cachedEntries = null;
-      let _cachedSelectedIds = null;
-
       function updateWorldbookSummary() {
         const checkboxes = [...worldbookList.querySelectorAll('.we-worldbook-entry-check')];
         const selected = checkboxes.filter(checkbox => checkbox.checked);
@@ -1540,22 +1540,35 @@ window.WORLD_ENGINE_UI = (function() {
         worldbookList.innerHTML = '<div class="we-empty">正在读取当前聊天世界书...</div>';
         if (reloadBtn) reloadBtn.disabled = true;
         try {
-          _cachedEntries = await worldbook.loadCurrentEntries();
-          _cachedSelectedIds = new Set(worldbook.getSelectedIds());
+          const entries = await worldbook.loadCurrentEntries();
+          const currentChatId = worldbook.getChatId ? worldbook.getChatId() : (window.WORLD_ENGINE_CORE?.getChatId?.() || 'default');
+          const savedIds = worldbook.getSelectedIds();
+          _wbCachedEntries = entries;
+          _wbCachedChatId = currentChatId;
+          // 首次进入该聊天（无历史保存记录）则自动全选启用条目
+          if (!savedIds.length && entries.length) {
+            const allIds = entries.filter(e => !e.disabled).map(e => e.id);
+            worldbook.saveSelectedIds(allIds);
+            _wbCachedSelectedIds = new Set(allIds);
+            showToast(`✅ 已自动全选 ${allIds.length} 条世界书条目`);
+          } else {
+            _wbCachedSelectedIds = new Set(savedIds);
+          }
           renderWorldbookList();
         } catch(error) {
           worldbookList.innerHTML = `<div class="we-empty">读取失败：${u(error.message)}</div>`;
           if (summary) summary.textContent = '读取失败';
-          _cachedEntries = null;
-          _cachedSelectedIds = null;
+          _wbCachedEntries = null;
+          _wbCachedSelectedIds = null;
+          _wbCachedChatId = null;
         } finally {
           if (reloadBtn) reloadBtn.disabled = false;
         }
       }
 
       function renderWorldbookList() {
-        const entries = _cachedEntries;
-        const selectedIds = _cachedSelectedIds || new Set();
+        const entries = _wbCachedEntries;
+        const selectedIds = _wbCachedSelectedIds || new Set();
         if (!entries || !entries.length) {
           worldbookList.innerHTML = '<div class="we-empty">当前聊天未关联可读取的世界书条目</div>';
           if (summary) summary.textContent = '0 条可选';
@@ -1594,7 +1607,7 @@ window.WORLD_ENGINE_UI = (function() {
         }).join('');
           worldbookList.querySelectorAll('.we-worldbook-entry-check').forEach(checkbox => {
             checkbox.onchange = () => {
-              _cachedSelectedIds = new Set([...worldbookList.querySelectorAll('.we-worldbook-entry-check:checked')].map(cb => cb.value));
+              _wbCachedSelectedIds = new Set([...worldbookList.querySelectorAll('.we-worldbook-entry-check:checked')].map(cb => cb.value));
               updateWorldbookSummary();
             };
           });
@@ -1629,7 +1642,7 @@ window.WORLD_ENGINE_UI = (function() {
           updateWorldbookSummary();
       }
 
-      if (reloadBtn) reloadBtn.onclick = () => { _cachedEntries = null; loadWorldbookEntries(); };
+      if (reloadBtn) reloadBtn.onclick = () => { _wbCachedEntries = null; _wbCachedChatId = null; loadWorldbookEntries(); };
       if (selectAllBtn) selectAllBtn.onclick = () => {
         worldbookList.querySelectorAll('.we-worldbook-entry-check').forEach(checkbox => {
           checkbox.checked = true;
@@ -1643,11 +1656,17 @@ window.WORLD_ENGINE_UI = (function() {
         });
       };
       if (saveWorldbookBtn) saveWorldbookBtn.onclick = () => {
-        worldbook.saveSelectedIds([..._cachedSelectedIds]);
-        showToast(`✅ 已保存 ${_cachedSelectedIds.size} 条后台世界书条目`);
+        worldbook.saveSelectedIds([..._wbCachedSelectedIds]);
+        showToast(`✅ 已保存 ${_wbCachedSelectedIds.size} 条后台世界书条目`);
         updateWorldbookSummary();
       };
-      loadWorldbookEntries();
+      // refresh() 重建 DOM 时，如果 chatId 未变且已有缓存，直接渲染，避免勾选丢失
+      const currentChatIdNow = worldbook.getChatId ? worldbook.getChatId() : (window.WORLD_ENGINE_CORE?.getChatId?.() || 'default');
+      if (_wbCachedEntries && _wbCachedChatId === currentChatIdNow) {
+        renderWorldbookList();
+      } else {
+        loadWorldbookEntries();
+      }
     }
 
     const resetBtn = document.getElementById('we-reset-world');

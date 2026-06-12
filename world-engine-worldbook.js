@@ -90,6 +90,7 @@ ${content}`;
   }
 
   return {
+    getChatId,
     getSelectedIds,
     saveSelectedIds,
     loadCurrentEntries,
