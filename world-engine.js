@@ -247,22 +247,16 @@
         }
         const everyX = Math.max(1, parseInt(settings.evolveEveryX) || 1);
         {
-          const L = Number(core.getChatFingerprint()) || 0;  // 当前聊天长度（chat.length）
-          const checkpointLayer = core.getCheckpointLayer(); // 存档点保存时的聊天长度
-
-          // 现算：从存档点到现在经过了多少轮（每轮聊天长度+2）
-          const layerDiff = Math.max(0, L - checkpointLayer);
-          const roundsPassed = Math.floor(layerDiff / 2);
-          const positionInCycle = roundsPassed % everyX;
-
-          // 触发推演的条件：已过整数倍个完整周期（除数为0，且至少推演过一次）
-          const doEvolve = (roundsPassed > 0) && (roundsPassed % everyX === 0);
+          const L = Number(core.getChatFingerprint()) || 0;
+          const anchor = core.getAnchorLayer() ?? L; // 未初始化则以当前为锚，下轮开始计
+          const c = Math.floor(Math.max(0, L - anchor) / 2);
+          const doEvolve = c > 0 && c % everyX === 0;
 
           if (!doEvolve) {
             lastProcessedMessageKey = currentKey;
-            const status = roundsPassed === 0 ? `1/${everyX}` : `${positionInCycle || everyX}/${everyX}`;
+            const pos = c % everyX || (c === 0 ? 0 : everyX);
             if (window.__WE_SetExternalStatus) {
-              window.__WE_SetExternalStatus(`⏸ 第 ${status} 轮，未到推演`);
+              window.__WE_SetExternalStatus(`⏸ 第 ${pos}/${everyX} 轮，未到推演`);
             }
             if (ui) ui.refresh(true);
             return;
@@ -280,6 +274,16 @@
           if (success) {
             lastProcessedMessageKey = currentKey;
             ledger.recordChanges(state);
+            // 推演成功后检查是否到达 2X，到了就重置锚点
+            {
+              const L2 = Number(core.getChatFingerprint()) || 0;
+              const anchor2 = core.getAnchorLayer() ?? L2;
+              const c2 = Math.floor(Math.max(0, L2 - anchor2) / 2);
+              if (c2 >= 2 * everyX) {
+                core.setAnchorLayer(L2);
+                console.log('[世界引擎] 🔄 计数锚点重置（已满 2X 轮）');
+              }
+            }
             // 重 roll 时正文已按楼层注入存档点，推演完成后不覆盖
             if (isNewRound) {
               applyInjection();
@@ -307,6 +311,10 @@
           state.round = 0;
           core.saveState(state);
           core.clearCheckpoint();
+        }
+        // 锚点未初始化时（新聊天或旧存档迁移），以当前长度为起点
+        if (core.getAnchorLayer() === null) {
+          core.setAnchorLayer(chat.length);
         }
         applyInjectionForCurrentRound();
         console.log('[世界引擎] 聊天已加载，注入已更新');

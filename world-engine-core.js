@@ -212,22 +212,20 @@ window.WORLD_ENGINE_CORE = (function() {
     return STORAGE_PREFIX + getChatId() + '_checkpoint';
   }
 
-  function getCheckpointLayerKey() {
-    return STORAGE_PREFIX + getChatId() + '_checkpointLayer';
+  function getAnchorLayerKey() {
+    return STORAGE_PREFIX + getChatId() + '_anchorLayer';
   }
 
   function getFingerprintKey() {
     return STORAGE_PREFIX + getChatId() + '_fingerprint';
   }
 
-  /** 保存存档点 a（完整复制当前 state），同时记录聊天长度锚点 */
+  /** 保存存档点 a（完整复制当前 state） */
   function saveCheckpoint(state) {
     const key = getCheckpointKey();
     const cp = JSON.parse(JSON.stringify(state));
     ensureArrays(cp);
     window.WORLD_ENGINE_STORE.setItem(key, JSON.stringify(cp));
-    // 记录保存存档点时的聊天长度，用于后续计数计算
-    window.WORLD_ENGINE_STORE.setItem(getCheckpointLayerKey(), String(getChatLayer()));
   }
 
   /** 从存档点 a 恢复状态 */
@@ -246,13 +244,17 @@ window.WORLD_ENGINE_CORE = (function() {
   /** 删除存档点 */
   function clearCheckpoint() {
     window.WORLD_ENGINE_STORE.removeItem(getCheckpointKey());
-    window.WORLD_ENGINE_STORE.removeItem(getCheckpointLayerKey());
   }
 
-  /** 获取存档点保存时的聊天层数 */
-  function getCheckpointLayer() {
-    const saved = window.WORLD_ENGINE_STORE.getItem(getCheckpointLayerKey());
-    return saved ? Number(saved) : 0;
+  /** 获取计数锚点（chat.length，每 2X 轮推演后重置） */
+  function getAnchorLayer() {
+    const saved = window.WORLD_ENGINE_STORE.getItem(getAnchorLayerKey());
+    return saved !== null ? Number(saved) : null;
+  }
+
+  /** 设置计数锚点 */
+  function setAnchorLayer(l) {
+    window.WORLD_ENGINE_STORE.setItem(getAnchorLayerKey(), String(l));
   }
 
   /** 获取当前对话层数（从 0 开始计数） */
@@ -451,7 +453,7 @@ window.WORLD_ENGINE_CORE = (function() {
     getDefaultState, getChatId, loadState, saveState, saveStateWithLayer,
     addMemory, addEvent, addFaction, addWorldTrend, addWind,
     ensureEventFields, getUserName, renderUserName,
-    saveCheckpoint, restoreCheckpoint, clearCheckpoint, getCheckpointLayer,
+    saveCheckpoint, restoreCheckpoint, clearCheckpoint, getAnchorLayer, setAnchorLayer,
     getChatLayer, getChatFingerprint, saveFingerprint, loadFingerprint, isNewRound,
     getCleanExport, importState
   };
