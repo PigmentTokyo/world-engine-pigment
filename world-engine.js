@@ -247,34 +247,22 @@
         }
         const everyX = Math.max(1, parseInt(settings.evolveEveryX) || 1);
         {
-          const cs = core.loadState();
-          const L = Number(core.getChatFingerprint()) || 0;        // = chat.length
-          const lastCounted = Number(cs.lastCountedLayer) || 0;
-          const lastEvolved = Number(core.loadFingerprint()) || 0; // 上次推演时的 chat.length
-          let doEvolve;
-          if (L > lastCounted) {
-            // 向前推进一轮：计数 +1（重 roll 不会进这里）
-            cs.roundCounter = (Number(cs.roundCounter) || 0) + 1;
-            cs.lastCountedLayer = L;
-            if (cs.roundCounter >= everyX) {
-              cs.roundCounter = 0;
-              doEvolve = true;
-              // 记下本层为「推演轮」，与推演是否成功/被中止无关，供重 roll 判定
-              cs.lastEvolveLayer = L;
-            } else {
-              doEvolve = false;
-            }
-            core.saveState(cs);
-          } else {
-            // 重 roll（层数没增长）：只有重 roll 的正是「推演轮」才重推，计数器不动。
-            // 以 lastEvolveLayer 为准（中止过的推演轮也能重推）；lastEvolved 兼容旧存档。
-            doEvolve = (L === (Number(cs.lastEvolveLayer) || 0)) ||
-                       (lastEvolved > 0 && L === lastEvolved);
-          }
+          const L = Number(core.getChatFingerprint()) || 0;  // 当前聊天长度（chat.length）
+          const checkpointLayer = core.getCheckpointLayer(); // 存档点保存时的聊天长度
+
+          // 现算：从存档点到现在经过了多少轮（每轮聊天长度+2）
+          const layerDiff = Math.max(0, L - checkpointLayer);
+          const roundsPassed = Math.floor(layerDiff / 2);
+          const positionInCycle = roundsPassed % everyX;
+
+          // 触发推演的条件：已过整数倍个完整周期（除数为0，且至少推演过一次）
+          const doEvolve = (roundsPassed > 0) && (roundsPassed % everyX === 0);
+
           if (!doEvolve) {
             lastProcessedMessageKey = currentKey;
+            const status = roundsPassed === 0 ? `1/${everyX}` : `${positionInCycle || everyX}/${everyX}`;
             if (window.__WE_SetExternalStatus) {
-              window.__WE_SetExternalStatus(`⏸ 第 ${cs.roundCounter || everyX}/${everyX} 轮，未到推演`);
+              window.__WE_SetExternalStatus(`⏸ 第 ${status} 轮，未到推演`);
             }
             if (ui) ui.refresh(true);
             return;

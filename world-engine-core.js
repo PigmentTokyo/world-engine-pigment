@@ -57,10 +57,6 @@ window.WORLD_ENGINE_CORE = (function() {
       },
       lastEvolveResult: null,
       lastInjection: null,
-      // 每 X 轮自动推演的计数（按聊天独立）：
-      // roundCounter = 当前已累计的向前轮数；lastCountedLayer = 已计数的最高对话层数（防重 roll 重复计数）
-      roundCounter: 0,
-      lastCountedLayer: 0,
       lastUpdated: {}
     };
   }
@@ -174,8 +170,6 @@ window.WORLD_ENGINE_CORE = (function() {
       state.blackbox.secretAssets = state.blackbox.secretAssets || [];
     }
     state.lastInjection = state.lastInjection || null;
-    if (!Number.isFinite(Number(state.roundCounter))) state.roundCounter = 0;
-    if (!Number.isFinite(Number(state.lastCountedLayer))) state.lastCountedLayer = 0;
     return state;
   }
 
@@ -218,16 +212,22 @@ window.WORLD_ENGINE_CORE = (function() {
     return STORAGE_PREFIX + getChatId() + '_checkpoint';
   }
 
+  function getCheckpointLayerKey() {
+    return STORAGE_PREFIX + getChatId() + '_checkpointLayer';
+  }
+
   function getFingerprintKey() {
     return STORAGE_PREFIX + getChatId() + '_fingerprint';
   }
 
-  /** 保存存档点 a（完整复制当前 state） */
+  /** 保存存档点 a（完整复制当前 state），同时记录聊天长度锚点 */
   function saveCheckpoint(state) {
     const key = getCheckpointKey();
     const cp = JSON.parse(JSON.stringify(state));
     ensureArrays(cp);
     window.WORLD_ENGINE_STORE.setItem(key, JSON.stringify(cp));
+    // 记录保存存档点时的聊天长度，用于后续计数计算
+    window.WORLD_ENGINE_STORE.setItem(getCheckpointLayerKey(), String(getChatLayer()));
   }
 
   /** 从存档点 a 恢复状态 */
@@ -246,6 +246,13 @@ window.WORLD_ENGINE_CORE = (function() {
   /** 删除存档点 */
   function clearCheckpoint() {
     window.WORLD_ENGINE_STORE.removeItem(getCheckpointKey());
+    window.WORLD_ENGINE_STORE.removeItem(getCheckpointLayerKey());
+  }
+
+  /** 获取存档点保存时的聊天层数 */
+  function getCheckpointLayer() {
+    const saved = window.WORLD_ENGINE_STORE.getItem(getCheckpointLayerKey());
+    return saved ? Number(saved) : 0;
   }
 
   /** 获取当前对话层数（从 0 开始计数） */
@@ -444,7 +451,7 @@ window.WORLD_ENGINE_CORE = (function() {
     getDefaultState, getChatId, loadState, saveState, saveStateWithLayer,
     addMemory, addEvent, addFaction, addWorldTrend, addWind,
     ensureEventFields, getUserName, renderUserName,
-    saveCheckpoint, restoreCheckpoint, clearCheckpoint,
+    saveCheckpoint, restoreCheckpoint, clearCheckpoint, getCheckpointLayer,
     getChatLayer, getChatFingerprint, saveFingerprint, loadFingerprint, isNewRound,
     getCleanExport, importState
   };
