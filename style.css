@@ -1850,6 +1850,7 @@
 /* ===== 主页导航列表 ===== */
 .we-nav-list {
   margin: 8px 0 14px;
+  padding-left: 30px;
 }
 .we-nav-row {
   display: flex;
@@ -1857,7 +1858,7 @@
   min-height: 54px;
   cursor: pointer;
   border-radius: 4px;
-  padding: 0 2px 0 0;
+  padding: 0 8px 0 0;
   transition: background 0.15s;
 }
 .we-nav-row--selected {
@@ -1865,17 +1866,16 @@
 }
 .we-nav-label {
   font-family: "SimSun", "宋体", "Songti SC", "STSong", serif;
-  width: 34px;
+  width: 48px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  font-size: 13px;
+  font-size: 20px;
   font-weight: 500;
   color: var(--we-beige);
   letter-spacing: 0.04em;
   transition: color 0.18s;
-  padding-right: 2px;
 }
 .we-nav-row--selected .we-nav-label {
   color: var(--we-tier-color, var(--we-accent));
@@ -1886,7 +1886,6 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  transform: translateX(50px);
 }
 .we-nav-line {
   width: 1px;
@@ -1912,41 +1911,31 @@
   box-shadow: 0 0 8px var(--we-tier-color, var(--we-accent)), 0 0 3px var(--we-tier-color, var(--we-accent));
 }
 .we-nav-content {
+  font-family: "SimSun", "宋体", "Songti SC", "STSong", serif;
   flex: 1;
   display: flex;
   align-items: center;
   min-width: 0;
-  padding-left: 20px;
+  padding-left: 8px;
 }
 .we-nav-sub {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--we-text2);
 }
 .we-nav-poem {
   display: none;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--we-tier-color, var(--we-accent));
   letter-spacing: 0.08em;
 }
 .we-nav-row--selected .we-nav-sub { display: none; }
 .we-nav-row--selected .we-nav-poem { display: block; }
-.we-nav-row {
-  position: relative;
-  padding-right: 28px; /* 给最右边箭头留空间 */
-}
-
-.we-nav-content {
-  padding-right: 20px; /* 防止说明文字撞到箭头 */
-}
-
 .we-nav-arrow {
-  position: absolute;
-  right: 4px;
-  top: 50%;
-  transform: translateY(-50%);
-
+  flex-shrink: 0;
   font-size: 10px;
   color: var(--we-text3);
+  align-self: center;
+  margin-left: 8px;
   transition: color 0.18s;
 }
 .we-nav-row--selected .we-nav-arrow {
