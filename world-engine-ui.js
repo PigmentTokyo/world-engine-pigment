@@ -313,14 +313,14 @@ window.WORLD_ENGINE_UI = (function() {
       + '</div>'
       + renderWorldCore(s)
       + '<div class="we-nav-list" style="--we-tier-color:' + tierColor + ';">' + navRows + '</div>'
-      + '<div class="we-section"><div class="we-section-title">世界摘要</div><div class="we-digest">' + u(s.worldDigest) + '</div></div>';
+      + '<div class="we-section" id="we-sec-digest"><div class="we-section-title">世界摘要</div><div class="we-digest">' + u(s.worldDigest) + '</div></div>';
   }
 
   function renderSubView(viewKey, s, layer, scope) {
     let content = '';
     if (viewKey === 'situation') {
       content = renderSection('天下大势', 'trends', renderWorldTrends(s.worldTrends, scope))
-        + renderSection('区域突发事件', 'regional', renderRegionalIncident(s.regionalIncident))
+        + renderSection('区域事件', 'regional', renderRegionalIncident(s.regionalIncident))
         + renderSection('近期重大事件账本', 'ledger', renderLedger(s.memories));
     } else if (viewKey === 'events') {
       content = renderSection('事件链', 'events', renderEventList(s.events, scope))
@@ -362,7 +362,7 @@ window.WORLD_ENGINE_UI = (function() {
       + renderSection('经济', 'cp-economy', renderEconomy(s.economy))
       + renderSection('仇敌录', 'cp-enemies', renderEnemies(s.enemies))
       + renderSection('影响链', 'cp-influence', renderInfluenceChain(s.influenceChain))
-      + renderSection('区域突发事件', 'cp-regional', renderRegionalIncident(s.regionalIncident))
+      + renderSection('区域事件', 'cp-regional', renderRegionalIncident(s.regionalIncident))
       + renderSection('秘密', 'cp-blackbox', renderBlackbox(s.blackbox))
       + renderSection('近期重大事件账本', 'cp-ledger', renderLedger(s.memories));
   }
@@ -970,13 +970,13 @@ window.WORLD_ENGINE_UI = (function() {
   }
 
   function renderRegionalIncident(ri) {
-    if (!ri) return '<div class="we-empty">尚未进行区域突发事件判定</div>';
+    if (!ri) return '<div class="we-empty">尚未进行区域事件判定</div>';
     const isEditing = editingRI?.active === true;
     const actionHtml = isEditing ? '' : `
       <div class="we-event-actions">
-        <button class="we-icon-btn we-ri-delete" title="清除区域突发事件"><i class="fa-solid fa-trash-can"></i></button>
-        <button class="we-icon-btn we-ri-copy" title="复制区域突发事件"><i class="fa-solid fa-copy"></i></button>
-        <button class="we-icon-btn we-ri-edit" title="编辑区域突发事件"><i class="fa-solid fa-pen"></i></button>
+        <button class="we-icon-btn we-ri-delete" title="清除区域事件"><i class="fa-solid fa-trash-can"></i></button>
+        <button class="we-icon-btn we-ri-copy" title="复制区域事件"><i class="fa-solid fa-copy"></i></button>
+        <button class="we-icon-btn we-ri-edit" title="编辑区域事件"><i class="fa-solid fa-pen"></i></button>
       </div>`;
     const editHtml = isEditing ? renderRIEditor(ri) : '';
 
@@ -997,9 +997,9 @@ window.WORLD_ENGINE_UI = (function() {
       </div>`;
     }
     if (ri.cooldown > 0) {
-      return `<div class="we-accident-item we-regional-incident-item">${actionHtml}本轮无区域突发事件（剩余冷却 ${ri.cooldown} 轮）${editHtml}</div>`;
+      return `<div class="we-accident-item we-regional-incident-item">${actionHtml}本轮无区域事件（剩余冷却 ${ri.cooldown} 轮）${editHtml}</div>`;
     }
-    return `<div class="we-accident-item we-regional-incident-item">${actionHtml}本轮无区域突发事件${editHtml}</div>`;
+    return `<div class="we-accident-item we-regional-incident-item">${actionHtml}本轮无区域事件${editHtml}</div>`;
   }
 
   function renderRIEditor(ri) {
@@ -1646,7 +1646,7 @@ window.WORLD_ENGINE_UI = (function() {
       };
     });
 
-    // ===== 区域突发事件编辑器事件 =====
+    // ===== 区域事件编辑器事件 =====
     document.querySelectorAll('.we-ri-edit').forEach(button => {
       button.onclick = () => {
         editingRI = { active: true };
@@ -1673,7 +1673,7 @@ window.WORLD_ENGINE_UI = (function() {
         ri.impact = editor.querySelector('.we-ri-edit-impact').value.trim();
         core.saveState(state);
         editingRI = null;
-        showToast('区域突发事件修改已保存');
+        showToast('区域事件修改已保存');
         refresh();
       };
     });
@@ -1681,10 +1681,10 @@ window.WORLD_ENGINE_UI = (function() {
       button.onclick = () => {
         const state = core.loadState();
         if (!state.regionalIncident) return;
-        if (!confirm('清除区域突发事件？')) return;
+        if (!confirm('清除区域事件？')) return;
         state.regionalIncident = { active: false, title: '', type: '', scope: '', impact: '', cooldown: state.regionalIncident.cooldown || 0, _retry: false, _retryType: '' };
         core.saveState(state);
-        showToast('区域突发事件已清除');
+        showToast('区域事件已清除');
         refresh();
       };
     });
@@ -1698,7 +1698,7 @@ window.WORLD_ENGINE_UI = (function() {
         copy.cooldown = 0;
         state.regionalIncident = copy;
         core.saveState(state);
-        showToast('区域突发事件已复制（冷却已重置）');
+        showToast('区域事件已复制（冷却已重置）');
         refresh();
       };
     });
@@ -2230,7 +2230,7 @@ window.WORLD_ENGINE_UI = (function() {
                 _retryType: String(data._retryType || '')
               };
               core.saveState(state);
-              showToast('区域突发事件导入成功');
+              showToast('区域事件导入成功');
               refresh();
               return;
             }

@@ -1988,3 +1988,150 @@
   font-size: 15px;
   letter-spacing: 0.06em;
 }
+
+/* ===== 分页标题（局势 / 事件 / 关系 / 资源）章回宋体大字 ===== */
+.we-sub-title {
+  font-family: "SimSun", "宋体", "Songti SC", "STSong", serif;
+  font-size: 20px;
+  font-weight: 400;
+  color: var(--we-beige);
+  letter-spacing: 0.18em;
+  line-height: 1;
+}
+
+/* ===== 区域事件：急报 · 无金 · 无左条 ===== */
+
+/* section 标题：砖红警色，比天下大势矮一级，有锋度而不争主位 */
+#we-sec-regional > .we-section-title,
+#we-sec-cp-regional > .we-section-title {
+  font-family: "SimSun", "宋体", "Songti SC", "STSong", serif;
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  color: #b85f54;
+  padding-bottom: 8px;
+  margin-bottom: 9px;
+  border-bottom: 1px solid rgba(175, 75, 65, 0.20);
+  text-shadow: 0 0 18px rgba(175, 72, 62, 0.20);
+}
+#we-sec-regional > .we-section-title .we-section-arrow,
+#we-sec-cp-regional > .we-section-title .we-section-arrow {
+  color: #b85f54;
+  opacity: 0.45;
+  font-size: 8px;
+}
+
+/* 触发态：去金边 · 顶端砖红双线 · 暗室骚动底色 · 急促脉冲 */
+.we-accident-triggered.we-regional-incident-item {
+  border-left: none;
+  background: linear-gradient(
+    180deg,
+    rgba(162, 62, 55, 0.15) 0%,
+    rgba(155, 58, 52, 0.05) 40%,
+    var(--we-bg) 74%
+  );
+  border: 1px solid rgba(168, 65, 58, 0.28);
+  border-top: 2px solid rgba(190, 76, 67, 0.72);
+  border-radius: 5px;
+  overflow: hidden;
+  color: var(--we-text);
+  animation: we-regional-alarm 2.8s ease-in-out infinite;
+}
+/* 顶端亮缝：比天下大势窄收，不铺满，暗示裂隙 */
+.we-accident-triggered.we-regional-incident-item::before {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; top: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 10%,
+    rgba(215, 85, 74, 0.82) 36%,
+    rgba(215, 85, 74, 0.82) 64%,
+    transparent 90%
+  );
+}
+/* 警报脉冲：节奏比天下大势快，比"逼近"事件轻 */
+@keyframes we-regional-alarm {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(160, 62, 55, 0.20); }
+  50%      {
+    box-shadow:
+      0 0 11px -3px rgba(195, 78, 68, 0.46),
+      0 0 0 1px rgba(188, 72, 63, 0.38);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .we-accident-triggered.we-regional-incident-item { animation: none !important; }
+}
+
+/* 未触发/冷却中：沉默收缩，不喧嚣 */
+.we-regional-incident-item:not(.we-accident-triggered) {
+  background: rgba(255,255,255,0.015);
+  border: 1px solid rgba(255,255,255,0.04);
+  color: var(--we-text3);
+}
+
+/* ===== 世界摘要：学者手稿 ===== */
+#we-sec-digest > .we-section-title {
+  font-family: "SimSun", "宋体", "Songti SC", "STSong", serif;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0.14em;
+  color: var(--we-text2);
+  padding-bottom: 7px;
+  margin-bottom: 9px;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+/* 内容：宋体长卷气息，行距宽，左侧一道细青线如页边注 */
+#we-sec-digest .we-digest {
+  background: rgba(20, 32, 41, 0.80);
+  border-radius: 3px;
+  border: none;
+  border-left: 2px solid rgba(88, 184, 169, 0.18);
+  padding: 10px 12px 11px 14px;
+  font-family: "SimSun", "宋体", "Songti SC", "STSong", serif;
+  font-size: 12px;
+  line-height: 1.95;
+  color: var(--we-text2);
+  letter-spacing: 0.025em;
+}
+
+/* ===== 账本：编年史两列 ===== */
+.we-ledger-item {
+  display: grid;
+  grid-template-columns: 42px 1fr;
+  gap: 10px;
+  align-items: start;
+  background: transparent;
+  border: none;
+  border-top: 1px solid rgba(255,255,255,0.042);
+  border-radius: 0;
+  padding: 8px 2px;
+  margin-bottom: 0;
+}
+.we-ledger-item:first-child { border-top: none; }
+
+/* 轮次列：宋体，右对齐，以竖线与正文分隔，如史书年份栏 */
+.we-ledger-round {
+  font-family: "SimSun", "宋体", "Songti SC", "STSong", serif;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--we-text3);
+  letter-spacing: 0;
+  line-height: 1.65;
+  text-align: right;
+  padding-right: 9px;
+  border-right: 1px solid rgba(255,255,255,0.06);
+  white-space: nowrap;
+  margin-bottom: 0;
+}
+
+.we-ledger-changes { gap: 3px; }
+
+.we-ledger-line {
+  color: var(--we-text2);
+  font-size: 11px;
+  padding-left: 0;
+  line-height: 1.68;
+}
