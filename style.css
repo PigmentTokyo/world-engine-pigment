@@ -34,8 +34,15 @@
   filter: drop-shadow(0 4px 12px rgba(8,18,24,0.55));
   transition: filter 0.2s, transform 0.15s;
 }
+#we-input-btn.we-ball {
+  transition: filter 0.2s, transform 0.15s,
+    left 0.28s cubic-bezier(.22,1,.36,1), top 0.28s cubic-bezier(.22,1,.36,1);
+}
 #we-input-btn.we-ball:hover { transform: scale(1.06); }
-#we-input-btn.we-ball.we-ball-dragging { cursor: grabbing; transform: scale(1.1); }
+#we-input-btn.we-ball.we-ball-dragging { cursor: grabbing; transform: scale(1.1); transition: none; }
+/* 侧边缩进态：半透明小条，悬停/触摸后变亮提示可拉出 */
+#we-input-btn.we-ball-tucked { opacity: 0.6; cursor: pointer; }
+#we-input-btn.we-ball-tucked:hover { opacity: 1; }
 #we-input-btn.we-ball > span { position: absolute; inset: 0; pointer-events: none; }
 
 /* 地球本体：扁平平涂海洋（面板深青灰同族，去饱和） */

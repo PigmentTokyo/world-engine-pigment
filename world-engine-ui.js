@@ -2380,8 +2380,35 @@ window.WORLD_ENGINE_UI = (function() {
     return null;
   }
 
-  function saveBallPos(left, top) {
-    try { localStorage.setItem(WE_BALL_POS_KEY, JSON.stringify({ left, top })); } catch (_) {}
+  function saveBallPos(left, top, tucked, side) {
+    try { localStorage.setItem(WE_BALL_POS_KEY, JSON.stringify({ left, top, tucked: !!tucked, side: side || null })); } catch (_) {}
+  }
+
+  // 侧边吸附参数
+  const WE_TUCK_EDGE = 28;    // 距边缘多近算「吸附」
+  const WE_TUCK_HANDLE = 15;  // 缩进后露出的小条宽度
+  const WE_TUCK_INSET = 8;    // 拉出后距边缘的留白
+
+  function applyBallTuck(ball, side) {
+    const vw = window.innerWidth;
+    const size = ball.offsetWidth || 52;
+    ball.classList.add('we-ball-tucked');
+    ball.classList.toggle('we-ball-tucked-left', side === 'left');
+    ball.classList.toggle('we-ball-tucked-right', side === 'right');
+    ball.style.left = (side === 'left' ? (WE_TUCK_HANDLE - size) : (vw - WE_TUCK_HANDLE)) + 'px';
+  }
+
+  function untuckBall(ball) {
+    const pos = loadBallPos() || {};
+    const vw = window.innerWidth, vh = window.innerHeight, size = ball.offsetWidth || 52;
+    let left = typeof pos.left === 'number' ? pos.left : (vw - size - 18);
+    let top = typeof pos.top === 'number' ? pos.top : (vh - size - 90);
+    left = Math.max(4, Math.min(left, vw - size - 4));
+    top = Math.max(4, Math.min(top, vh - size - 4));
+    ball.classList.remove('we-ball-tucked', 'we-ball-tucked-left', 'we-ball-tucked-right');
+    ball.style.left = left + 'px';
+    ball.style.top = top + 'px';
+    saveBallPos(left, top, false, null);
   }
 
   function applyBallPos(ball) {
@@ -2392,10 +2419,16 @@ window.WORLD_ENGINE_UI = (function() {
     // 钳制进可视区域，避免拖出屏幕后找不到
     pos.left = Math.max(4, Math.min(pos.left, vw - size - 4));
     pos.top = Math.max(4, Math.min(pos.top, vh - size - 4));
-    ball.style.left = pos.left + 'px';
     ball.style.top = pos.top + 'px';
     ball.style.right = 'auto';
     ball.style.bottom = 'auto';
+    if (pos.tucked && (pos.side === 'left' || pos.side === 'right')) {
+      ball.style.left = pos.left + 'px';   // 记录的是「拉出后」的位置
+      applyBallTuck(ball, pos.side);        // 视觉上缩到边缘
+    } else {
+      ball.classList.remove('we-ball-tucked', 'we-ball-tucked-left', 'we-ball-tucked-right');
+      ball.style.left = pos.left + 'px';
+    }
   }
 
   function makeBallDraggable(ball) {
@@ -2432,13 +2465,29 @@ window.WORLD_ENGINE_UI = (function() {
       document.removeEventListener('mouseup', onUp);
       document.removeEventListener('touchmove', onMove);
       document.removeEventListener('touchend', onUp);
-      if (moved) saveBallPos(parseFloat(ball.style.left), parseFloat(ball.style.top));
+      if (!moved) return;
+      const vw = window.innerWidth, size = ball.offsetWidth || 52;
+      const left = parseFloat(ball.style.left) || 0;
+      const top = parseFloat(ball.style.top) || 0;
+      if (left <= WE_TUCK_EDGE) {                          // 贴左缘 → 缩进左侧
+        saveBallPos(WE_TUCK_INSET, top, true, 'left');
+        applyBallTuck(ball, 'left');
+      } else if (left >= vw - size - WE_TUCK_EDGE) {        // 贴右缘 → 缩进右侧
+        saveBallPos(vw - size - WE_TUCK_INSET, top, true, 'right');
+        applyBallTuck(ball, 'right');
+      } else {
+        saveBallPos(left, top, false, null);
+      }
     };
     ball.addEventListener('mousedown', onDown);
     ball.addEventListener('touchstart', onDown, { passive: true });
-    // 仅在没拖动时才视为点击
+    // 点击处理：拖动后不算点击；已缩进则「拉出来」而非开面板
     ball.addEventListener('click', (e) => {
-      if (moved) { e.preventDefault(); e.stopImmediatePropagation(); moved = false; }
+      if (moved) { e.preventDefault(); e.stopImmediatePropagation(); moved = false; return; }
+      if (ball.classList.contains('we-ball-tucked')) {
+        e.preventDefault(); e.stopImmediatePropagation();
+        untuckBall(ball);
+      }
     }, true);
   }
 
