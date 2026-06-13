@@ -1814,3 +1814,69 @@
     height: 9px;
   }
 }
+
+/* ===== 主页顶栏 ===== */
+.we-home-topbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--we-border);
+}
+.we-home-topbar .we-actions-bar {
+  flex: 1;
+  margin-bottom: 0;
+  flex-wrap: wrap;
+}
+
+/* ===== 分页顶栏 ===== */
+.we-sub-topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--we-border);
+}
+.we-sub-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--we-text);
+  letter-spacing: 0.03em;
+}
+
+/* ===== 分类卡片格 ===== */
+.we-cat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 10px 0 14px;
+}
+.we-cat-card {
+  padding: 12px 14px;
+  background: var(--we-bg2);
+  border: 1px solid var(--we-border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  user-select: none;
+}
+.we-cat-card:hover {
+  border-color: var(--we-accent);
+  background: var(--we-surface);
+}
+.we-cat-card:active {
+  background: var(--we-bg-hl);
+}
+.we-cat-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--we-text);
+  margin-bottom: 3px;
+}
+.we-cat-sub {
+  font-size: 11px;
+  color: var(--we-text3);
+  line-height: 1.4;
+}

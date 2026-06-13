@@ -17,7 +17,7 @@ window.WORLD_ENGINE_UI = (function() {
   let editingBBAsset = null;
   let listPagerCounter = 0;
   const listPageState = {};
-  const sectionCollapsed = {};
+  const sectionCollapsed = { 'checkpoint-section': true };
   const expandedWorldbookGroups = new Set();
   // 世界书缓存（模块级，跨 refresh() 存活）
   let _wbCachedEntries = null;
@@ -95,7 +95,8 @@ window.WORLD_ENGINE_UI = (function() {
     });
   }
 
-  let _activeTab = 'current';
+  // 当前视图：'home' | 'situation' | 'events' | 'relations' | 'resources' | 'settings'
+  let _currentView = 'home';
   // 推演进行中标志 + 本次推演的显示基底：
   //   'checkpoint' = 重新推演（喂存档点 B，面板显示 B）
   //   'state'      = 向前推演（喂当前状态 A，面板显示 A）
@@ -130,63 +131,30 @@ window.WORLD_ENGINE_UI = (function() {
 
   function refresh(auto) {
     if (!panelElement || !panelVisible) return;
-    // 后台自动刷新（30s 定时、推演完成）时，若正停留在设置页则跳过：
-    // 设置页是静态表单，重建会清掉正在输入的 API 信息和刚获取到的模型列表
-    if (auto && _activeTab === 'settings') return;
+    // 设置页是静态表单，后台自动刷新会清掉正在输入的内容
+    if (auto && _currentView === 'settings') return;
     const body = document.getElementById('we-panel-body');
     if (!body) return;
     listPagerCounter = 0;
 
     const state = core.loadState();
     const checkpoint = core.restoreCheckpoint();
-
-    const curLayer = state.chatLayer || getChatLayer();
     const cpLayer = getCheckpointLayer(checkpoint);
-
-    // 「当前状态」= 此刻实际注入正文的那一份（与 applyInjectionForCurrentRound 同一楼层判断）
     const active = getActiveInjected(state, checkpoint);
+    const s = active.state;
 
-    // 保存世界书列表滚动位置，渲染后恢复
     const _wbListEl = document.getElementById('we-worldbook-list');
     if (_wbListEl) _wbScrollTop = _wbListEl.scrollTop;
 
-    body.innerHTML = `
-      <div class="we-tabs">
-        <button class="we-tab ${_activeTab === 'current' ? 'we-tab-active' : ''}" data-tab="current">当前状态</button>
-        <button class="we-tab ${_activeTab === 'checkpoint' ? 'we-tab-active' : ''}" data-tab="checkpoint">存档点</button>
-        <button class="we-tab ${_activeTab === 'settings' ? 'we-tab-active' : ''}" data-tab="settings">设置</button>
-      </div>
-      <div class="we-tab-content" id="we-tab-current" style="${_activeTab === 'current' ? 'display:block' : 'display:none'}">
-        <div class="we-actions-bar" style="margin-bottom:8px;">
-          <button class="we-btn we-btn-primary" id="we-btn-redo" title="把存档点喂给后台推演，重出本轮结果">重新推演</button>
-          <button class="we-btn we-btn-primary" id="we-btn-forward" title="把当前状态喂给后台推演，向前推进一轮">向前推演</button>
-          <button class="we-btn we-btn-danger" id="we-btn-abort" style="background:var(--we-danger);color:#fff;" disabled>停止推演</button>
-          <button class="we-btn" id="we-btn-refresh">刷新</button>
-        </div>
-        ${renderFullState(active.state, active.layer, active.scope)}
-      </div>
-      <div class="we-tab-content" id="we-tab-checkpoint" style="${_activeTab === 'checkpoint' ? 'display:block' : 'display:none'}">
-        ${checkpoint ? renderFullState(checkpoint, cpLayer, 'checkpoint') : '<div class="we-empty">暂无存档点</div>'}
-      </div>
-      <div class="we-tab-content" id="we-tab-settings" style="${_activeTab === 'settings' ? 'display:block' : 'display:none'}">
-        ${renderSettingsForm()}
-        <div class="we-section" style="margin-top:16px;">
-          <div class="we-section-title">调试</div>
-          <div>${renderDebug()}</div>
-        </div>
-      </div>
-    `;
+    if (_currentView === 'home') {
+      body.innerHTML = renderHomeView(s, active.layer, active.scope);
+    } else if (_currentView === 'settings') {
+      body.innerHTML = renderSettingsView(checkpoint, cpLayer);
+    } else {
+      body.innerHTML = renderSubView(_currentView, s, active.layer, active.scope);
+    }
 
-    // Tab 切换逻辑
-    const tabs = body.querySelectorAll('.we-tab');
-    tabs.forEach(tab => {
-      tab.onclick = () => {
-        _activeTab = tab.dataset.tab;
-        refresh();
-      };
-    });
-
-    updatePanelHeader(active.state);
+    updatePanelHeader(s);
     bindEvents(state);
   }
 
@@ -302,9 +270,86 @@ window.WORLD_ENGINE_UI = (function() {
     }
   }
 
-  /** 渲染单个状态的概览区块 */
-  function renderStatusBlock(s, layer) {
-    return renderWorldCore(s) + renderStatusBlockBody(s, layer);
+  const VIEW_TITLES = {
+    situation: '局势', events: '事件', relations: '关系', resources: '资源', settings: '设置'
+  };
+
+  function renderSection(title, id, content) {
+    return '<div class="we-section"><div class="we-section-title">' + sectionHeader(title, id) + '</div>' + sectionBody(id, content) + '</div>';
+  }
+
+  function renderHomeView(s, layer, scope) {
+    const cards = [
+      { view: 'situation', name: '局势', sub: '天下大势 · 区域事件 · 账本' },
+      { view: 'events',    name: '事件', sub: '事件链 · 风声 · 影响链' },
+      { view: 'relations', name: '关系', sub: '声誉 · 势力 · 仇敌录' },
+      { view: 'resources', name: '资源', sub: '经济 · 秘密' },
+    ];
+    return '<div class="we-home-topbar">'
+      + '<div class="we-actions-bar">'
+      + '<button class="we-btn we-btn-primary" id="we-btn-redo" title="把存档点喂给后台推演，重出本轮结果">重新推演</button>'
+      + '<button class="we-btn we-btn-primary" id="we-btn-forward" title="把当前状态喂给后台推演，向前推进一轮">向前推演</button>'
+      + '<button class="we-btn we-btn-danger" id="we-btn-abort" style="background:var(--we-danger);color:#fff;" disabled>停止推演</button>'
+      + '<button class="we-btn" id="we-btn-refresh">刷新</button>'
+      + '</div>'
+      + '<button class="we-icon-btn" id="we-btn-settings-open" title="设置"><i class="fa-solid fa-gear"></i></button>'
+      + '</div>'
+      + renderWorldCore(s)
+      + '<div class="we-cat-grid">'
+      + cards.map(c => '<div class="we-cat-card" data-view="' + c.view + '"><div class="we-cat-name">' + c.name + '</div><div class="we-cat-sub">' + c.sub + '</div></div>').join('')
+      + '</div>'
+      + '<div class="we-section"><div class="we-section-title">世界摘要</div><div class="we-digest">' + u(s.worldDigest) + '</div></div>';
+  }
+
+  function renderSubView(viewKey, s, layer, scope) {
+    let content = '';
+    if (viewKey === 'situation') {
+      content = renderSection('天下大势', 'trends', renderWorldTrends(s.worldTrends, scope))
+        + renderSection('区域突发事件', 'regional', renderRegionalIncident(s.regionalIncident))
+        + renderSection('近期重大事件账本', 'ledger', renderLedger(s.memories));
+    } else if (viewKey === 'events') {
+      content = renderSection('事件链', 'events', renderEventList(s.events, scope))
+        + renderSection('风声', 'winds', renderWindList(s.winds))
+        + renderSection('影响链', 'influence', renderInfluenceChain(s.influenceChain));
+    } else if (viewKey === 'relations') {
+      content = renderSection('声誉', 'reputation', renderReputation(s.reputation))
+        + renderSection('势力', 'factions', renderFactionList(s.factions))
+        + renderSection('仇敌录', 'enemies', renderEnemies(s.enemies));
+    } else if (viewKey === 'resources') {
+      content = renderSection('经济', 'economy', renderEconomy(s.economy))
+        + renderSection('秘密', 'blackbox', renderBlackbox(s.blackbox));
+    }
+    return '<div class="we-sub-topbar">'
+      + '<button class="we-icon-btn" id="we-btn-back" title="返回"><i class="fa-solid fa-arrow-left"></i></button>'
+      + '<span class="we-sub-title">' + (VIEW_TITLES[viewKey] || viewKey) + '</span>'
+      + '</div>' + content;
+  }
+
+  function renderSettingsView(checkpoint, cpLayer) {
+    const cpContent = checkpoint
+      ? renderCheckpointSections(checkpoint, cpLayer)
+      : '<div class="we-empty">暂无存档点</div>';
+    return '<div class="we-sub-topbar">'
+      + '<button class="we-icon-btn" id="we-btn-back" title="返回"><i class="fa-solid fa-arrow-left"></i></button>'
+      + '<span class="we-sub-title">设置</span>'
+      + '</div>'
+      + renderSettingsForm()
+      + '<div class="we-section" style="margin-top:16px;"><div class="we-section-title">' + sectionHeader('存档点', 'checkpoint-section') + '</div>' + sectionBody('checkpoint-section', cpContent) + '</div>'
+      + '<div class="we-section" style="margin-top:8px;"><div class="we-section-title">调试</div><div>' + renderDebug() + '</div></div>';
+  }
+
+  function renderCheckpointSections(s, layer) {
+    return renderSection('天下大势', 'cp-trends', renderWorldTrends(s.worldTrends, 'checkpoint'))
+      + renderSection('事件链', 'cp-events', renderEventList(s.events, 'checkpoint'))
+      + renderSection('势力', 'cp-factions', renderFactionList(s.factions))
+      + renderSection('风声', 'cp-winds', renderWindList(s.winds))
+      + renderSection('声誉', 'cp-reputation', renderReputation(s.reputation))
+      + renderSection('经济', 'cp-economy', renderEconomy(s.economy))
+      + renderSection('仇敌录', 'cp-enemies', renderEnemies(s.enemies))
+      + renderSection('影响链', 'cp-influence', renderInfluenceChain(s.influenceChain))
+      + renderSection('区域突发事件', 'cp-regional', renderRegionalIncident(s.regionalIncident))
+      + renderSection('秘密', 'cp-blackbox', renderBlackbox(s.blackbox))
+      + renderSection('近期重大事件账本', 'cp-ledger', renderLedger(s.memories));
   }
 
   /** 世界核心：环形稳定度仪表 + 四格关键计数 */
@@ -402,30 +447,6 @@ window.WORLD_ENGINE_UI = (function() {
           <div class="we-core-stats">${stats}</div>
         </div>
       </div>`;
-  }
-
-  function renderStatusBlockBody(s, layer) {
-    return `
-      <div class="we-section">
-        <div class="we-section-title">世界摘要</div>
-        <div class="we-digest">${u(s.worldDigest)}</div>
-      </div>
-    `;
-  }
-
-  function renderFullState(s, layer, scope) {
-    return renderStatusBlock(s, layer) +
-      '<div class="we-section"><div class="we-section-title">' + sectionHeader('天下大势', 'trends') + '</div>' + sectionBody('trends', renderWorldTrends(s.worldTrends, scope)) + '</div>' +
-      '<div class="we-section"><div class="we-section-title">' + sectionHeader('事件链', 'events') + '</div>' + sectionBody('events', renderEventList(s.events, scope)) + '</div>' +
-      '<div class="we-section"><div class="we-section-title">' + sectionHeader('势力', 'factions') + '</div>' + sectionBody('factions', renderFactionList(s.factions)) + '</div>' +
-      '<div class="we-section"><div class="we-section-title">' + sectionHeader('风声', 'winds') + '</div>' + sectionBody('winds', renderWindList(s.winds)) + '</div>' +
-      '<div class="we-section"><div class="we-section-title">' + sectionHeader('声誉', 'reputation') + '</div>' + sectionBody('reputation', renderReputation(s.reputation)) + '</div>' +
-      '<div class="we-section"><div class="we-section-title">' + sectionHeader('经济', 'economy') + '</div>' + sectionBody('economy', renderEconomy(s.economy)) + '</div>' +
-      '<div class="we-section"><div class="we-section-title">' + sectionHeader('仇敌录', 'enemies') + '</div>' + sectionBody('enemies', renderEnemies(s.enemies)) + '</div>' +
-      '<div class="we-section"><div class="we-section-title">' + sectionHeader('影响链', 'influence') + '</div>' + sectionBody('influence', renderInfluenceChain(s.influenceChain)) + '</div>' +
-      '<div class="we-section"><div class="we-section-title">' + sectionHeader('区域突发事件', 'regional') + '</div>' + sectionBody('regional', renderRegionalIncident(s.regionalIncident)) + '</div>' +
-      '<div class="we-section"><div class="we-section-title">' + sectionHeader('信息黑盒', 'blackbox') + '</div>' + sectionBody('blackbox', renderBlackbox(s.blackbox)) + '</div>' +
-      '<div class="we-section"><div class="we-section-title">' + sectionHeader('近期重大事件账本', 'ledger') + '</div>' + sectionBody('ledger', renderLedger(s.memories)) + '</div>';
   }
 
   /** 获取存档点的对话层数 */
@@ -1770,6 +1791,17 @@ window.WORLD_ENGINE_UI = (function() {
         showToast('隐秘资产已复制');
         refresh();
       };
+    });
+
+    // ===== 导航事件 =====
+    const backBtn = document.getElementById('we-btn-back');
+    if (backBtn) backBtn.onclick = () => { _currentView = 'home'; refresh(); };
+
+    const settingsOpenBtn = document.getElementById('we-btn-settings-open');
+    if (settingsOpenBtn) settingsOpenBtn.onclick = () => { _currentView = 'settings'; refresh(); };
+
+    document.querySelectorAll('.we-cat-card').forEach(card => {
+      card.onclick = () => { _currentView = card.dataset.view; refresh(); };
     });
 
     // ===== 区块折叠/展开事件 =====
