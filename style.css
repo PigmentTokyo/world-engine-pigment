@@ -143,8 +143,9 @@
   position: fixed;
   right: 12px;
   top: calc(10px + env(safe-area-inset-top, 0px));
-  bottom: calc(10px + env(safe-area-inset-bottom, 0px));
   width: min(420px, calc(100vw - 24px));
+  height: calc(100dvh - 20px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  max-height: 900px;
   background: rgba(9,20,27,0.97);
   backdrop-filter: blur(10px);
   color: var(--we-text);
