@@ -2394,10 +2394,10 @@ window.WORLD_ENGINE_UI = (function() {
 
   // ========== 推演 UI 状态切换 ==========
   function setEvolvingUI(active) {
+    // 只置标志，绝不在这里调 refresh()：bindEvents() 每次刷新都会调用本函数，
+    // 一旦回头再 refresh 就会 setEvolvingUI→refresh→bindEvents→setEvolvingUI 无限递归卡死。
+    // 显示 B 由 getActiveInjected 守卫负责，推演期间的任何一次 refresh 都会显示存档点。
     _evolving = !!active;
-    // 推演开始时立刻按「推演中」重渲染，重 roll 时保持显示存档点 B、不闪回旧 A。
-    // （推演结束由调用方先 setEvolvingUI(false) 再 refresh，翻成新结果 C。）
-    if (active) refresh(true);
     const abortBtn = document.getElementById('we-btn-abort');
     const evolveBtn = document.getElementById('we-btn-evolve');
     if (abortBtn) abortBtn.disabled = !active;
