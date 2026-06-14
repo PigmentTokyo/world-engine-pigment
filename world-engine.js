@@ -180,7 +180,6 @@
           const checkpoint = core.restoreCheckpoint();
           if (checkpoint) {
             injectedScope = 'checkpoint';
-            if (ui && ui.setInjectedScope) ui.setInjectedScope(injectedScope);
             console.log(`[世界引擎] 正文注入判定：对话层数 ${chatLayer} < 当前状态层数 ${stateLayer}，注入存档点`);
             applyInjection(checkpoint);
           } else {
@@ -188,7 +187,6 @@
             applyInjection();
           }
         } else {
-          if (ui && ui.setInjectedScope) ui.setInjectedScope(injectedScope);
           console.log(`[世界引擎] 正文注入判定：对话层数 ${chatLayer} >= 当前状态层数 ${stateLayer}，注入当前状态`);
           applyInjection();
         }
@@ -287,12 +285,8 @@
           const state = core.loadState();
           const isNewRound = core.isNewRound();
           if (window.__WE_SetExternalStatus) window.__WE_SetExternalStatus('推演中...');
-          // 显示基底跟随实际注入目标；isNewRound 只决定推演生命周期，不再决定 UI。
-          const displayScope = core.restoreCheckpoint() && core.getChatLayer() < Number(state.chatLayer)
-            ? 'checkpoint'
-            : 'state';
-          if (ui && ui.setInjectedScope) ui.setInjectedScope(displayScope);
-          if (ui && ui.setEvolvingUI) ui.setEvolvingUI(true, displayScope);
+          // 自动推演的显示基底跟随 isNewRound：新轮次→当前状态，重 roll→存档点
+          if (ui && ui.setEvolvingUI) ui.setEvolvingUI(true, isNewRound ? 'state' : 'checkpoint');
           if (ui && ui.refresh) ui.refresh(true); // 推演开始：立刻按基底翻面，等出新结果再翻
 
           const success = await evolution.evolve(state, '', aiMsg);
