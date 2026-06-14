@@ -839,7 +839,10 @@ ${extraInstruction ? '\n' + extraInstruction : ''}`;
       // 推演成功 → 存档点推进（backup 即推演前状态）
       if (isNew) {
         core.saveCheckpoint(backup);
-        core.saveFingerprint(core.getChatFingerprint());
+        // fingerprint 存存档点楼层（backup.chatLayer+1），作为下一轮计数起点
+        // 这样 anchor = 上次推演起点，重 roll 时 c 仍等于 everyX，自然触发
+        const prevFp = backup.chatLayer != null ? Number(backup.chatLayer) + 1 : 0;
+        core.saveFingerprint(String(prevFp));
         console.log('[世界引擎] ✅ 推演完成，新轮次第', state.round, '轮，存档点已推进');
       } else {
         console.log('[世界引擎] ✅ 推演完成（重roll），轮次不变');
