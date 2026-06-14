@@ -704,7 +704,7 @@
   }
 
   18% {
-    transform: scaleX(1.035);
+    transform: scaleX(1.05);
     filter: brightness(1.25);
   }
 
