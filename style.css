@@ -1175,8 +1175,6 @@
 }
 .we-signal-del { cursor: pointer; opacity: 0.4; font-size: 14px; flex-shrink: 0; }
 .we-signal-del:hover { opacity: 0.8; color: var(--we-danger); }
-.we-signal-copy, .we-signal-edit { cursor: pointer; opacity: 0.35; font-size: 11px; flex-shrink: 0; color: var(--we-text3); }
-.we-signal-copy:hover, .we-signal-edit:hover { opacity: 0.75; color: var(--we-accent); }
 .we-signal-summary { flex: 1; min-width: 0; overflow-wrap: break-word; word-break: break-word; }
 .we-signal-scope {
   width: 9em;
