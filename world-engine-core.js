@@ -196,12 +196,21 @@ window.WORLD_ENGINE_CORE = (function() {
     return ensureArrays(getDefaultState());
   }
 
+  /** 是否存在真实落盘的当前状态；loadState() 在不存在时只返回临时默认状态。 */
+  function hasState() {
+    return window.WORLD_ENGINE_STORE.getItem(STORAGE_PREFIX + getChatId()) !== null;
+  }
+
   function saveState(state) {
     const chatId = getChatId();
     const key = STORAGE_PREFIX + chatId;
     ensureArrays(state);
     state.lastUpdated = { chatId, timestamp: Date.now() };
     window.WORLD_ENGINE_STORE.setItem(key, JSON.stringify(state));
+  }
+
+  function clearState() {
+    window.WORLD_ENGINE_STORE.removeItem(STORAGE_PREFIX + getChatId());
   }
 
   /** 保存状态并记录当前对话层数（evolve 完成后调用） */
@@ -252,7 +261,7 @@ window.WORLD_ENGINE_CORE = (function() {
     window.WORLD_ENGINE_STORE.removeItem(getCheckpointKey());
   }
 
-  /** 获取计数锚点（chat.length，每 2X 轮推演后重置） */
+  /** 旧版独立锚点接口（层数语义统一为 chat.length - 1；当前计数不使用它）。 */
   function getAnchorLayer() {
     const saved = window.WORLD_ENGINE_STORE.getItem(getAnchorLayerKey());
     return saved !== null ? Number(saved) : null;
@@ -274,12 +283,7 @@ window.WORLD_ENGINE_CORE = (function() {
 
   /** 获取当前对话的指纹（对话层数，用于判断是否重roll） */
   function getChatFingerprint() {
-    try {
-      const ctx = SillyTavern.getContext();
-      const chat = ctx?.chat || [];
-      return String(chat.length);
-    } catch(e) {}
-    return 'unknown';
+    return String(getChatLayer());
   }
 
   /** 保存指纹到 localStorage */
@@ -448,6 +452,7 @@ window.WORLD_ENGINE_CORE = (function() {
     clean.memories = clean.memories || [];
     clean.lastEvolveResult = null;
     clean.lastInjection = null;
+    clean.chatLayer = getChatLayer();
     const chatId = getChatId();
     clean.lastUpdated = { chatId, timestamp: Date.now() };
     ensureArrays(clean);
@@ -456,7 +461,7 @@ window.WORLD_ENGINE_CORE = (function() {
   }
 
   return {
-    getDefaultState, getChatId, loadState, saveState, saveStateWithLayer,
+    getDefaultState, getChatId, loadState, hasState, saveState, clearState, saveStateWithLayer,
     addMemory, addEvent, addFaction, addWorldTrend, addWind,
     ensureEventFields, getUserName, renderUserName,
     saveCheckpoint, restoreCheckpoint, clearCheckpoint, getAnchorLayer, setAnchorLayer,

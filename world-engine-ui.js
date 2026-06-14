@@ -145,14 +145,14 @@ window.WORLD_ENGINE_UI = (function() {
       if (_evolvingScope === 'checkpoint' && checkpoint) {
         return { state: checkpoint, scope: 'checkpoint', layer: getCheckpointLayer(checkpoint) };
       }
-      return { state: state, scope: 'state', layer: state.chatLayer || getChatLayer() };
+      return { state: state, scope: 'state', layer: Number.isFinite(Number(state.chatLayer)) ? Number(state.chatLayer) : getChatLayer() };
     }
     const chatLayer = core.getChatLayer();
     const stateLayer = Number.isFinite(Number(state.chatLayer)) ? Number(state.chatLayer) : chatLayer;
     if (chatLayer < stateLayer && checkpoint) {
       return { state: checkpoint, scope: 'checkpoint', layer: getCheckpointLayer(checkpoint) };
     }
-    return { state: state, scope: 'state', layer: state.chatLayer || getChatLayer() };
+    return { state: state, scope: 'state', layer: Number.isFinite(Number(state.chatLayer)) ? Number(state.chatLayer) : getChatLayer() };
   }
 
   // 按当前显示/编辑的存储桶读写：scope==='checkpoint' 读写存档点，其余读写主状态。
@@ -517,7 +517,7 @@ window.WORLD_ENGINE_UI = (function() {
   /** 获取存档点的对话层数 */
   function getCheckpointLayer(cp) {
     if (!cp) return '-';
-    return cp.chatLayer || '-';
+    return Number.isFinite(Number(cp.chatLayer)) ? Number(cp.chatLayer) : '-';
   }
 
   function renderPagedList(items, key, renderItem, perPage = 4) {
@@ -2187,8 +2187,9 @@ window.WORLD_ENGINE_UI = (function() {
     if (resetBtn) {
       resetBtn.onclick = () => {
         if (confirm('重置当前聊天所有世界状态和记忆？不可恢复！')) {
-          const ns = core.getDefaultState();
-          core.saveState(ns);
+          core.clearState();
+          core.clearCheckpoint();
+          core.saveFingerprint(String(core.getChatLayer()));
           showToast('世界已重置');
           refresh();
         }
@@ -2322,12 +2323,13 @@ window.WORLD_ENGINE_UI = (function() {
             if (s.round === undefined) { showToast('缺少 round 字段', true); return; }
             core.importState(s);
             if (Object.prototype.hasOwnProperty.call(data, 'checkpoint')) {
-              if (data.checkpoint) core.saveCheckpoint(data.checkpoint);
+              if (data.checkpoint) {
+                data.checkpoint.chatLayer = core.getChatLayer();
+                core.saveCheckpoint(data.checkpoint);
+              }
               else core.clearCheckpoint();
             }
-            if (Object.prototype.hasOwnProperty.call(data, 'fingerprint')) {
-              core.saveFingerprint(data.fingerprint || '');
-            }
+            core.saveFingerprint(String(core.getChatLayer()));
             showToast('导入成功！第' + s.round + '轮，' + (s.memories||[]).filter(m=>m.type==='ledger').length + '轮账本');
             refresh();
           } catch(err) {
@@ -2429,7 +2431,7 @@ window.WORLD_ENGINE_UI = (function() {
     try {
       const ctx = SillyTavern.getContext();
       const chat = ctx?.chat || [];
-      return chat.length || 0;
+      return Math.max(0, chat.length - 1);
     } catch(e) { return '?'; }
   }
 

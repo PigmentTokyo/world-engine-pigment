@@ -157,7 +157,7 @@
           const context = inject.buildContext(state, tags);
 
           // 只在使用当前状态时写回（存档点状态不应被覆盖）
-          if (!stateOverride) {
+          if (!stateOverride && core.hasState()) {
             state.lastInjection = { timestamp: Date.now(), round: currentRound, context, tagsUsed: tags };
             core.saveState(state);
           }
@@ -253,12 +253,16 @@
         {
           const L = core.getChatLayer();
           const cp = core.restoreCheckpoint();
-          let anchor;
+          const storedState = core.hasState() ? core.loadState() : null;
+          let anchor = null;
           if (cp && cp.chatLayer != null) {
             anchor = Number(cp.chatLayer);
-          } else {
-            anchor = Number(core.loadFingerprint()) || 0;
+          } else if (storedState && storedState.chatLayer != null) {
+            anchor = Number(storedState.chatLayer);
+          } else if (core.loadFingerprint() !== '') {
+            anchor = Number(core.loadFingerprint());
           }
+          if (!Number.isFinite(anchor)) anchor = L;
           const c = Math.floor(Math.max(0, L - anchor) / 2);
           const doEvolve = c > 0 && c % everyX === 0;
 
@@ -308,14 +312,35 @@
         clearAutoEvolveTimer();
         const ctx = SillyTavern.getContext();
         const chat = ctx?.chat || [];
+        const currentLayer = core.getChatLayer();
         if (chat.length === 0) {
-          const state = core.loadState();
-          state.round = 0;
-          core.saveState(state);
+          core.clearState();
           core.clearCheckpoint();
+          core.saveFingerprint(String(currentLayer));
         }
-        if (!core.restoreCheckpoint()) {
-          core.saveFingerprint(String(core.getChatLayer()));
+        let storedState = null;
+        if (core.hasState()) {
+          storedState = core.loadState();
+          if (!Number.isFinite(Number(storedState.chatLayer))) {
+            storedState.chatLayer = currentLayer;
+            core.saveState(storedState);
+          }
+        }
+        const checkpoint = core.restoreCheckpoint();
+        if (checkpoint && !Number.isFinite(Number(checkpoint.chatLayer))) {
+          checkpoint.chatLayer = storedState && Number.isFinite(Number(storedState.chatLayer))
+            ? Number(storedState.chatLayer)
+            : currentLayer;
+          core.saveCheckpoint(checkpoint);
+        }
+        // 迁移旧版 fingerprint（旧语义为 chat.length）到统一层数（chat.length - 1）。
+        const savedFingerprint = Number(core.loadFingerprint());
+        if (Number.isFinite(savedFingerprint) && savedFingerprint === currentLayer + 1 &&
+            (!storedState || Number(storedState.chatLayer) === currentLayer)) {
+          core.saveFingerprint(String(currentLayer));
+        }
+        if (chat.length > 0 && !core.restoreCheckpoint() && !core.hasState() && core.loadFingerprint() === '') {
+          core.saveFingerprint(String(currentLayer));
         }
         applyInjectionForCurrentRound();
         console.log('[世界引擎] 聊天已加载，注入已更新');
