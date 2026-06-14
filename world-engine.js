@@ -253,7 +253,7 @@
         {
           const L = Number(core.getChatFingerprint()) || 0;
           const lastEvolvedLayer = Number(core.loadFingerprint()) || 0;
-          const anchor = lastEvolvedLayer || L; // 没推演过就从当前楼层开始数
+          const anchor = lastEvolvedLayer; // 没推演过从0开始数，推演过从上次楼层开始数
           const c = Math.floor(Math.max(0, L - anchor) / 2);
           const doEvolve = c > 0 && c % everyX === 0;
 
