@@ -251,9 +251,9 @@
         }
         const everyX = Math.max(1, parseInt(settings.evolveEveryX) || 1);
         {
-          const L = Number(core.getChatFingerprint()) || 0;
-          const lastEvolvedLayer = Number(core.loadFingerprint()) || 0;
-          const anchor = lastEvolvedLayer; // 没推演过从0开始数，推演过从上次楼层开始数
+          const L = core.getChatLayer();
+          const cp = core.restoreCheckpoint();
+          const anchor = cp ? Number(cp.chatLayer) : L;
           const c = Math.floor(Math.max(0, L - anchor) / 2);
           const doEvolve = c > 0 && c % everyX === 0;
 
