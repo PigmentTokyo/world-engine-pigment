@@ -156,6 +156,11 @@ window.WORLD_ENGINE_CORE = (function() {
     if (!state.economy.signals) state.economy.signals = [];
     state.enemies = state.enemies || [];
     state.influenceChain = Array.isArray(state.influenceChain) ? state.influenceChain : [];
+    for (const influence of state.influenceChain) {
+      if (influence && typeof influence === 'object' && influence._createdRound === undefined) {
+        influence._createdRound = Number(state.round) || 0;
+      }
+    }
     if (!state.regionalIncident) {
       state.regionalIncident = { active: false, title: '', type: '', scope: '', impact: '', cooldown: 0, _retry: false, _retryType: '' };
     }

@@ -820,15 +820,36 @@ ${extraInstruction ? '\n' + extraInstruction : ''}`;
 
       // 影响链
       if (update.influenceChain.length) {
+        const completedRound = state.round + 1;
         for (const influence of update.influenceChain) {
           if (!influence.trigger || !influence.impact) continue;
           influence.fallout = influence.fallout || '';
           const idx = (state.influenceChain || []).findIndex(existing => existing.trigger === influence.trigger);
-          if (idx !== -1) state.influenceChain[idx] = influence;
-          else state.influenceChain.unshift(influence);
+          if (idx !== -1) {
+            influence._createdRound = state.influenceChain[idx]._createdRound ?? completedRound;
+            state.influenceChain[idx] = influence;
+          } else {
+            influence._createdRound = completedRound;
+            state.influenceChain.unshift(influence);
+          }
         }
         if (state.influenceChain.length > 12) state.influenceChain.length = 12;
       }
+
+      // Influence entries expire after 8 rounds; updates to the same trigger do not renew them.
+      const completedRound = state.round + 1;
+      const cleanedInfluence = (state.influenceChain || []).filter(influence => {
+        if (!influence || typeof influence !== 'object') return false;
+        if (influence._createdRound === undefined) influence._createdRound = state.round;
+        return (completedRound - influence._createdRound) < 8;
+      });
+      if (cleanedInfluence.length !== (state.influenceChain || []).length) {
+        console.log('[World Engine] auto-removed influence entries:', (state.influenceChain || [])
+          .filter(influence => !cleanedInfluence.includes(influence))
+          .map(influence => influence.trigger)
+          .join(', '));
+      }
+      state.influenceChain = cleanedInfluence;
 
       // economy signals 上限
       if (state.economy && state.economy.signals && state.economy.signals.length > 8) {

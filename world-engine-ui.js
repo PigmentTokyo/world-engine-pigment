@@ -1721,6 +1721,7 @@ window.WORLD_ENGINE_UI = (function() {
         const inf = scopedState.influenceChain?.[index];
         if (!inf) return;
         const copy = JSON.parse(JSON.stringify(inf));
+        copy._createdRound = Number(scopedState.round) || 0;
         scopedState.influenceChain.push(copy);
         saveScopedState(scope, scopedState);
         showToast('影响链已复制');
