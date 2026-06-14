@@ -248,8 +248,8 @@
         const everyX = Math.max(1, parseInt(settings.evolveEveryX) || 1);
         {
           const L = Number(core.getChatFingerprint()) || 0;
-          const lastEvolvedLayer = Number(core.loadFingerprint()) || 0;
-          const anchor = lastEvolvedLayer; // 没推演过从0开始数，推演过从上次楼层开始数
+          let anchor = Number(core.loadFingerprint()) || 0;
+          if (!anchor) { core.saveFingerprint(String(L)); anchor = L; } // 首次固定起点
           const c = Math.floor(Math.max(0, L - anchor) / 2);
           const doEvolve = c > 0 && c % everyX === 0;
 
