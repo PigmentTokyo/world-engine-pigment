@@ -254,7 +254,7 @@
           const L = core.getChatLayer();
           const cp = core.restoreCheckpoint();
           let anchor;
-          if (cp) {
+          if (cp && cp.chatLayer != null) {
             anchor = Number(cp.chatLayer);
           } else {
             anchor = Number(core.loadFingerprint()) || 0;
