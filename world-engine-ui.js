@@ -758,11 +758,11 @@ window.WORLD_ENGINE_UI = (function() {
   function renderWindList(winds, scope) {
     if (!winds || !winds.length) return '<div class="we-empty">暂无风声</div>';
     const typeNames = { announcement:'公告', report:'消息', rumor:'流言', sentiment:'舆情' };
-    const typeColors = { announcement:'#6f9fd8', report:'#57b7a8', rumor:'#d98a3d', sentiment:'#a880c4' };
-    const levelColors = { 1:'#c0c0c0', 2:'#f2f2f2', 3:'#c9a45c', 4:'#df7cff' };
+    const typeColors = { announcement:'#c94b4b', report:'#4a8ab5', rumor:'#9178a0', sentiment:'#c17a35' };
     return renderPagedList(winds, 'winds', (w, windIndex) => {
       const typeColor = typeColors[w.type] || '#888';
-      const levelColor = levelColors[w.level] || '#9aa6b2';
+      // 等级徽章：Lv1/2 中性灰，Lv3/4 取类型本色（与风声四态配色统一）
+      const levelColor = (w.level >= 3) ? typeColor : (w.level === 2 ? '#7a828c' : '#5a6270');
       const isEditing = editingWind && editingWind.scope === scope && editingWind.index === windIndex;
 
       const actionHtml = isEditing ? '' : `
@@ -776,6 +776,14 @@ window.WORLD_ENGINE_UI = (function() {
       const windTypeClass = { announcement:'we-wind-announcement', report:'we-wind-report', rumor:'we-wind-rumor', sentiment:'we-wind-sentiment' }[w.type] || '';
       const windLvClass = 'we-wind-lv' + (w.level || 1);
       let html = '<div class="we-wind-item ' + windTypeClass + ' ' + windLvClass + '" style="--wind-accent:' + typeColor + ';--wind-level-color:' + levelColor + ';">';
+      // Lv4 专属装饰元素：公告双冲击环 / 流言双焦点多圈涟漪
+      if (w.level === 4) {
+        if (w.type === 'announcement') {
+          html += '<span class="we-wind-ring"></span><span class="we-wind-ring we-wind-ring2"></span>';
+        } else if (w.type === 'rumor') {
+          html += '<span class="we-wind-rp we-rp-a1"></span><span class="we-wind-rp we-rp-a2"></span><span class="we-wind-rp we-rp-a3"></span><span class="we-wind-rp we-rp-b1"></span><span class="we-wind-rp we-rp-b2"></span>';
+        }
+      }
       html += '<div class="we-wind-header">';
       html += '<span class="we-wind-topic">' + u(w.topic || '未命名风声') + '</span>';
       html += '<span class="we-badge" style="background:' + typeColor + '22;color:' + typeColor + ';">' + (typeNames[w.type] || '风声') + '</span>';
