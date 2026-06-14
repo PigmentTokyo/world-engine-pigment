@@ -257,9 +257,7 @@
           if (cp) {
             anchor = Number(cp.chatLayer);
           } else {
-            let fp = Number(core.loadFingerprint()) || 0;
-            if (!fp) { core.saveFingerprint(String(L)); fp = L; }
-            anchor = fp;
+            anchor = Number(core.loadFingerprint()) || 0;
           }
           const c = Math.floor(Math.max(0, L - anchor) / 2);
           const doEvolve = c > 0 && c % everyX === 0;
@@ -315,6 +313,9 @@
           state.round = 0;
           core.saveState(state);
           core.clearCheckpoint();
+        }
+        if (!core.restoreCheckpoint()) {
+          core.saveFingerprint(String(core.getChatLayer()));
         }
         applyInjectionForCurrentRound();
         console.log('[世界引擎] 聊天已加载，注入已更新');
