@@ -129,6 +129,8 @@ window.WORLD_ENGINE_UI = (function() {
   // 推演期间新结果还没写回，靠这俩决定面板显示哪份，等写回再翻新。
   let _evolving = false;
   let _evolvingScope = 'state';
+  // 最近一次实际注入正文的状态桶；普通刷新必须跟随它，不能重新按瞬时楼层猜测。
+  let _injectedScope = null;
 
   /**
    * 计算此刻实际注入正文的那一份世界状态（与 world-engine.js
@@ -145,6 +147,12 @@ window.WORLD_ENGINE_UI = (function() {
       if (_evolvingScope === 'checkpoint' && checkpoint) {
         return { state: checkpoint, scope: 'checkpoint', layer: getCheckpointLayer(checkpoint) };
       }
+      return { state: state, scope: 'state', layer: Number.isFinite(Number(state.chatLayer)) ? Number(state.chatLayer) : getChatLayer() };
+    }
+    if (_injectedScope === 'checkpoint' && checkpoint) {
+      return { state: checkpoint, scope: 'checkpoint', layer: getCheckpointLayer(checkpoint) };
+    }
+    if (_injectedScope === 'state') {
       return { state: state, scope: 'state', layer: Number.isFinite(Number(state.chatLayer)) ? Number(state.chatLayer) : getChatLayer() };
     }
     const chatLayer = core.getChatLayer();
@@ -2617,6 +2625,10 @@ window.WORLD_ENGINE_UI = (function() {
     }
   }
 
+  function setInjectedScope(scope) {
+    _injectedScope = scope === 'checkpoint' ? 'checkpoint' : 'state';
+  }
+
   // ========== 世界引擎悬浮球 ==========
   let inputButtonObserver = null;
   let inputButtonRetryTimer = null;
@@ -2857,5 +2869,5 @@ window.WORLD_ENGINE_UI = (function() {
     observeInputButton();
   }
 
-  return { buildPanel, buildInputButton, showPanel, hidePanel, togglePanel, refresh, setStatus, setEvolvingUI };
+  return { buildPanel, buildInputButton, showPanel, hidePanel, togglePanel, refresh, setStatus, setEvolvingUI, setInjectedScope };
 })();

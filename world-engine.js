@@ -175,9 +175,11 @@
         const state = core.loadState();
         const chatLayer = core.getChatLayer();
         const stateLayer = Number.isFinite(Number(state.chatLayer)) ? Number(state.chatLayer) : chatLayer;
+        let injectedScope = 'state';
         if (chatLayer < stateLayer) {
           const checkpoint = core.restoreCheckpoint();
           if (checkpoint) {
+            injectedScope = 'checkpoint';
             console.log(`[世界引擎] 正文注入判定：对话层数 ${chatLayer} < 当前状态层数 ${stateLayer}，注入存档点`);
             applyInjection(checkpoint);
           } else {
@@ -190,6 +192,7 @@
         }
         // 注入正文后刷新面板，让「当前状态」跟随实际注入的那份：
         // 重 roll（对话层数 < 状态层数）→ 显示存档点；否则 → 显示当前状态。
+        if (ui && ui.setInjectedScope) ui.setInjectedScope(injectedScope);
         if (ui && ui.refresh) ui.refresh(true);
       }
 
