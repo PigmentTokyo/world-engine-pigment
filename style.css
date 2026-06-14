@@ -2092,7 +2092,7 @@
 /* 题额 — 匾额感：大字、金色、宋体、宽间距，下压一道细金线 */
 #we-sec-trends > .we-section-title {
   font-family: "SimSun", "宋体", "Songti SC", "STSong", serif;
-  font-size: 19px;
+  font-size: 20px;
   font-weight: 600;
   letter-spacing: 0.04em;
   color: var(--we-gold);
@@ -2150,7 +2150,7 @@
 #we-sec-regional > .we-section-title,
 #we-sec-cp-regional > .we-section-title {
   font-family: "SimSun", "宋体", "Songti SC", "STSong", serif;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 400;
   letter-spacing: 0.08em;
   color: #b85f54;
@@ -2219,7 +2219,7 @@
 /* ===== 世界摘要：学者手稿 ===== */
 #we-sec-digest > .we-section-title {
   font-family: "SimSun", "宋体", "Songti SC", "STSong", serif;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 400;
   letter-spacing: 0.14em;
   color: var(--we-text2);
@@ -2285,7 +2285,7 @@
 #we-sec-ledger > .we-section-title,
 #we-sec-cp-ledger > .we-section-title {
   font-family: "SimSun", "宋体", "Songti SC", "STSong", serif;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 400;
   letter-spacing: 0.16em;
   color: #7a9fbb;
@@ -2309,7 +2309,7 @@
 #we-sec-events > .we-section-title,
 #we-sec-cp-events > .we-section-title {
   font-family: "SimSun", "宋体", "Songti SC", "STSong", serif;
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 600;
   letter-spacing: 0.08em;
   color: #c0814a;
@@ -2325,7 +2325,7 @@
 #we-sec-winds > .we-section-title,
 #we-sec-cp-winds > .we-section-title {
   font-family: "SimSun", "宋体", "Songti SC", "STSong", serif;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 400;
   letter-spacing: 0.16em;
   color: #9b8fb0;
@@ -2340,7 +2340,7 @@
 #we-sec-influence > .we-section-title,
 #we-sec-cp-influence > .we-section-title {
   font-family: "SimSun", "宋体", "Songti SC", "STSong", serif;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 400;
   letter-spacing: 0.10em;
   color: #5e98a6;
@@ -2355,7 +2355,7 @@
 #we-sec-reputation > .we-section-title,
 #we-sec-cp-reputation > .we-section-title {
   font-family: "SimSun", "宋体", "Songti SC", "STSong", serif;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 500;
   letter-spacing: 0.12em;
   color: #b6975f;
@@ -2370,7 +2370,7 @@
 #we-sec-factions > .we-section-title,
 #we-sec-cp-factions > .we-section-title {
   font-family: "SimSun", "宋体", "Songti SC", "STSong", serif;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
   letter-spacing: 0.08em;
   color: #8c6fa8;
@@ -2385,7 +2385,7 @@
 #we-sec-enemies > .we-section-title,
 #we-sec-cp-enemies > .we-section-title {
   font-family: "SimSun", "宋体", "Songti SC", "STSong", serif;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
   letter-spacing: 0.18em;
   color: #a64b48;
@@ -2401,7 +2401,7 @@
 #we-sec-economy > .we-section-title,
 #we-sec-cp-economy > .we-section-title {
   font-family: "SimSun", "宋体", "Songti SC", "STSong", serif;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 500;
   letter-spacing: 0.12em;
   color: #bf9c46;
@@ -2416,7 +2416,7 @@
 #we-sec-blackbox > .we-section-title,
 #we-sec-cp-blackbox > .we-section-title {
   font-family: "SimSun", "宋体", "Songti SC", "STSong", serif;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 400;
   letter-spacing: 0.24em;
   color: #79709a;
@@ -2430,7 +2430,7 @@
 /* 存档点：封存此刻 —— 中性钢灰（外层无 id，用 :has 命中其标题） */
 .we-section-title:has(.we-section-toggle[data-section="checkpoint-section"]) {
   font-family: "SimSun", "宋体", "Songti SC", "STSong", serif;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 400;
   letter-spacing: 0.14em;
   color: #8a93a0;
