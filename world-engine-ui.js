@@ -121,6 +121,13 @@ window.WORLD_ENGINE_UI = (function() {
 
   // 当前视图：'home' | 'situation' | 'events' | 'relations' | 'resources' | 'settings'
   let _currentView = 'home';
+  // 显示模式：'mask'=遮蔽（主页+分页）｜'expand'=展开（所有 section 平铺）
+  function isExpandMode() {
+    const s = window.WORLD_ENGINE_API
+      ? window.WORLD_ENGINE_API.getSettings()
+      : JSON.parse(window.WORLD_ENGINE_STORE.getItem('world_engine_settings') || '{}');
+    return s.displayMode === 'expand';
+  }
   // 主页导航：单击选中的行（再次单击才进入）
   let _selectedNavView = null;
   // 推演进行中标志 + 本次推演的显示基底：
@@ -192,7 +199,9 @@ window.WORLD_ENGINE_UI = (function() {
     if (_wbListEl) _wbScrollTop = _wbListEl.scrollTop;
 
     if (_currentView === 'home') {
-      body.innerHTML = renderHomeView(s, active.layer, active.scope);
+      body.innerHTML = isExpandMode()
+        ? renderHomeViewExpanded(s, active.layer, active.scope)
+        : renderHomeView(s, active.layer, active.scope);
     } else if (_currentView === 'settings') {
       body.innerHTML = renderSettingsView(checkpoint, cpLayer);
     } else {
@@ -352,6 +361,23 @@ window.WORLD_ENGINE_UI = (function() {
     return renderWorldCore(s)
       + '<div class="we-nav-list" style="--we-tier-color:' + tierColor + ';">' + navRows + '</div>'
       + '<div class="we-section" id="we-sec-digest"><div class="we-section-title">世界摘要</div><div class="we-digest">' + u(s.worldDigest) + '</div></div>';
+  }
+
+  /** 展开模式主页：世界核心 + 世界摘要 + 所有 section 平铺（如存档点） */
+  function renderHomeViewExpanded(s, layer, scope) {
+    return renderWorldCore(s)
+      + '<div class="we-section" id="we-sec-digest"><div class="we-section-title">世界摘要</div><div class="we-digest">' + u(s.worldDigest) + '</div></div>'
+      + renderSection('天下大势', 'trends', renderWorldTrends(s.worldTrends, scope))
+      + renderSection('区域事件', 'regional', renderRegionalIncident(s.regionalIncident, scope))
+      + renderSection('事件链', 'events', renderEventList(s.events, scope))
+      + renderSection('风声', 'winds', renderWindList(s.winds, scope))
+      + renderSection('影响链', 'influence', renderInfluenceChain(s.influenceChain, scope))
+      + renderSection('声誉', 'reputation', renderReputation(s.reputation, scope))
+      + renderSection('势力', 'factions', renderFactionList(s.factions, scope))
+      + renderSection('仇敌录', 'enemies', renderEnemies(s.enemies, scope))
+      + renderSection('经济', 'economy', renderEconomy(s.economy, scope))
+      + renderSection('秘密', 'blackbox', renderBlackbox(s.blackbox, scope))
+      + renderSection('事件账本', 'ledger', renderLedger(s.memories));
   }
 
   function renderSubView(viewKey, s, layer, scope) {
@@ -1309,8 +1335,20 @@ window.WORLD_ENGINE_UI = (function() {
         <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">关闭后不会将当前状态或存档点注入聊天正文。</div>
       </div>`;
 
+    const displayMode = settings.displayMode === 'expand' ? 'expand' : 'mask';
+    const displayBody = `
+      <div class="we-input-group">
+        <label>主页显示模式</label>
+        <select id="we-display-mode" style="width:100%;">
+          <option value="mask" ${displayMode === 'mask' ? 'selected' : ''}>遮蔽模式（主页 + 分页进入）</option>
+          <option value="expand" ${displayMode === 'expand' ? 'selected' : ''}>展开模式（所有内容平铺）</option>
+        </select>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">展开模式下世界摘要下方直接平铺全部 section，无需进分页。</div>
+      </div>`;
+
     return sec('set-api', 'API 配置', apiBody)
       + sec('set-evolve', '推演模式', evolveBody)
+      + sec('set-display', '界面显示', displayBody)
       + sec('set-inject', '正文注入', injectBody);
   }
 
@@ -2013,12 +2051,14 @@ window.WORLD_ENGINE_UI = (function() {
     if (saveBtn) {
       saveBtn.onclick = () => {
         const ns = {
+          ...(window.WORLD_ENGINE_API ? window.WORLD_ENGINE_API.getSettings(true) : {}),
           apiUrl: document.getElementById('we-api-url')?.value || '',
           apiKey: document.getElementById('we-api-key')?.value || '',
           model: document.getElementById('we-model')?.value || 'gpt-3.5-turbo',
           injectIntoPrompt: document.getElementById('we-inject-into-prompt')?.checked !== false,
           evolveMode: document.getElementById('we-evolve-mode')?.value === 'manual' ? 'manual' : 'auto',
-          evolveEveryX: Math.max(1, parseInt(document.getElementById('we-evolve-everyx')?.value) || 1)
+          evolveEveryX: Math.max(1, parseInt(document.getElementById('we-evolve-everyx')?.value) || 1),
+          displayMode: document.getElementById('we-display-mode')?.value === 'expand' ? 'expand' : 'mask'
         };
         window.WORLD_ENGINE_STORE.setItem('world_engine_settings', JSON.stringify(ns));
         if (window.WORLD_ENGINE_API) window.WORLD_ENGINE_API.getSettings(true);
