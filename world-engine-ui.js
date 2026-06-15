@@ -4,6 +4,7 @@ window.WORLD_ENGINE_UI = (function() {
   const evolution = window.WORLD_ENGINE_EVOLUTION;
 
   let panelElement = null;
+  let panelBodyElement = null;
   let panelVisible = false;
   let isEvolving = false;
   let editingEvent = null;
@@ -13,11 +14,13 @@ window.WORLD_ENGINE_UI = (function() {
   let editingEnemy = null;
   let editingInfluence = null;
   let editingRI = null;
-  let editingBBAction = null;
-  let editingBBAsset = null;
+  // 秘密编辑器统一态：{ scope, list:'action'|'asset', index, view:'action'|'asset' }
+  //   list  = 条目当前所在的桶；index = 在该桶里的下标
+  //   view  = 当前显示的表单类型（切下拉只改 view，不动数据；转换延到保存）
+  let editingSecret = null;
   let listPagerCounter = 0;
   const listPageState = {};
-  const sectionCollapsed = {};
+  const sectionCollapsed = { 'checkpoint-section': true };
   const expandedWorldbookGroups = new Set();
   // 世界书缓存（模块级，跨 refresh() 存活）
   let _wbCachedEntries = null;
@@ -49,10 +52,27 @@ window.WORLD_ENGINE_UI = (function() {
     if (duration !== 0) setTimeout(() => el.remove(), duration || 3000);
   }
 
+  // 各分页小标题的随附古文（去 cp- 前缀后查表；设置页等不在表中则无）
+  const SECTION_MOTTOS = {
+    trends: '天下之势，以渐而成',
+    regional: '一方有警，四面皆惊',
+    ledger: '毫厘皆有来历',
+    events: '牵一发而全身动',
+    winds: '风起于青萍之末',
+    influence: '牵枝而动叶',
+    reputation: '人之有誉，如影随形',
+    factions: '大树之下，草不沾霜',
+    enemies: '仇者快，亲者痛',
+    economy: '食者民之本，货者民用之资',
+    blackbox: '墙有耳，伏寇在侧'
+  };
+
   function sectionHeader(title, sectionId) {
     const collapsed = sectionCollapsed[sectionId] || false;
+    const motto = SECTION_MOTTOS[sectionId.replace(/^cp-/, '')];
+    const mottoHtml = motto ? `<span class="we-section-motto">— ${motto}</span>` : '';
     return `<span class="we-section-toggle" data-section="${sectionId}">
-      <span class="we-section-arrow" id="we-section-arrow-${sectionId}">${collapsed ? '▶' : '▼'}</span>${title}
+      <span class="we-section-arrow" id="we-section-arrow-${sectionId}">${collapsed ? '▶' : '▼'}</span>${title}${mottoHtml}
     </span>`;
   }
 
@@ -68,8 +88,20 @@ window.WORLD_ENGINE_UI = (function() {
     panel.id = 'we-panel';
     panel.innerHTML = `
       <div class="we-panel-header">
-        <span class="we-panel-title">🌍 世界引擎</span>
-        <button class="we-panel-close">✕</button>
+        <div class="we-header-info">
+          <div class="we-header-top">
+            <span class="we-panel-title">世界引擎</span>
+            <span class="we-header-round" id="we-header-round"></span>
+          </div>
+          <div class="we-header-mood" id="we-header-mood">
+            <span class="we-header-dot"></span>
+            <span class="we-header-mood-text"></span>
+          </div>
+        </div>
+        <div class="we-panel-corner-actions">
+          <button class="we-panel-close">✕</button>
+          <button class="we-panel-settings" id="we-btn-settings-open" title="设置"><i class="fa-solid fa-gear"></i></button>
+        </div>
       </div>
       <div class="we-panel-body" id="we-panel-body">
         <div class="we-loading">加载中...</div>
@@ -77,6 +109,7 @@ window.WORLD_ENGINE_UI = (function() {
     `;
     document.body.appendChild(panel);
     panelElement = panel;
+    panelBodyElement = panel.querySelector('#we-panel-body');
 
     panel.querySelector('.we-panel-close').onclick = () => hidePanel();
     initDrag(panel, panel.querySelector('.we-panel-header'));
@@ -86,106 +119,413 @@ window.WORLD_ENGINE_UI = (function() {
     });
   }
 
-  let _activeTab = 'current';
+  // 当前视图：'home' | 'situation' | 'events' | 'relations' | 'resources' | 'settings'
+  let _currentView = 'home';
+  // 主页导航：单击选中的行（再次单击才进入）
+  let _selectedNavView = null;
+  // 推演进行中标志 + 本次推演的显示基底：
+  //   'checkpoint' = 重新推演（喂存档点 B，面板显示 B）
+  //   'state'      = 向前推演（喂当前状态 A，面板显示 A）
+  // 推演期间新结果还没写回，靠这俩决定面板显示哪份，等写回再翻新。
+  let _evolving = false;
+  let _evolvingScope = 'state';
+  // 最近一次实际注入正文的状态桶；普通刷新必须跟随它，不能重新按瞬时楼层猜测。
+  let _injectedScope = null;
+
+  /**
+   * 计算此刻实际注入正文的那一份世界状态（与 world-engine.js
+   * applyInjectionForCurrentRound 用同一条楼层判断）：
+   *   对话层数 < 当前状态层数 且有存档点 → 注入/显示存档点（重 roll 回退）
+   *   否则 → 注入/显示当前状态
+   * 返回的 scope 同时决定编辑写回哪个存储桶。
+   */
+  function getActiveInjected(state, checkpoint) {
+    // 推演进行中：新结果还没写回，按本次推演的基底显示——
+    //   重新推演（_evolvingScope='checkpoint'）→ 显示存档点 B；
+    //   向前推演（_evolvingScope='state'）   → 显示当前状态 A。
+    if (_evolving) {
+      if (_evolvingScope === 'checkpoint' && checkpoint) {
+        return { state: checkpoint, scope: 'checkpoint', layer: getCheckpointLayer(checkpoint) };
+      }
+      return { state: state, scope: 'state', layer: Number.isFinite(Number(state.chatLayer)) ? Number(state.chatLayer) : getChatLayer() };
+    }
+    if (_injectedScope === 'checkpoint' && checkpoint) {
+      return { state: checkpoint, scope: 'checkpoint', layer: getCheckpointLayer(checkpoint) };
+    }
+    if (_injectedScope === 'state') {
+      return { state: state, scope: 'state', layer: Number.isFinite(Number(state.chatLayer)) ? Number(state.chatLayer) : getChatLayer() };
+    }
+    const chatLayer = core.getChatLayer();
+    const stateLayer = Number.isFinite(Number(state.chatLayer)) ? Number(state.chatLayer) : chatLayer;
+    if (chatLayer < stateLayer && checkpoint) {
+      return { state: checkpoint, scope: 'checkpoint', layer: getCheckpointLayer(checkpoint) };
+    }
+    return { state: state, scope: 'state', layer: Number.isFinite(Number(state.chatLayer)) ? Number(state.chatLayer) : getChatLayer() };
+  }
+
+  // 按当前显示/编辑的存储桶读写：scope==='checkpoint' 读写存档点，其余读写主状态。
+  // 面板可能正在显示存档点（重 roll 回退）或设置页的存档点小节，此时所有编辑必须
+  // 写回存档点而非主状态，否则“数据变了、界面不动 / 点了没反应”（与风声同源的毛病）。
+  function loadScopedState(scope) {
+    return scope === 'checkpoint' ? core.restoreCheckpoint() : core.loadState();
+  }
+  function saveScopedState(scope, scopedState) {
+    if (scope === 'checkpoint') core.saveCheckpoint(scopedState);
+    else core.saveState(scopedState);
+  }
 
   function refresh(auto) {
     if (!panelElement || !panelVisible) return;
-    // 后台自动刷新（30s 定时、推演完成）时，若正停留在设置页则跳过：
-    // 设置页是静态表单，重建会清掉正在输入的 API 信息和刚获取到的模型列表
-    if (auto && _activeTab === 'settings') return;
-    const body = document.getElementById('we-panel-body');
+    // 设置页是静态表单，后台自动刷新会清掉正在输入的内容
+    if (auto && _currentView === 'settings') return;
+    const body = panelBodyElement;
     if (!body) return;
     listPagerCounter = 0;
 
     const state = core.loadState();
     const checkpoint = core.restoreCheckpoint();
-
-    const curLayer = state.chatLayer || getChatLayer();
     const cpLayer = getCheckpointLayer(checkpoint);
+    const active = getActiveInjected(state, checkpoint);
+    const s = active.state;
 
-    // 保存世界书列表滚动位置，渲染后恢复
     const _wbListEl = document.getElementById('we-worldbook-list');
     if (_wbListEl) _wbScrollTop = _wbListEl.scrollTop;
 
-    body.innerHTML = `
-      <div class="we-tabs">
-        <button class="we-tab ${_activeTab === 'current' ? 'we-tab-active' : ''}" data-tab="current">📌 当前状态</button>
-        <button class="we-tab ${_activeTab === 'checkpoint' ? 'we-tab-active' : ''}" data-tab="checkpoint">💾 存档点</button>
-        <button class="we-tab ${_activeTab === 'settings' ? 'we-tab-active' : ''}" data-tab="settings">⚙️ 设置</button>
-      </div>
-      <div class="we-tab-content" id="we-tab-current" style="${_activeTab === 'current' ? 'display:block' : 'display:none'}">
-        <div class="we-actions-bar" style="margin-bottom:8px;">
-          <button class="we-btn we-btn-primary" id="we-btn-evolve">🌀 手动推演</button>
-          <button class="we-btn we-btn-danger" id="we-btn-abort" style="background:var(--we-danger);color:#fff;" disabled>⏹ 停止推演</button>
-          <button class="we-btn" id="we-btn-refresh">🔄 刷新</button>
-        </div>
-        ${renderFullState(state, curLayer, 'state')}
-      </div>
-      <div class="we-tab-content" id="we-tab-checkpoint" style="${_activeTab === 'checkpoint' ? 'display:block' : 'display:none'}">
-        ${checkpoint ? renderFullState(checkpoint, cpLayer, 'checkpoint') : '<div class="we-empty">暂无存档点</div>'}
-      </div>
-      <div class="we-tab-content" id="we-tab-settings" style="${_activeTab === 'settings' ? 'display:block' : 'display:none'}">
-        ${renderSettingsForm()}
-        <div class="we-section" style="margin-top:16px;">
-          <div class="we-section-title">🔍 调试</div>
-          <div>${renderDebug()}</div>
-        </div>
-      </div>
-    `;
+    if (_currentView === 'home') {
+      body.innerHTML = renderHomeView(s, active.layer, active.scope);
+    } else if (_currentView === 'settings') {
+      body.innerHTML = renderSettingsView(checkpoint, cpLayer);
+    } else {
+      body.innerHTML = renderSubView(_currentView, s, active.layer, active.scope);
+    }
 
-    // Tab 切换逻辑
-    const tabs = body.querySelectorAll('.we-tab');
-    tabs.forEach(tab => {
-      tab.onclick = () => {
-        _activeTab = tab.dataset.tab;
-        refresh();
-      };
-    });
-
+    updatePanelHeader(s, active.layer);
     bindEvents(state);
   }
 
-  /** 渲染单个状态的概览区块 */
-  function renderStatusBlock(s, layer) {
-    return `
-      <div class="we-section">
-        <div class="we-section-title">📊 基本信息 <span class="we-badge" style="background:#6662;color:var(--we-text2);font-size:11px;">第${layer}层</span></div>
-        <div class="we-info-grid">
-          <div class="we-info-item"><span class="we-label">轮次</span><span class="we-val">${s.round}</span></div>
-          <div class="we-info-item"><span class="we-label">账本</span><span class="we-val">${(s.memories||[]).filter(m=>m.type==='ledger').length}轮</span></div>
-          <div class="we-info-item"><span class="we-label">事件链</span><span class="we-val">${(s.events||[]).length}个</span></div>
-          <div class="we-info-item"><span class="we-label">势力</span><span class="we-val">${(s.factions||[]).length}个</span></div>
-          <div class="we-info-item"><span class="we-label">天下大势</span><span class="we-val">${(s.worldTrends||[]).length}条</span></div>
-          <div class="we-info-item"><span class="we-label">风声</span><span class="we-val">${(s.winds||[]).length}条</span></div>
-          <div class="we-info-item"><span class="we-label">仇敌</span><span class="we-val">${(s.enemies||[]).length}个</span></div>
-        </div>
-      </div>
-      <div class="we-section">
-        <div class="we-section-title">📝 世界摘要</div>
-        <div class="we-digest">${u(s.worldDigest)}</div>
-      </div>
-    `;
+  /**
+   * 世界稳定度（纯 UI 现算，只读，不写存档/不进 prompt/不返 API）
+   * 稳定度 = clamp(100 - 世界压力, 0, 100)
+   */
+  function computeWorldStability(state) {
+    state = state || {};
+    const round = Number(state.round) || 0;
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+    // 事件链：仅 Lv3/4，单条封顶 60
+    const CONFLICT_BASE = { 萌芽:0, 发酵:1, 逼近:2, 已爆发:4, 已消散:0 };
+    const PROGRESS_BASE = { 筹备:0, 执行:1, 关键:2, 已完成:-2, 已失败:0 };
+    let eventP = 0;
+    for (const e of (state.events || [])) {
+      const level = Number(e.level) || 1;
+      if (level < 3) continue;
+      const isProgress = e.type === 'progress';
+      const base = isProgress ? PROGRESS_BASE : CONFLICT_BASE;
+      const keepTotal = 2 + level * 2;
+      const remainFactor = () => {
+        if (e._terminalSince === undefined) return 1;
+        return clamp((keepTotal - (round - e._terminalSince)) / keepTotal, 0, 1);
+      };
+      let p;
+      if (e.stage === '已爆发') p = 4 * level * 0.5 * remainFactor();
+      else if (e.stage === '已完成') p = -2 * remainFactor();        // 不乘 level
+      else if (e.stage === '已消散' || e.stage === '已失败') p = 0;
+      else p = (base[e.stage] || 0) * level * 0.5;
+      if (e.stall) p *= 0.65;
+      eventP += clamp(p, -60, 60);
+    }
+
+    // 风声：仅 Lv3/4，总封顶 25
+    const WIND_BASE = { rumor:0.5, announcement:1, report:1.5, sentiment:2 };
+    let windP = 0;
+    for (const w of (state.winds || [])) {
+      const level = Number(w.level) || 1;
+      if (level < 3) continue;
+      windP += (WIND_BASE[w.type] || 0) * level;
+    }
+    windP = Math.min(windP, 25);
+
+    // 天下大势：每条持续中 +6，总封顶 20
+    let trendP = 0;
+    for (const t of (state.worldTrends || [])) if (t.status !== '已结束') trendP += 6;
+    trendP = Math.min(trendP, 20);
+
+    // 势力：关系值 × 状态系数，总封顶 35
+    const REL = { 血盟:-1.5, 盟友:-1, 友好:-0.5, 中立:0, 冷淡:0.5, 敌对:1, 世仇:1.5 };
+    const STAT = { 鼎盛:1.25, 稳固:1, 倾轧:0.75, 困顿:0.5, 衰落:0.25, 瓦解:0 };
+    let factionP = 0;
+    for (const f of (state.factions || [])) {
+      const rel = REL[f.relation] !== undefined ? REL[f.relation] : 0;
+      const st = STAT[f.status] !== undefined ? STAT[f.status] : 1;
+      factionP += rel * st;
+    }
+    factionP = clamp(factionP, -35, 35);
+
+    // 经济：只看 climate
+    const CLIMATE = { 繁荣:-2, 平稳:0, 衰退:1, 动荡:2 };
+    const econP = CLIMATE[(state.economy || {}).climate] || 0;
+
+    // 区域突发：激活 +5
+    const regionP = (state.regionalIncident && state.regionalIncident.active) ? 5 : 0;
+
+    // 仇敌、黑盒：按设定不计入世界稳定度
+
+    const pressure = eventP + windP + trendP + factionP + econP + regionP;
+    const stability = Number(clamp(100 - pressure, 0, 100).toFixed(1));
+    const tier =
+      stability >= 90 ? '天下太平' :
+      stability >= 70 ? '暗流浮动' :
+      stability >= 45 ? '局势紧张' :
+      stability >= 20 ? '动荡失序' : '崩坏边缘';
+
+    const r1 = v => Number(v.toFixed(1));
+    return {
+      stability, tier, pressure: r1(pressure),
+      breakdown: {
+        事件: r1(eventP), 风声: r1(windP), 大势: r1(trendP), 势力: r1(factionP),
+        经济: r1(econP), 区域: r1(regionP)
+      }
+    };
   }
 
-  function renderFullState(s, layer, scope) {
-    return renderStatusBlock(s, layer) +
-      '<div class="we-section"><div class="we-section-title">' + sectionHeader('🌐 天下大势', 'trends') + '</div>' + sectionBody('trends', renderWorldTrends(s.worldTrends, scope)) + '</div>' +
-      '<div class="we-section"><div class="we-section-title">' + sectionHeader('🔥 事件链', 'events') + '</div>' + sectionBody('events', renderEventList(s.events, scope)) + '</div>' +
-      '<div class="we-section"><div class="we-section-title">' + sectionHeader('🏛️ 势力', 'factions') + '</div>' + sectionBody('factions', renderFactionList(s.factions)) + '</div>' +
-      '<div class="we-section"><div class="we-section-title">' + sectionHeader('🗣️ 风声', 'winds') + '</div>' + sectionBody('winds', renderWindList(s.winds)) + '</div>' +
-      '<div class="we-section"><div class="we-section-title">' + sectionHeader('⭐ 声誉', 'reputation') + '</div>' + sectionBody('reputation', renderReputation(s.reputation)) + '</div>' +
-      '<div class="we-section"><div class="we-section-title">' + sectionHeader('💰 经济', 'economy') + '</div>' + sectionBody('economy', renderEconomy(s.economy)) + '</div>' +
-      '<div class="we-section"><div class="we-section-title">' + sectionHeader('⚔️ 仇敌录', 'enemies') + '</div>' + sectionBody('enemies', renderEnemies(s.enemies)) + '</div>' +
-      '<div class="we-section"><div class="we-section-title">' + sectionHeader('🔗 影响链', 'influence') + '</div>' + sectionBody('influence', renderInfluenceChain(s.influenceChain)) + '</div>' +
-      '<div class="we-section"><div class="we-section-title">' + sectionHeader('⚠️ 区域突发事件', 'regional') + '</div>' + sectionBody('regional', renderRegionalIncident(s.regionalIncident)) + '</div>' +
-      '<div class="we-section"><div class="we-section-title">' + sectionHeader('🕶️ 信息黑盒', 'blackbox') + '</div>' + sectionBody('blackbox', renderBlackbox(s.blackbox)) + '</div>' +
-      '<div class="we-section"><div class="we-section-title">' + sectionHeader('📖 近期重大事件账本', 'ledger') + '</div>' + sectionBody('ledger', renderLedger(s.memories)) + '</div>';
+  const STABILITY_TIER_COLOR = {
+    天下太平: '#69b68e', 暗流浮动: '#58b8a9', 局势紧张: '#d0aa58',
+    动荡失序: '#d98a3d', 崩坏边缘: '#ff0000'
+  };
+
+  // 稳定度档位 → 头部小字（诗句）
+  const STABILITY_TIER_MOOD = {
+    天下太平: '海静不扬波', 暗流浮动: '暗水带花流', 局势紧张: '云急风更恶',
+    动荡失序: '乾坤含疮痍', 崩坏边缘: '坤轴欹将折'
+  };
+
+  /** 刷新头部的「第X轮 + 稳定度小字」 */
+  function updatePanelHeader(state, layer) {
+    const roundEl = document.getElementById('we-header-round');
+    if (roundEl) {
+      const layerText = (layer !== undefined && layer !== null && layer !== '-') ? ' · 第 ' + layer + ' 层' : '';
+      roundEl.textContent = '第 ' + ((state && state.round) || 0) + ' 轮' + layerText;
+    }
+    const moodEl = document.getElementById('we-header-mood');
+    if (moodEl) {
+      const stab = computeWorldStability(state || {});
+      const color = STABILITY_TIER_COLOR[stab.tier] || '#58b8a9';
+      const text = STABILITY_TIER_MOOD[stab.tier] || '';
+      const dot = moodEl.querySelector('.we-header-dot');
+      const txt = moodEl.querySelector('.we-header-mood-text');
+      if (dot) { dot.style.background = color; dot.style.boxShadow = '0 0 6px ' + color; }
+      if (txt) { txt.textContent = text; txt.style.color = color; }
+    }
+  }
+
+  const VIEW_TITLES = {
+    situation: '局势', events: '事件', relations: '关系', resources: '资源', settings: '设置'
+  };
+
+  function renderSection(title, id, content) {
+    return '<div class="we-section" id="we-sec-' + id + '"><div class="we-section-title">' + sectionHeader(title, id) + '</div>' + sectionBody(id, content) + '</div>';
+  }
+
+  function renderHomeView(s, layer, scope) {
+    const stab = computeWorldStability(s);
+    const tierColor = STABILITY_TIER_COLOR[stab.tier] || '#58b8a9';
+
+    const rows = [
+      { view: 'situation', label: '局势', sub: '天下大势 · 区域事件 · 账本', poem: '天下云集响应' },
+      { view: 'events',    label: '事件', sub: '事件链 · 风声 · 影响链',     poem: '事至而应' },
+      { view: 'relations', label: '关系', sub: '声誉 · 势力 · 仇敌录',       poem: '同声相应，同气相求' },
+      { view: 'resources', label: '资源', sub: '经济 · 秘密',               poem: '地藏无尽藏' },
+    ];
+
+    const navRows = rows.map((r, i) => {
+      const topLine = i === 0 ? '<div class="we-nav-line we-nav-line-hidden"></div>' : '<div class="we-nav-line"></div>';
+      const botLine = i === rows.length - 1 ? '<div class="we-nav-line we-nav-line-hidden"></div>' : '<div class="we-nav-line"></div>';
+      const sel = _selectedNavView === r.view ? ' we-nav-row--selected' : '';
+      return '<div class="we-nav-row' + sel + '" data-view="' + r.view + '">'
+        + '<div class="we-nav-label">' + r.label + '</div>'
+        + '<div class="we-nav-track">' + topLine + '<div class="we-nav-dot"></div>' + botLine + '</div>'
+        + '<div class="we-nav-content"><span class="we-nav-sub">' + r.sub + '</span><span class="we-nav-poem">' + r.poem + '</span></div>'
+        + '<i class="fa-solid fa-chevron-right we-nav-arrow"></i>'
+        + '</div>';
+    }).join('');
+
+    return renderWorldCore(s)
+      + '<div class="we-nav-list" style="--we-tier-color:' + tierColor + ';">' + navRows + '</div>'
+      + '<div class="we-section" id="we-sec-digest"><div class="we-section-title">世界摘要</div><div class="we-digest">' + u(s.worldDigest) + '</div></div>';
+  }
+
+  function renderSubView(viewKey, s, layer, scope) {
+    let content = '';
+    if (viewKey === 'situation') {
+      content = renderSection('天下大势', 'trends', renderWorldTrends(s.worldTrends, scope))
+        + renderSection('区域事件', 'regional', renderRegionalIncident(s.regionalIncident, scope))
+        + renderSection('事件账本', 'ledger', renderLedger(s.memories));
+    } else if (viewKey === 'events') {
+      content = renderSection('事件链', 'events', renderEventList(s.events, scope))
+        + renderSection('风声', 'winds', renderWindList(s.winds, scope))
+        + renderSection('影响链', 'influence', renderInfluenceChain(s.influenceChain, scope));
+    } else if (viewKey === 'relations') {
+      content = renderSection('声誉', 'reputation', renderReputation(s.reputation, scope))
+        + renderSection('势力', 'factions', renderFactionList(s.factions, scope))
+        + renderSection('仇敌录', 'enemies', renderEnemies(s.enemies, scope));
+    } else if (viewKey === 'resources') {
+      content = renderSection('经济', 'economy', renderEconomy(s.economy, scope))
+        + renderSection('秘密', 'blackbox', renderBlackbox(s.blackbox, scope));
+    }
+    return '<div class="we-sub-topbar">'
+      + '<button class="we-icon-btn" id="we-btn-back" title="返回"><i class="fa-solid fa-arrow-left"></i></button>'
+      + '<span class="we-sub-title">' + (VIEW_TITLES[viewKey] || viewKey) + '</span>'
+      + '</div>' + content;
+  }
+
+  /** 存档点小标题：青色默认小字 + 「- N轮 - M层」 */
+  function checkpointTitle(checkpoint, cpLayer) {
+    if (!checkpoint) return '存档点';
+    const round = checkpoint.round || 0;
+    const layer = (cpLayer === undefined || cpLayer === null) ? '-' : cpLayer;
+    return '存档点 - ' + round + ' 轮 - ' + layer + ' 层';
+  }
+
+  function renderSettingsView(checkpoint, cpLayer) {
+    const cpContent = checkpoint
+      ? renderCheckpointSections(checkpoint, cpLayer)
+      : '<div class="we-empty">暂无存档点</div>';
+    return '<div class="we-sub-topbar">'
+      + '<button class="we-icon-btn" id="we-btn-back" title="返回"><i class="fa-solid fa-arrow-left"></i></button>'
+      + '<span class="we-sub-title">设置</span>'
+      + '</div>'
+      + '<div class="we-settings-evolve-actions">'
+      + '<button class="we-btn we-btn-primary" id="we-btn-redo" title="把存档点喂给后台推演，重出本轮结果">重新推演</button>'
+      + '<button class="we-btn we-btn-primary" id="we-btn-forward" title="把当前状态喂给后台推演，向前推进一轮">向前推演</button>'
+      + '<button class="we-btn we-btn-danger" id="we-btn-abort" style="background:var(--we-danger);color:#fff;" disabled>停止推演</button>'
+      + '</div>'
+      + renderSettingsForm()
+      + '<div class="we-section" style="margin-top:16px;"><div class="we-section-title">' + sectionHeader(checkpointTitle(checkpoint, cpLayer), 'checkpoint-section') + '</div>' + sectionBody('checkpoint-section', cpContent) + '</div>'
+      + '<div class="we-settings-save-actions">'
+      + '<button class="we-btn" id="we-save-settings">保存设置</button>'
+      + '<button class="we-btn we-btn-danger" id="we-reset-world">重置世界</button>'
+      + '</div>'
+      + renderSettingsAfterCheckpoint()
+      + '<div class="we-section we-debug-section" style="margin-top:8px;">'
+      + '<div class="we-section-title"><span class="we-debug-toggle" title="展开或收起调试信息"><span class="we-toggle-arrow">▶</span>调试</span></div>'
+      + '<div id="we-debug-body" style="display:none;">' + renderDebug() + '</div></div>';
+  }
+
+  function renderCheckpointSections(s, layer) {
+    return renderSection('天下大势', 'cp-trends', renderWorldTrends(s.worldTrends, 'checkpoint'))
+      + renderSection('事件链', 'cp-events', renderEventList(s.events, 'checkpoint'))
+      + renderSection('势力', 'cp-factions', renderFactionList(s.factions, 'checkpoint'))
+      + renderSection('风声', 'cp-winds', renderWindList(s.winds, 'checkpoint'))
+      + renderSection('声誉', 'cp-reputation', renderReputation(s.reputation, 'checkpoint'))
+      + renderSection('经济', 'cp-economy', renderEconomy(s.economy, 'checkpoint'))
+      + renderSection('仇敌录', 'cp-enemies', renderEnemies(s.enemies, 'checkpoint'))
+      + renderSection('影响链', 'cp-influence', renderInfluenceChain(s.influenceChain, 'checkpoint'))
+      + renderSection('区域事件', 'cp-regional', renderRegionalIncident(s.regionalIncident, 'checkpoint'))
+      + renderSection('秘密', 'cp-blackbox', renderBlackbox(s.blackbox, 'checkpoint'))
+      + renderSection('事件账本', 'cp-ledger', renderLedger(s.memories));
+  }
+
+  /** 世界核心：环形稳定度仪表 + 四格关键计数 */
+  function renderWorldCore(s) {
+    const stab = computeWorldStability(s);
+    const tierColor = STABILITY_TIER_COLOR[stab.tier] || '#58b8a9';
+    const detail = Object.entries(stab.breakdown)
+      .filter(([, v]) => v !== 0)
+      .map(([k, v]) => `${k} ${v > 0 ? '+' : ''}${v}`).join('　') || '无压力来源';
+
+    const R = 66, C = 2 * Math.PI * R;
+    const pct = Math.max(0, Math.min(1, stab.stability / 100));
+    const dash = (pct * C).toFixed(1);
+    const theta = (pct * 360 - 90) * Math.PI / 180;       // 从正上方起、顺时针
+    const dotX = (80 + R * Math.cos(theta)).toFixed(1);
+    const dotY = (80 + R * Math.sin(theta)).toFixed(1);
+    const dashNum = Number(dash);
+
+    function arcPoint(angleDeg) {
+      const rad = angleDeg * Math.PI / 180;
+      return {
+        x: 80 + R * Math.cos(rad),
+        y: 80 + R * Math.sin(rad)
+      };
+    }
+
+    function arcPath(startDeg, endDeg) {
+      const a = arcPoint(startDeg);
+      const b = arcPoint(endDeg);
+      const largeArc = Math.abs(endDeg - startDeg) > 180 ? 1 : 0;
+      return `M ${a.x.toFixed(2)} ${a.y.toFixed(2)} A ${R} ${R} 0 ${largeArc} 1 ${b.x.toFixed(2)} ${b.y.toFixed(2)}`;
+    }
+
+    const tailDeg = Math.min(36, pct * 360);
+    const tailSegs = 36;
+    let tailGlow = '';
+
+    for (let i = 0; i < tailSegs; i++) {
+      const t1 = i / tailSegs;
+      const t2 = (i + 1) / tailSegs;
+
+      const startDeg = -90 + pct * 360 - tailDeg + t1 * tailDeg;
+      const endDeg = -90 + pct * 360 - tailDeg + t2 * tailDeg;
+
+      const alpha = Math.pow(t2, 2.2) * 0.72;
+
+      tailGlow += `
+        <path d="${arcPath(startDeg, endDeg)}"
+          fill="none"
+          stroke="#ffffff"
+          stroke-width="6"
+          stroke-linecap="butt"
+          opacity="${alpha.toFixed(3)}"/>
+      `;
+    }
+
+    const stats = [
+      ['事件', (s.events || []).length],
+      ['势力', (s.factions || []).length],
+      ['风声', (s.winds || []).length],
+      ['大势', (s.worldTrends || []).length],
+    ].map(([k, v]) => `<div class="we-core-stat"><div class="we-core-stat-k">${k}</div><div class="we-core-stat-v">${v}</div></div>`).join('');
+
+    return `
+      <div class="we-section we-core-section">
+        <div class="we-core" title="各来源压力（仅 Lv3/4 计入）：${detail}　|　压力 ${stab.pressure}">
+          <div class="we-core-ring">
+            <svg viewBox="0 0 160 160" width="160" height="160">
+              <defs>
+                <filter id="weCoreDotGlow" x="-80%" y="-80%" width="260%" height="260%">
+                  <feGaussianBlur stdDeviation="3.2"/>
+                </filter>
+              </defs>
+
+              <circle cx="80" cy="80" r="${R}" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="6"/>
+
+              <circle cx="80" cy="80" r="${R}" fill="none" stroke="${tierColor}" stroke-width="6"
+                stroke-linecap="round"
+                stroke-dasharray="${dash} ${(C - pct * C).toFixed(1)}"
+                transform="rotate(-90 80 80)"/>
+
+              ${tailGlow}
+
+              <circle class="we-core-dot-glow" cx="${dotX}" cy="${dotY}" r="8" fill="#ffffff" opacity="0.14" filter="url(#weCoreDotGlow)"/>
+              <circle cx="${dotX}" cy="${dotY}" r="4.6" fill="#e8fffb" opacity="0.70"/>
+              <circle class="we-core-dot-core" cx="${dotX}" cy="${dotY}" r="2.5" fill="#ffffff" opacity="0.95"/>
+            </svg>
+            <div class="we-core-center">
+              <div class="we-core-title">世界核心</div>
+              <div class="we-core-sub">稳定度</div>
+              <div class="we-core-pct" style="color:${tierColor};">${stab.stability.toFixed(1)}<span>%</span></div>
+              <div class="we-core-tier" style="color:${tierColor};">${stab.tier}</div>
+            </div>
+          </div>
+          <div class="we-core-stats">${stats}</div>
+        </div>
+      </div>`;
   }
 
   /** 获取存档点的对话层数 */
   function getCheckpointLayer(cp) {
     if (!cp) return '-';
-    return cp.chatLayer || '-';
+    return Number.isFinite(Number(cp.chatLayer)) ? Number(cp.chatLayer) : '-';
   }
 
   function renderPagedList(items, key, renderItem, perPage = 4) {
@@ -216,10 +556,10 @@ window.WORLD_ENGINE_UI = (function() {
         逼近:'#cf5f3f',
         已爆发:'#b93f3f',
         已消散:'#888888',
-        筹备:'#57b7a8',
-        执行:'#3fae86',
-        关键:'#2f9b68',
-        已完成:'#237a4d',
+        筹备:'#7de9d9',
+        执行:'#58e8b3',
+        关键:'#2a8a5d',
+        已完成:'#1b5e3b',
         已失败:'#888888',
         停滞:'#6688aa'
       };
@@ -236,7 +576,7 @@ window.WORLD_ENGINE_UI = (function() {
       const isTerminal = terminalStages.includes(e.stage);
       if (e.consecutiveFails > 0 && !isTerminal) {
         const maxFails = e.type === 'progress' ? 2 + (e.level || 1) : 6 - (e.level || 1);
-        extras += ` <span class="we-badge" style="background:#6662;color:#888;">⌛${e.consecutiveFails}/${maxFails}</span>`;
+        extras += ` <span class="we-badge" style="background:#6662;color:#888;">${e.consecutiveFails}/${maxFails}</span>`;
       }
       if (e.stall && !isTerminal) {
         extras += ' <span class="we-badge" style="background:#6688aa22;color:#6688aa;">停滞</span>';
@@ -251,7 +591,14 @@ window.WORLD_ENGINE_UI = (function() {
       let progressHtml = '';
       if (!isTerminal) {
         const pct = Math.round((e.stageRound / 9) * 100);
-        progressHtml = `<div class="we-event-progress">
+
+        const progressMotionClass = {
+          '成功': 'we-event-progress-success',
+          '保持': 'we-event-progress-hold',
+          '受挫': 'we-event-progress-fail'
+        }[e.evolveResult] || '';
+
+        progressHtml = `<div class="we-event-progress ${progressMotionClass}">
           <div style="width:${pct}%;background:${color};"></div>
         </div>`;
       }
@@ -264,12 +611,12 @@ window.WORLD_ENGINE_UI = (function() {
         const keepRounds = 2 + (e.level || 1) * 2;
         const left = keepRounds - (curRound - e._terminalSince) + 1;
         if (left >= 1) {
-          const cdColor = e.stage === '已完成' ? '#6fc28a' : '#e07465';
+          const cdColor = e.stage === '已完成' ? '#58e8b3' : '#e07465';
           countdownHtml = ` <span class="we-badge we-event-countdown" style="color:${cdColor};" title="该事件在 ${left} 轮后自动清退"><i class="fa-regular fa-clock"></i>剩余${left}轮</span>`;
         }
       }
       const terminalStamp = {
-        已完成: { text: '完成', color: '#6fc28a' },
+        已完成: { text: '完成', color: '#58e8b3' },
         已爆发: { text: '爆发', color: '#e07465' },
         已消散: { text: '消散', color: '#a6a6ad' },
         已失败: { text: '失败', color: '#c08aaa' }
@@ -359,20 +706,18 @@ window.WORLD_ENGINE_UI = (function() {
       </div>`;
   }
 
-  function renderFactionList(factions) {
+  function renderFactionList(factions, scope) {
     if (!factions || !factions.length) return '<div class="we-empty">暂无势力</div>';
     return renderPagedList(factions, 'factions', (f, factionIndex) => {
       const relationColors = {
         血盟:'#2563eb', 盟友:'#0ea5e9', 友好:'#06b6d4', 中立:'#94a3b8',
         冷淡:'#f59e0b', 紧张:'#f59e0b', 敌对:'#ef4444', 世仇:'#991b1b'
       };
-      const statusIcons = { 鼎盛:'🔥', 稳固:'⚖️', 倾轧:'⚔️', 困顿:'💧', 衰落:'🍂', 瓦解:'💀' };
       const statusColors = { 鼎盛:'#d0aa58', 稳固:'#69b68e', 倾轧:'#cf5f3f', 困顿:'#70a8d2', 衰落:'#a6a6ad', 瓦解:'#888888' };
       const relColor = relationColors[f.relation] || '#888';
       const stColor = statusColors[f.status] || '#888';
-      const stIcon = statusIcons[f.status] || '';
 
-      const isEditing = editingFaction && editingFaction.index === factionIndex;
+      const isEditing = editingFaction && editingFaction.scope === scope && editingFaction.index === factionIndex;
 
       let pillarsHtml = '';
       if (f.powerPillars && f.powerPillars.length) {
@@ -381,20 +726,20 @@ window.WORLD_ENGINE_UI = (function() {
 
       const actionHtml = isEditing ? '' : `
         <div class="we-event-actions">
-          <button class="we-icon-btn we-faction-delete" data-faction-index="${factionIndex}" title="删除势力"><i class="fa-solid fa-trash-can"></i></button>
-          <button class="we-icon-btn we-faction-copy" data-faction-index="${factionIndex}" title="复制势力"><i class="fa-solid fa-copy"></i></button>
-          <button class="we-icon-btn we-faction-edit" data-faction-index="${factionIndex}" title="编辑势力"><i class="fa-solid fa-pen"></i></button>
+          <button class="we-icon-btn we-faction-delete" data-faction-scope="${scope}" data-faction-index="${factionIndex}" title="删除势力"><i class="fa-solid fa-trash-can"></i></button>
+          <button class="we-icon-btn we-faction-copy" data-faction-scope="${scope}" data-faction-index="${factionIndex}" title="复制势力"><i class="fa-solid fa-copy"></i></button>
+          <button class="we-icon-btn we-faction-edit" data-faction-scope="${scope}" data-faction-index="${factionIndex}" title="编辑势力"><i class="fa-solid fa-pen"></i></button>
         </div>`;
-      const editHtml = isEditing ? renderFactionEditor(f, factionIndex) : '';
+      const editHtml = isEditing ? renderFactionEditor(f, factionIndex, scope) : '';
 
       return `<div class="we-faction-item">
         <div class="we-faction-name">${u(f.name)}</div>
         <div class="we-faction-tags">
-          <span class="we-tag" style="border-color:${stColor};color:${stColor};">${stIcon} ${f.status||'稳固'}</span>
+          <span class="we-tag" style="border-color:${stColor};color:${stColor};">${f.status||'稳固'}</span>
           <span class="we-tag" style="border-color:${relColor};color:${relColor};">${f.relation||'中立'}</span>
           ${f.scope ? '<span class="we-tag">' + u(f.scope) + '</span>' : ''}
         </div>
-        ${f.currentGoal ? `<div class="we-faction-goal">🎯 ${u(f.currentGoal)}</div>` : ''}
+        ${f.currentGoal ? `<div class="we-faction-goal">${u(f.currentGoal)}</div>` : ''}
         ${f.core_person ? `<div class="we-faction-meta">核心人物: ${u(f.core_person)}</div>` : ''}
         ${pillarsHtml}
         ${actionHtml}
@@ -403,7 +748,7 @@ window.WORLD_ENGINE_UI = (function() {
     });
   }
 
-  function renderFactionEditor(f, index) {
+  function renderFactionEditor(f, index, scope) {
     const statusOptions = ['鼎盛','稳固','倾轧','困顿','衰落','瓦解'].map(s =>
       `<option value="${s}" ${f.status === s ? 'selected' : ''}>${s}</option>`).join('');
     const relationOptions = ['血盟','盟友','友好','中立','冷淡','敌对','世仇'].map(r =>
@@ -412,7 +757,7 @@ window.WORLD_ENGINE_UI = (function() {
     for (let i = 0; i < 3; i++) pillars.push(f.powerPillars?.[i] || '');
 
     return `
-      <div class="we-event-editor" data-faction-index="${index}">
+      <div class="we-event-editor" data-faction-scope="${scope}" data-faction-index="${index}">
         <button class="we-event-editor-close we-faction-editor-close"><i class="fa-solid fa-xmark"></i></button>
         <div class="we-event-editor-grid">
           <label class="we-event-editor-wide">势力名称<input class="we-faction-edit-name" type="text" value="${u(f.name||'')}"></label>
@@ -475,27 +820,35 @@ window.WORLD_ENGINE_UI = (function() {
       </div>`;
   }
 
-  function renderWindList(winds) {
+  function renderWindList(winds, scope) {
     if (!winds || !winds.length) return '<div class="we-empty">暂无风声</div>';
     const typeNames = { announcement:'公告', report:'消息', rumor:'流言', sentiment:'舆情' };
-    const typeColors = { announcement:'#6f9fd8', report:'#57b7a8', rumor:'#d98a3d', sentiment:'#a880c4' };
-    const levelColors = { 1:'#c0c0c0', 2:'#f2f2f2', 3:'#c9a45c', 4:'#df7cff' };
+    const typeColors = { announcement:'#c94b4b', report:'#4a8ab5', rumor:'#9178a0', sentiment:'#c17a35' };
     return renderPagedList(winds, 'winds', (w, windIndex) => {
       const typeColor = typeColors[w.type] || '#888';
-      const levelColor = levelColors[w.level] || '#9aa6b2';
-      const isEditing = editingWind && editingWind.index === windIndex;
+      // 等级徽章：Lv1/2 中性灰，Lv3/4 取类型本色（与风声四态配色统一）
+      const levelColor = (w.level >= 3) ? typeColor : (w.level === 2 ? '#7a828c' : '#5a6270');
+      const isEditing = editingWind && editingWind.scope === scope && editingWind.index === windIndex;
 
       const actionHtml = isEditing ? '' : `
         <div class="we-event-actions">
-          <button class="we-icon-btn we-wind-delete" data-wind-index="${windIndex}" title="删除风声"><i class="fa-solid fa-trash-can"></i></button>
-          <button class="we-icon-btn we-wind-copy" data-wind-index="${windIndex}" title="复制风声"><i class="fa-solid fa-copy"></i></button>
-          <button class="we-icon-btn we-wind-edit" data-wind-index="${windIndex}" title="编辑风声"><i class="fa-solid fa-pen"></i></button>
+          <button class="we-icon-btn we-wind-delete" data-wind-scope="${scope}" data-wind-index="${windIndex}" title="删除风声"><i class="fa-solid fa-trash-can"></i></button>
+          <button class="we-icon-btn we-wind-copy" data-wind-scope="${scope}" data-wind-index="${windIndex}" title="复制风声"><i class="fa-solid fa-copy"></i></button>
+          <button class="we-icon-btn we-wind-edit" data-wind-scope="${scope}" data-wind-index="${windIndex}" title="编辑风声"><i class="fa-solid fa-pen"></i></button>
         </div>`;
-      const editHtml = isEditing ? renderWindEditor(w, windIndex) : '';
+      const editHtml = isEditing ? renderWindEditor(w, windIndex, scope) : '';
 
       const windTypeClass = { announcement:'we-wind-announcement', report:'we-wind-report', rumor:'we-wind-rumor', sentiment:'we-wind-sentiment' }[w.type] || '';
       const windLvClass = 'we-wind-lv' + (w.level || 1);
       let html = '<div class="we-wind-item ' + windTypeClass + ' ' + windLvClass + '" style="--wind-accent:' + typeColor + ';--wind-level-color:' + levelColor + ';">';
+      // Lv4 专属装饰元素：公告双冲击环 / 流言双焦点多圈涟漪
+      if (w.level === 4) {
+        if (w.type === 'announcement') {
+          html += '<span class="we-wind-ring"></span><span class="we-wind-ring we-wind-ring2"></span>';
+        } else if (w.type === 'rumor') {
+          html += '<span class="we-wind-rp we-rp-a1"></span><span class="we-wind-rp we-rp-a2"></span><span class="we-wind-rp we-rp-a3"></span><span class="we-wind-rp we-rp-b1"></span><span class="we-wind-rp we-rp-b2"></span>';
+        }
+      }
       html += '<div class="we-wind-header">';
       html += '<span class="we-wind-topic">' + u(w.topic || '未命名风声') + '</span>';
       html += '<span class="we-badge" style="background:' + typeColor + '22;color:' + typeColor + ';">' + (typeNames[w.type] || '风声') + '</span>';
@@ -511,14 +864,14 @@ window.WORLD_ENGINE_UI = (function() {
     });
   }
 
-  function renderWindEditor(w, index) {
+  function renderWindEditor(w, index, scope) {
     const typeOptions = [['announcement','公告'],['report','消息'],['rumor','流言'],['sentiment','舆情']].map(([v,label]) =>
       `<option value="${v}" ${w.type === v ? 'selected' : ''}>${label}</option>`).join('');
     const levelOptions = [1,2,3,4].map(l =>
       `<option value="${l}" ${w.level === l ? 'selected' : ''}>Lv.${l}</option>`).join('');
 
     return `
-      <div class="we-event-editor" data-wind-index="${index}">
+      <div class="we-event-editor" data-wind-index="${index}" data-wind-scope="${scope}">
         <button class="we-event-editor-close we-wind-editor-close"><i class="fa-solid fa-xmark"></i></button>
         <div class="we-event-editor-grid">
           <label class="we-event-editor-wide">主题<input class="we-wind-edit-topic" type="text" value="${u(w.topic||'')}"></label>
@@ -534,89 +887,96 @@ window.WORLD_ENGINE_UI = (function() {
       </div>`;
   }
 
-  function renderReputation(rep) {
+  function renderReputation(rep, scope) {
     if (!rep) return '<div class="we-empty">暂无声誉数据</div>';
     const levels = ['天怒人怨','声名狼藉','默默无闻','受人尊敬','万众敬仰'];
     const levelColors = { '天怒人怨':'#e05555', '声名狼藉':'#d97a5a', '默默无闻':'#7a8a9a', '受人尊敬':'#6cae8e', '万众敬仰':'#c9a45c' };
     const legacyMap = { '小有名气':'受人尊敬' };
     const dimLabels = { authority:'朝堂', common:'市井', shadow:'草莽', circuit:'同道' };
-    const dimIcons = { authority:'🏛️', common:'🌾', shadow:'🌑', circuit:'⚒️' };
+    // 各维度 × 各等级的随附古文（出处略）
+    const quotes = {
+      authority: { '天怒人怨':'上下疾之如仇', '声名狼藉':'在位皆言其恶', '默默无闻':'沉于下寮不见知', '受人尊敬':'群臣莫不敬惮', '万众敬仰':'天下想望其风采' },
+      common:    { '天怒人怨':'行人指目相戒', '声名狼藉':'里中无赖子亦耻之', '默默无闻':'出入市廛人莫识', '受人尊敬':'闾里称其长者', '万众敬仰':'儿童走卒皆知其名' },
+      shadow:    { '天怒人怨':'绿林亦不肯纳', '声名狼藉':'豪杰闻而鄙之', '默默无闻':'混迹渔樵无人问', '受人尊敬':'江湖豪杰多归之', '万众敬仰':'四海之内皆称其侠' },
+      circuit:   { '天怒人怨':'同辈羞与为伍', '声名狼藉':'友朋面斥其非', '默默无闻':'独行无人与语', '受人尊敬':'同门推为领袖', '万众敬仰':'吾辈望之如泰山' }
+    };
     return '<div class="we-rep-grid">' + Object.entries(rep).filter(([k]) => k !== 'lastChange').map(([key, rawVal]) => {
       const val = legacyMap[rawVal] || rawVal;
       const cn = dimLabels[key] || key;
-      const icon = dimIcons[key] || '';
       const idx = levels.indexOf(val);
       const color = levelColors[val] || '#888';
-      return `<div class="we-rep-card" style="border-left:3px solid ${color};">
-        <span class="we-rep-icon">${icon}</span>
+      const quote = (quotes[key] && quotes[key][val]) || '';
+      const dotsHtml = levels.map((l, i) => {
+        const active = i <= idx ? ' we-rep-dot-active' : '';
+        const dotColor = i <= idx ? color : '#444';
+        return `<span class="we-rep-dot${active}" style="background:${dotColor};" data-rep-scope="${scope || 'state'}" data-dim="${key}" data-level="${l}" title="${l}"></span>`;
+      }).join('');
+      return `<div class="we-rep-row">
         <span class="we-rep-dim">${cn}</span>
-        <div class="we-rep-dots">${levels.map((l, i) => {
-          const active = i <= idx ? ' we-rep-dot-active' : '';
-          const dotColor = i <= idx ? color : '#444';
-          return `<span class="we-rep-dot${active}" style="background:${dotColor};" data-dim="${key}" data-level="${l}" title="${l}"></span>`;
-        }).join('')}</div>
-        <span class="we-rep-val" style="color:${color}">${val}</span>
+        <div class="we-rep-dots">${dotsHtml}</div>
+        <span class="we-rep-quote" style="color:${color}">${quote}</span>
       </div>`;
     }).join('') + '</div>';
   }
 
-  function renderEconomy(econ) {
+  function renderEconomy(econ, scope) {
     if (!econ) return '<div class="we-empty">暂无经济数据</div>';
+    const sc = scope || 'state';
     const climates = ['繁荣','平稳','衰退','动荡'];
     const climateColors = { '繁荣': '#3ecf8e', '平稳': '#7a8a9a', '衰退': '#d9a34a', '动荡': '#e05555' };
-    const climateIcons = { '繁荣': '☀️', '平稳': '🌤️', '衰退': '🌧️', '动荡': '⛈️' };
     const climateBg = { '繁荣': 'rgba(62,207,142,0.08)', '平稳': 'rgba(122,138,154,0.06)', '衰退': 'rgba(217,163,74,0.08)', '动荡': 'rgba(224,85,85,0.08)' };
     const climate = econ.climate || '平稳';
-    let html = '<div class="we-climate-bar" style="background:' + (climateBg[climate]||'rgba(122,138,154,0.06)') + ';border-left-color:' + (climateColors[climate]||'#7a8a9a') + '">';
-    html += '<span class="we-climate-icon">' + (climateIcons[climate]||'🌤️') + '</span>';
-    html += '<span class="we-climate-label" style="color:' + (climateColors[climate]||'#7a8a9a') + '">' + climate + '</span>';
+    const cColor = climateColors[climate] || '#7a8a9a';
+    let html = '<div class="we-climate-bar" style="background:' + (climateBg[climate]||'rgba(122,138,154,0.06)') + ';">';
+    html += '<span class="we-climate-dot" style="background:' + cColor + ';box-shadow:0 0 8px ' + cColor + '88;"></span>';
+    html += '<span class="we-climate-label" style="color:' + cColor + '">' + climate + '</span>';
     html += '<div class="we-climate-btns">';
     for (const c of climates) {
-      html += '<span class="we-climate-btn' + (c === climate ? ' we-climate-btn-on' : '') + '" style="' + (c === climate ? ('color:'+(climateColors[c]||'#7a8a9a')+';border-color:'+(climateColors[c]||'#7a8a9a')) : '') + '" data-climate="' + c + '">' + c + '</span>';
+      html += '<span class="we-climate-btn' + (c === climate ? ' we-climate-btn-on' : '') + '" style="' + (c === climate ? ('color:'+(climateColors[c]||'#7a8a9a')+';border-color:'+(climateColors[c]||'#7a8a9a')) : '') + '" data-climate-scope="' + sc + '" data-climate="' + c + '">' + c + '</span>';
     }
     html += '</div></div>';
     if (econ.signals?.length) {
       html += renderPagedList(econ.signals, 'economy-signals', (s, i) =>
-        '<div class="we-signal-item">' +
-        '<span class="we-signal-del" data-sigidx="' + i + '">✕</span>' +
+        '<div class="we-signal-item" data-sig-scope="' + sc + '">' +
         '<span class="we-signal-summary">' + u(s.summary||s) + '</span>' +
         '<span class="we-signal-scope">' + u(s.scope||'?') + '</span>' +
+        '<span class="we-signal-del" data-sig-scope="' + sc + '" data-sigidx="' + i + '" title="删除信号">✕</span>' +
         '</div>'
       );
     } else {
       html += '<div class="we-empty" style="margin-top:4px;">暂无市场信号</div>';
     }
-    html += '<div class="we-signal-item we-signal-add">➕ 添加信号</div>';
+    html += '<div class="we-signal-add" data-sig-scope="' + sc + '"><i class="fa-solid fa-plus"></i> 添加信号</div>';
     return html;
   }
 
-  function renderEnemies(enemiesList) {
+  function renderEnemies(enemiesList, scope) {
     if (!enemiesList || !enemiesList.length) return '<div class="we-empty">暂无仇敌</div>';
     return renderPagedList(enemiesList, 'enemies', (en, enemyIndex) => {
-      const isEditing = editingEnemy?.index === enemyIndex;
+      const isEditing = editingEnemy?.scope === scope && editingEnemy?.index === enemyIndex;
       const actionHtml = isEditing ? '' : `
         <div class="we-event-actions">
-          <button class="we-icon-btn we-enemy-delete" data-enemy-index="${enemyIndex}" title="删除仇敌"><i class="fa-solid fa-trash-can"></i></button>
-          <button class="we-icon-btn we-enemy-copy" data-enemy-index="${enemyIndex}" title="复制仇敌"><i class="fa-solid fa-copy"></i></button>
-          <button class="we-icon-btn we-enemy-edit" data-enemy-index="${enemyIndex}" title="编辑仇敌"><i class="fa-solid fa-pen"></i></button>
+          <button class="we-icon-btn we-enemy-delete" data-enemy-scope="${scope}" data-enemy-index="${enemyIndex}" title="删除仇敌"><i class="fa-solid fa-trash-can"></i></button>
+          <button class="we-icon-btn we-enemy-copy" data-enemy-scope="${scope}" data-enemy-index="${enemyIndex}" title="复制仇敌"><i class="fa-solid fa-copy"></i></button>
+          <button class="we-icon-btn we-enemy-edit" data-enemy-scope="${scope}" data-enemy-index="${enemyIndex}" title="编辑仇敌"><i class="fa-solid fa-pen"></i></button>
         </div>`;
-      const editHtml = isEditing ? renderEnemyEditor(en, enemyIndex) : '';
+      const editHtml = isEditing ? renderEnemyEditor(en, enemyIndex, scope) : '';
       return `<div class="we-blood-item">
         ${actionHtml}
-        <div class="we-blood-title">${en.type==='blood'?'🩸':'💢'} ${u(en.name)} <span class="we-badge we-badge-danger">${en.status||'追踪中'}</span><span class="we-badge" style="background:var(--we-purple);font-size:10px;">${en.type==='blood'?'血仇':'恩怨'}</span></div>
+        <div class="we-blood-title">${u(en.name)} <span class="we-badge we-badge-danger">${en.status||'追踪中'}</span><span class="we-badge" style="background:var(--we-purple);font-size:10px;">${en.type==='blood'?'血仇':'恩怨'}</span></div>
         <div class="we-blood-meta">原因: ${u(en.reason||'?')}</div>
         ${editHtml}
       </div>`;
     });
   }
 
-  function renderEnemyEditor(en, index) {
+  function renderEnemyEditor(en, index, scope) {
     const typeOptions = [['blood','血仇'],['grudge','恩怨']].map(([v,label]) =>
       `<option value="${v}" ${en.type === v ? 'selected' : ''}>${label}</option>`).join('');
     const statusOptions = ['追踪中','策划中','执行中','已终结'].map(s =>
       `<option value="${s}" ${en.status === s ? 'selected' : ''}>${s}</option>`).join('');
     return `
-      <div class="we-event-editor" data-enemy-index="${index}">
+      <div class="we-event-editor" data-enemy-scope="${scope}" data-enemy-index="${index}">
         <button class="we-event-editor-close we-enemy-editor-close"><i class="fa-solid fa-xmark"></i></button>
         <div class="we-event-editor-grid">
           <label class="we-event-editor-wide">仇敌名称<input class="we-enemy-edit-name" type="text" value="${u(en.name||'')}"></label>
@@ -630,17 +990,17 @@ window.WORLD_ENGINE_UI = (function() {
       </div>`;
   }
 
-  function renderInfluenceChain(chain) {
+  function renderInfluenceChain(chain, scope) {
     if (!chain || !chain.length) return '<div class="we-empty">暂无影响链</div>';
     return renderPagedList(chain, 'influence', (item, infIndex) => {
-      const isEditing = editingInfluence?.index === infIndex;
+      const isEditing = editingInfluence?.scope === scope && editingInfluence?.index === infIndex;
       const actionHtml = isEditing ? '' : `
         <div class="we-event-actions">
-          <button class="we-icon-btn we-influence-delete" data-influence-index="${infIndex}" title="删除影响链"><i class="fa-solid fa-trash-can"></i></button>
-          <button class="we-icon-btn we-influence-copy" data-influence-index="${infIndex}" title="复制影响链"><i class="fa-solid fa-copy"></i></button>
-          <button class="we-icon-btn we-influence-edit" data-influence-index="${infIndex}" title="编辑影响链"><i class="fa-solid fa-pen"></i></button>
+          <button class="we-icon-btn we-influence-delete" data-influence-scope="${scope}" data-influence-index="${infIndex}" title="删除影响链"><i class="fa-solid fa-trash-can"></i></button>
+          <button class="we-icon-btn we-influence-copy" data-influence-scope="${scope}" data-influence-index="${infIndex}" title="复制影响链"><i class="fa-solid fa-copy"></i></button>
+          <button class="we-icon-btn we-influence-edit" data-influence-scope="${scope}" data-influence-index="${infIndex}" title="编辑影响链"><i class="fa-solid fa-pen"></i></button>
         </div>`;
-      const editHtml = isEditing ? renderInfluenceEditor(item, infIndex) : '';
+      const editHtml = isEditing ? renderInfluenceEditor(item, infIndex, scope) : '';
       return `<div class="we-influence-item">
         ${actionHtml}
         <div class="we-influence-step we-influence-trigger">
@@ -660,9 +1020,9 @@ window.WORLD_ENGINE_UI = (function() {
     });
   }
 
-  function renderInfluenceEditor(item, index) {
+  function renderInfluenceEditor(item, index, scope) {
     return `
-      <div class="we-event-editor" data-influence-index="${index}">
+      <div class="we-event-editor" data-influence-index="${index}" data-influence-scope="${scope}">
         <button class="we-event-editor-close we-influence-editor-close"><i class="fa-solid fa-xmark"></i></button>
         <div class="we-event-editor-grid">
           <label class="we-event-editor-wide">触发源<textarea class="we-influence-edit-trigger" rows="2">${u(item.trigger||'')}</textarea></label>
@@ -694,22 +1054,22 @@ window.WORLD_ENGINE_UI = (function() {
     return labels[type] || '其他';
   }
 
-  function renderRegionalIncident(ri) {
-    if (!ri) return '<div class="we-empty">尚未进行区域突发事件判定</div>';
-    const isEditing = editingRI?.active === true;
+  function renderRegionalIncident(ri, scope) {
+    if (!ri) return '<div class="we-empty">尚未进行区域事件判定</div>';
+    const isEditing = editingRI?.active === true && editingRI?.scope === scope;
     const actionHtml = isEditing ? '' : `
       <div class="we-event-actions">
-        <button class="we-icon-btn we-ri-delete" title="清除区域突发事件"><i class="fa-solid fa-trash-can"></i></button>
-        <button class="we-icon-btn we-ri-copy" title="复制区域突发事件"><i class="fa-solid fa-copy"></i></button>
-        <button class="we-icon-btn we-ri-edit" title="编辑区域突发事件"><i class="fa-solid fa-pen"></i></button>
+        <button class="we-icon-btn we-ri-delete" data-ri-scope="${scope}" title="清除区域事件"><i class="fa-solid fa-trash-can"></i></button>
+        <button class="we-icon-btn we-ri-copy" data-ri-scope="${scope}" title="复制区域事件"><i class="fa-solid fa-copy"></i></button>
+        <button class="we-icon-btn we-ri-edit" data-ri-scope="${scope}" title="编辑区域事件"><i class="fa-solid fa-pen"></i></button>
       </div>`;
-    const editHtml = isEditing ? renderRIEditor(ri) : '';
+    const editHtml = isEditing ? renderRIEditor(ri, scope) : '';
 
     if (ri.active) {
       return `<div class="we-accident-item we-regional-incident-item we-accident-triggered">
         ${actionHtml}
-        ⚠️ ${u(ri.title)}<br>
-        <span style="font-size:11px;color:var(--we-text3);">类型: ${u(getRegionalIncidentTypeLabel(ri.type))} | 范围: ${u(ri.scope||'?')} | 冷却: ${ri.cooldown||0}轮</span><br>
+        ${u(ri.title)}<br>
+        <span style="font-size:11px;color:var(--we-text3);">类型: ${u(getRegionalIncidentTypeLabel(ri.type))} | 范围: ${u(ri.scope||'?')} | 剩余: ${ri.duration||0}轮</span><br>
         <span style="font-size:11px;color:var(--we-text2);">${u(ri.impact||'')}</span>
         ${editHtml}
       </div>`;
@@ -717,23 +1077,23 @@ window.WORLD_ENGINE_UI = (function() {
     if (ri.title && ri.title.includes('重试')) {
       return `<div class="we-accident-item we-regional-incident-item" style="border-left:3px solid var(--we-gold);">
         ${actionHtml}
-        ⚠️ ${u(ri.title)}（类型: ${u(getRegionalIncidentTypeLabel(ri.type))}）
+        ${u(ri.title)}（类型: ${u(getRegionalIncidentTypeLabel(ri.type))}）
         ${editHtml}
       </div>`;
     }
     if (ri.cooldown > 0) {
-      return `<div class="we-accident-item we-regional-incident-item">${actionHtml}✅ 本轮无区域突发事件（剩余冷却 ${ri.cooldown} 轮）${editHtml}</div>`;
+      return `<div class="we-accident-item we-regional-incident-item">${actionHtml}本轮无区域事件（剩余冷却 ${ri.cooldown} 轮）${editHtml}</div>`;
     }
-    return `<div class="we-accident-item we-regional-incident-item">${actionHtml}✅ 本轮无区域突发事件${editHtml}</div>`;
+    return `<div class="we-accident-item we-regional-incident-item">${actionHtml}本轮无区域事件${editHtml}</div>`;
   }
 
-  function renderRIEditor(ri) {
+  function renderRIEditor(ri, scope) {
     const types = ['banditry','fire','massacre','flood','infrastructure','plague','famine','riot','rebellion','military','earthquake','storm'];
     if (ri.type && !types.includes(ri.type)) types.push(ri.type);
     const typeOptions = types.map(t =>
       `<option value="${t}" ${ri.type === t ? 'selected' : ''}>${u(getRegionalIncidentTypeLabel(t))}</option>`).join('');
     return `
-      <div class="we-event-editor" data-ri-edit="1">
+      <div class="we-event-editor" data-ri-edit="1" data-ri-scope="${scope}">
         <button class="we-event-editor-close we-ri-editor-close"><i class="fa-solid fa-xmark"></i></button>
         <div class="we-event-editor-grid">
           <label>状态<select class="we-ri-edit-active">
@@ -743,6 +1103,7 @@ window.WORLD_ENGINE_UI = (function() {
           <label class="we-event-editor-wide">标题<input class="we-ri-edit-title" type="text" value="${u(ri.title||'')}"></label>
           <label>类型<select class="we-ri-edit-type">${typeOptions}</select></label>
           <label>范围<input class="we-ri-edit-scope" type="text" value="${u(ri.scope||'')}"></label>
+          <label>剩余轮数<input class="we-ri-edit-duration" type="number" min="0" max="99" value="${ri.duration||0}"></label>
           <label>冷却<input class="we-ri-edit-cooldown" type="number" min="0" max="99" value="${ri.cooldown||0}"></label>
           <label class="we-event-editor-wide">影响<textarea class="we-ri-edit-impact" rows="3">${u(ri.impact||'')}</textarea></label>
         </div>
@@ -752,78 +1113,94 @@ window.WORLD_ENGINE_UI = (function() {
       </div>`;
   }
 
-  function renderBlackbox(blackbox) {
+  const SECRET_STATUS_COLOR = { '有效': 'var(--we-green)', '过期': 'var(--we-text3)', '暴露': 'var(--we-red)', '失效': 'var(--we-text3)' };
+
+  function isEditingSecret(scope, list, index) {
+    return editingSecret && editingSecret.scope === scope && editingSecret.list === list && editingSecret.index === index;
+  }
+
+  function renderBlackbox(blackbox, scope) {
     if (!blackbox) return '<div class="we-empty">暂无黑盒信息</div>';
     let html = '';
-    if (blackbox.secretActions?.length) {
-      html += '<div class="we-accident-item" style="border-left-color:var(--we-purple);"><strong>隐秘行为:</strong></div>';
-      html += renderPagedList(blackbox.secretActions, 'secret-actions', (a, actIndex) => {
-        const isEditing = editingBBAction?.index === actIndex;
-        const actionHtml = isEditing ? '' : `
-          <div class="we-event-actions">
-            <button class="we-icon-btn we-bba-delete" data-bba-index="${actIndex}" title="删除隐秘行为"><i class="fa-solid fa-trash-can"></i></button>
-            <button class="we-icon-btn we-bba-copy" data-bba-index="${actIndex}" title="复制隐秘行为"><i class="fa-solid fa-copy"></i></button>
-            <button class="we-icon-btn we-bba-edit" data-bba-index="${actIndex}" title="编辑隐秘行为"><i class="fa-solid fa-pen"></i></button>
-          </div>`;
-        const editHtml = isEditing ? renderBBActionEditor(a, actIndex) : '';
-        return `<div class="we-accident-item we-blackbox-item" style="margin:2px 0;font-size:12px;position:relative;">
-          ${actionHtml}
-          🔒 ${u(a.action||a)} — 知情者: ${u(a.witnesses||'无')}
-          ${editHtml}
+    const actions = blackbox.secretActions || [];
+    const assets = blackbox.secretAssets || [];
+
+    if (actions.length) {
+      html += '<div class="we-secret-group-label we-secret-action">隐秘行为</div>';
+      html += renderPagedList(actions, 'secret-actions', (raw, idx) => {
+        const a = (typeof raw === 'string') ? { action: raw } : raw;
+        if (isEditingSecret(scope, 'action', idx)) return renderSecretEditor(a, 'action', idx, scope);
+        return `<div class="we-secret-card we-secret-action">
+          <div class="we-secret-ops">
+            <button class="we-icon-btn we-secret-edit" data-secret-scope="${scope}" data-secret-list="action" data-secret-index="${idx}" title="编辑"><i class="fa-solid fa-pen"></i></button>
+            <button class="we-icon-btn we-secret-copy" data-secret-scope="${scope}" data-secret-list="action" data-secret-index="${idx}" title="复制"><i class="fa-solid fa-copy"></i></button>
+            <button class="we-icon-btn we-secret-del" data-secret-scope="${scope}" data-secret-list="action" data-secret-index="${idx}" title="删除"><i class="fa-solid fa-trash-can"></i></button>
+          </div>
+          <div class="we-secret-body">
+            <div class="we-secret-title">${u(a.action || '未命名行为')}</div>
+            <div class="we-secret-meta">知情者 · ${u(a.witnesses || '无')}</div>
+          </div>
         </div>`;
       });
     }
-    if (blackbox.secretAssets?.length) {
-      html += '<div class="we-accident-item" style="border-left-color:var(--we-gold);margin-top:4px;"><strong>隐秘资产:</strong></div>';
-      html += renderPagedList(blackbox.secretAssets, 'secret-assets', (a, astIndex) => {
-        const statusColor = { '有效': 'var(--we-green)', '过期': 'var(--we-text3)', '暴露': 'var(--we-red)', '失效': 'var(--we-text3)' };
-        const sc = statusColor[a.status] || 'var(--we-text3)';
-        const isEditing = editingBBAsset?.index === astIndex;
-        const actionHtml = isEditing ? '' : `
-          <div class="we-event-actions">
-            <button class="we-icon-btn we-bbs-delete" data-bbs-index="${astIndex}" title="删除隐秘资产"><i class="fa-solid fa-trash-can"></i></button>
-            <button class="we-icon-btn we-bbs-copy" data-bbs-index="${astIndex}" title="复制隐秘资产"><i class="fa-solid fa-copy"></i></button>
-            <button class="we-icon-btn we-bbs-edit" data-bbs-index="${astIndex}" title="编辑隐秘资产"><i class="fa-solid fa-pen"></i></button>
-          </div>`;
-        const editHtml = isEditing ? renderBBAssetEditor(a, astIndex) : '';
-        return `<div class="we-accident-item we-blackbox-item" style="margin:2px 0;font-size:12px;position:relative;">
-          ${actionHtml}
-          📦 ${u(a.name||a)} — 暴露度: ${a.exposure||0}%, <span style="color:${sc}">${u(a.status||'有效')}</span>
-          ${editHtml}
+
+    if (assets.length) {
+      html += '<div class="we-secret-group-label we-secret-asset">隐秘资产</div>';
+      html += renderPagedList(assets, 'secret-assets', (raw, idx) => {
+        const a = (typeof raw === 'string') ? { name: raw } : raw;
+        if (isEditingSecret(scope, 'asset', idx)) return renderSecretEditor(a, 'asset', idx, scope);
+        const expo = Math.min(100, Math.max(0, Number(a.exposure) || 0));
+        const status = a.status || '有效';
+        const stColor = SECRET_STATUS_COLOR[status] || 'var(--we-text3)';
+        return `<div class="we-secret-card we-secret-asset">
+          <div class="we-secret-ops">
+            <button class="we-icon-btn we-secret-edit" data-secret-scope="${scope}" data-secret-list="asset" data-secret-index="${idx}" title="编辑"><i class="fa-solid fa-pen"></i></button>
+            <button class="we-icon-btn we-secret-copy" data-secret-scope="${scope}" data-secret-list="asset" data-secret-index="${idx}" title="复制"><i class="fa-solid fa-copy"></i></button>
+            <button class="we-icon-btn we-secret-del" data-secret-scope="${scope}" data-secret-list="asset" data-secret-index="${idx}" title="删除"><i class="fa-solid fa-trash-can"></i></button>
+          </div>
+          <div class="we-secret-body">
+            <div class="we-secret-title">${u(a.name || '未命名资产')}<span class="we-secret-status" style="color:${stColor};border-color:${stColor};">${u(status)}</span></div>
+            <div class="we-secret-expo">
+              <div class="we-secret-expo-track"><div class="we-secret-expo-fill" style="width:${expo}%;"></div></div>
+              <span class="we-secret-expo-num">暴露 ${expo}%</span>
+            </div>
+          </div>
         </div>`;
       });
     }
+
     if (!html) html = '<div class="we-empty">无暗面信息</div>';
     return html;
   }
 
-  function renderBBActionEditor(a, index) {
+  /** 秘密统一编辑器：顶部「类型」下拉只切表单(view)，转换延到保存才落库 */
+  function renderSecretEditor(a, list, index, scope, view) {
+    view = view || (editingSecret && editingSecret.view) || list;
+    const typeSelect = `<label>类型<select class="we-secret-type">
+        <option value="action" ${view === 'action' ? 'selected' : ''}>隐秘行为</option>
+        <option value="asset" ${view === 'asset' ? 'selected' : ''}>隐秘资产</option>
+      </select></label>`;
+    // 跨类型预填：行为↔资产 标题字段互通（action.action ↔ asset.name）
+    const titleText = u(a.action || a.name || '');
+    let fields;
+    if (view === 'action') {
+      fields = `${typeSelect}
+        <label class="we-event-editor-wide">行为描述<textarea class="we-secret-f-action" rows="2">${titleText}</textarea></label>
+        <label class="we-event-editor-wide">目击者<input class="we-secret-f-witnesses" type="text" value="${u(a.witnesses || '无')}"></label>`;
+    } else {
+      const statusOptions = ['有效','过期','暴露','失效'].map(s =>
+        `<option value="${s}" ${a.status === s ? 'selected' : ''}>${s}</option>`).join('');
+      fields = `${typeSelect}
+        <label class="we-event-editor-wide">资产名称<input class="we-secret-f-name" type="text" value="${titleText}"></label>
+        <label>暴露度<input class="we-secret-f-exposure" type="number" min="0" max="100" value="${Number(a.exposure) || 0}"></label>
+        <label>状态<select class="we-secret-f-status">${statusOptions}</select></label>`;
+    }
     return `
-      <div class="we-event-editor" data-bba-index="${index}">
-        <button class="we-event-editor-close we-bba-editor-close"><i class="fa-solid fa-xmark"></i></button>
-        <div class="we-event-editor-grid">
-          <label class="we-event-editor-wide">行为描述<textarea class="we-bba-edit-action" rows="2">${u(a.action||'')}</textarea></label>
-          <label class="we-event-editor-wide">目击者<input class="we-bba-edit-witnesses" type="text" value="${u(a.witnesses||'无')}"></label>
-        </div>
+      <div class="we-event-editor we-secret-editor" data-secret-scope="${scope}" data-secret-list="${list}" data-secret-index="${index}" data-secret-view="${view}">
+        <button class="we-event-editor-close we-secret-editor-close"><i class="fa-solid fa-xmark"></i></button>
+        <div class="we-event-editor-grid">${fields}</div>
         <div class="we-event-editor-footer">
-          <button class="we-btn we-btn-primary we-bba-editor-save"><i class="fa-solid fa-floppy-disk"></i> 保存</button>
-        </div>
-      </div>`;
-  }
-
-  function renderBBAssetEditor(a, index) {
-    const statusOptions = ['有效','过期','暴露','失效'].map(s =>
-      `<option value="${s}" ${a.status === s ? 'selected' : ''}>${s}</option>`).join('');
-    return `
-      <div class="we-event-editor" data-bbs-index="${index}">
-        <button class="we-event-editor-close we-bbs-editor-close"><i class="fa-solid fa-xmark"></i></button>
-        <div class="we-event-editor-grid">
-          <label class="we-event-editor-wide">资产名称<input class="we-bbs-edit-name" type="text" value="${u(a.name||'')}"></label>
-          <label>暴露度<input class="we-bbs-edit-exposure" type="number" min="0" max="100" value="${a.exposure||0}"></label>
-          <label>状态<select class="we-bbs-edit-status">${statusOptions}</select></label>
-        </div>
-        <div class="we-event-editor-footer">
-          <button class="we-btn we-btn-primary we-bbs-editor-save"><i class="fa-solid fa-floppy-disk"></i> 保存</button>
+          <button class="we-btn we-btn-primary we-secret-save"><i class="fa-solid fa-floppy-disk"></i> 保存</button>
         </div>
       </div>`;
   }
@@ -862,16 +1239,16 @@ window.WORLD_ENGINE_UI = (function() {
     const truncResult = dbg.rawResult.length > 3000 ? dbg.rawResult.substring(0, 3000) + '\n\n...(截断，点击下方按钮导出完整文件)' : dbg.rawResult;
     return `
       <div style="margin-bottom:8px;">
-        <div style="font-size:12px;color:var(--we-text2);margin-bottom:4px;">📤 发送给 API 的 Prompt（前3000字预览）</div>
+        <div style="font-size:12px;color:var(--we-text2);margin-bottom:4px;">发送给 API 的 Prompt（前3000字预览）</div>
         <pre style="font-size:11px;background:var(--we-bg2);padding:6px;border-radius:4px;max-height:200px;overflow:auto;white-space:pre-wrap;word-break:break-all;">${u(truncPrompt)}</pre>
       </div>
       <div>
-        <div style="font-size:12px;color:var(--we-text2);margin-bottom:4px;">📥 API 原始返回（前3000字预览）</div>
+        <div style="font-size:12px;color:var(--we-text2);margin-bottom:4px;">API 原始返回（前3000字预览）</div>
         <pre style="font-size:11px;background:var(--we-bg2);padding:6px;border-radius:4px;max-height:200px;overflow:auto;white-space:pre-wrap;word-break:break-all;">${u(truncResult)}</pre>
       </div>
       <div style="display:flex;gap:6px;margin-top:8px;">
-        <button class="we-btn" id="we-export-prompt" style="flex:1;">📤 导出 Prompt</button>
-        <button class="we-btn" id="we-export-raw-result" style="flex:1;">📤 导出 API 返回</button>
+        <button class="we-btn" id="we-export-prompt" style="flex:1;">导出 Prompt</button>
+        <button class="we-btn" id="we-export-raw-result" style="flex:1;">导出 API 返回</button>
       </div>
     `;
   }
@@ -901,7 +1278,7 @@ window.WORLD_ENGINE_UI = (function() {
           <label>模型</label>
           <input type="text" id="we-model" value="${u(settings.model||'gpt-3.5-turbo')}" placeholder="模型名称" style="width:100%;">
         </div>
-        <button class="we-btn" id="we-fetch-models" style="white-space:nowrap;flex-shrink:0;">📋 获取列表</button>
+        <button class="we-btn" id="we-fetch-models" style="white-space:nowrap;flex-shrink:0;">获取列表</button>
       </div>
       <div class="we-input-group">
         <select id="we-model-list" style="display:none;width:100%;margin-top:4px;">
@@ -932,12 +1309,19 @@ window.WORLD_ENGINE_UI = (function() {
         <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">关闭后不会将当前状态或存档点注入聊天正文。</div>
       </div>`;
 
+    return sec('set-api', 'API 配置', apiBody)
+      + sec('set-evolve', '推演模式', evolveBody)
+      + sec('set-inject', '正文注入', injectBody);
+  }
+
+  function renderSettingsAfterCheckpoint() {
+    const sec = (id, title, body) =>
+      '<div class="we-section"><div class="we-section-title">' + sectionHeader(title, id) + '</div>' +
+      sectionBody(id, body) + '</div>';
     const worldbookBody = `
       <div class="we-worldbook-settings">
         <div class="we-worldbook-header">
-          <div>
-            <div class="we-worldbook-summary" id="we-worldbook-summary">正在读取当前聊天世界书...</div>
-          </div>
+          <div><div class="we-worldbook-summary" id="we-worldbook-summary">正在读取当前聊天世界书...</div></div>
           <button class="we-icon-btn" id="we-worldbook-reload" title="重新读取当前聊天世界书"><i class="fa-solid fa-rotate"></i></button>
         </div>
         <div class="we-worldbook-toolbar">
@@ -945,41 +1329,19 @@ window.WORLD_ENGINE_UI = (function() {
           <button class="we-btn" id="we-worldbook-clear-all">取消全选</button>
           <button class="we-btn we-btn-primary" id="we-worldbook-save">保存世界书选择</button>
         </div>
-        <div class="we-worldbook-list" id="we-worldbook-list">
-          <div class="we-empty">正在读取...</div>
-        </div>
+        <div class="we-worldbook-list" id="we-worldbook-list"><div class="we-empty">正在读取...</div></div>
       </div>`;
-
     const dataBody = `
       <div style="display:flex;gap:6px;flex-wrap:wrap;">
-        <button class="we-btn" id="we-export-data">📤 导出 JSON</button>
-        <button class="we-btn" id="we-import-data">📥 导入 JSON</button>
+        <button class="we-btn" id="we-export-data">导出 JSON</button>
+        <button class="we-btn" id="we-import-data">导入 JSON</button>
         <input type="file" id="we-import-file" accept=".json" style="display:none;">
       </div>`;
-
-    return sec('set-api', '🔌 API 配置', apiBody)
-      + sec('set-evolve', '⚙️ 推演模式', evolveBody)
-      + sec('set-inject', '💉 正文注入', injectBody)
-      + `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:10px 0;">
-           <button class="we-btn" id="we-save-settings">💾 保存设置</button>
-           <button class="we-btn we-btn-danger" id="we-reset-world" style="margin-left:0;">🗑️ 重置世界</button>
-         </div>`
-      + sec('set-worldbook', '📚 后台推演世界书', worldbookBody)
-      + sec('set-data', '📦 数据导入/导出', dataBody);
+    return sec('set-worldbook', '后台推演世界书', worldbookBody)
+      + sec('set-data', '数据导入/导出', dataBody);
   }
 
   function bindEvents(state) {
-    const evolveBtn = document.getElementById('we-btn-evolve');
-
-    function loadScopedState(scope) {
-      return scope === 'checkpoint' ? core.restoreCheckpoint() : core.loadState();
-    }
-
-    function saveScopedState(scope, scopedState) {
-      if (scope === 'checkpoint') core.saveCheckpoint(scopedState);
-      else core.saveState(scopedState);
-    }
-
     document.querySelectorAll('.we-event-delete').forEach(button => {
       button.onclick = () => {
         const scope = button.dataset.eventScope;
@@ -1084,7 +1446,7 @@ window.WORLD_ENGINE_UI = (function() {
     // 势力编辑器事件
     document.querySelectorAll('.we-faction-edit').forEach(button => {
       button.onclick = () => {
-        editingFaction = { index: Number(button.dataset.factionIndex) };
+        editingFaction = { scope: button.dataset.factionScope, index: Number(button.dataset.factionIndex) };
         refresh();
       };
     });
@@ -1094,8 +1456,9 @@ window.WORLD_ENGINE_UI = (function() {
     document.querySelectorAll('.we-faction-editor-save').forEach(button => {
       button.onclick = () => {
         const editor = button.closest('.we-event-editor');
+        const scope = editor.dataset.factionScope;
         const index = Number(editor.dataset.factionIndex);
-        const state = core.loadState();
+        const state = loadScopedState(scope);
         const faction = state.factions?.[index];
         if (!faction) return;
         const name = editor.querySelector('.we-faction-edit-name').value.trim();
@@ -1112,7 +1475,7 @@ window.WORLD_ENGINE_UI = (function() {
           if (v) pillars.push(v);
         });
         faction.powerPillars = pillars;
-        core.saveState(state);
+        saveScopedState(scope, state);
         editingFaction = null;
         showToast('势力修改已保存');
         refresh();
@@ -1120,25 +1483,27 @@ window.WORLD_ENGINE_UI = (function() {
     });
     document.querySelectorAll('.we-faction-delete').forEach(button => {
       button.onclick = () => {
+        const scope = button.dataset.factionScope;
         const index = Number(button.dataset.factionIndex);
-        const state = core.loadState();
+        const state = loadScopedState(scope);
         const faction = state.factions?.[index];
         if (!faction || !confirm(`删除势力"${faction.name}"？`)) return;
         state.factions.splice(index, 1);
-        core.saveState(state);
+        saveScopedState(scope, state);
         showToast('势力已删除');
         refresh();
       };
     });
     document.querySelectorAll('.we-faction-copy').forEach(button => {
       button.onclick = () => {
+        const scope = button.dataset.factionScope;
         const index = Number(button.dataset.factionIndex);
-        const state = core.loadState();
+        const state = loadScopedState(scope);
         const faction = state.factions?.[index];
         if (!faction) return;
         const copy = JSON.parse(JSON.stringify(faction));
-        state.factions.push(copy);
-        core.saveState(state);
+        state.factions.splice(index + 1, 0, copy);
+        saveScopedState(scope, state);
         showToast('势力已复制');
         refresh();
       };
@@ -1147,7 +1512,7 @@ window.WORLD_ENGINE_UI = (function() {
     // 风声编辑器事件
     document.querySelectorAll('.we-wind-edit').forEach(button => {
       button.onclick = () => {
-        editingWind = { index: Number(button.dataset.windIndex) };
+        editingWind = { scope: button.dataset.windScope, index: Number(button.dataset.windIndex) };
         refresh();
       };
     });
@@ -1157,9 +1522,10 @@ window.WORLD_ENGINE_UI = (function() {
     document.querySelectorAll('.we-wind-editor-save').forEach(button => {
       button.onclick = () => {
         const editor = button.closest('.we-event-editor');
+        const scope = editor.dataset.windScope;
         const index = Number(editor.dataset.windIndex);
-        const state = core.loadState();
-        const wind = state.winds?.[index];
+        const scopedState = loadScopedState(scope);
+        const wind = scopedState.winds?.[index];
         if (!wind) return;
         const topic = editor.querySelector('.we-wind-edit-topic').value.trim();
         if (!topic) { showToast('风声主题不能为空', true); return; }
@@ -1170,7 +1536,7 @@ window.WORLD_ENGINE_UI = (function() {
         wind.source = editor.querySelector('.we-wind-edit-source').value.trim();
         wind.content = editor.querySelector('.we-wind-edit-content').value.trim();
         wind.quietRounds = 0;
-        core.saveState(state);
+        saveScopedState(scope, scopedState);
         editingWind = null;
         showToast('风声修改已保存');
         refresh();
@@ -1178,26 +1544,28 @@ window.WORLD_ENGINE_UI = (function() {
     });
     document.querySelectorAll('.we-wind-delete').forEach(button => {
       button.onclick = () => {
+        const scope = button.dataset.windScope;
         const index = Number(button.dataset.windIndex);
-        const state = core.loadState();
-        const wind = state.winds?.[index];
+        const scopedState = loadScopedState(scope);
+        const wind = scopedState.winds?.[index];
         if (!wind || !confirm(`删除风声"${wind.topic}"？`)) return;
-        state.winds.splice(index, 1);
-        core.saveState(state);
+        scopedState.winds.splice(index, 1);
+        saveScopedState(scope, scopedState);
         showToast('风声已删除');
         refresh();
       };
     });
     document.querySelectorAll('.we-wind-copy').forEach(button => {
       button.onclick = () => {
+        const scope = button.dataset.windScope;
         const index = Number(button.dataset.windIndex);
-        const state = core.loadState();
-        const wind = state.winds?.[index];
+        const scopedState = loadScopedState(scope);
+        const wind = scopedState.winds?.[index];
         if (!wind) return;
         const copy = JSON.parse(JSON.stringify(wind));
         copy.quietRounds = 0;
-        state.winds.push(copy);
-        core.saveState(state);
+        scopedState.winds.push(copy);
+        saveScopedState(scope, scopedState);
         showToast('风声已复制');
         refresh();
       };
@@ -1265,7 +1633,7 @@ window.WORLD_ENGINE_UI = (function() {
     // ===== 仇敌编辑器事件 =====
     document.querySelectorAll('.we-enemy-edit').forEach(button => {
       button.onclick = () => {
-        editingEnemy = { index: Number(button.dataset.enemyIndex) };
+        editingEnemy = { scope: button.dataset.enemyScope, index: Number(button.dataset.enemyIndex) };
         refresh();
       };
     });
@@ -1275,8 +1643,9 @@ window.WORLD_ENGINE_UI = (function() {
     document.querySelectorAll('.we-enemy-editor-save').forEach(button => {
       button.onclick = () => {
         const editor = button.closest('.we-event-editor');
+        const scope = editor.dataset.enemyScope;
         const index = Number(editor.dataset.enemyIndex);
-        const state = core.loadState();
+        const state = loadScopedState(scope);
         const enemy = state.enemies?.[index];
         if (!enemy) return;
         const name = editor.querySelector('.we-enemy-edit-name').value.trim();
@@ -1285,7 +1654,7 @@ window.WORLD_ENGINE_UI = (function() {
         enemy.type = editor.querySelector('.we-enemy-edit-type').value;
         enemy.status = editor.querySelector('.we-enemy-edit-status').value;
         enemy.reason = editor.querySelector('.we-enemy-edit-reason').value.trim();
-        core.saveState(state);
+        saveScopedState(scope, state);
         editingEnemy = null;
         showToast('仇敌修改已保存');
         refresh();
@@ -1293,25 +1662,27 @@ window.WORLD_ENGINE_UI = (function() {
     });
     document.querySelectorAll('.we-enemy-delete').forEach(button => {
       button.onclick = () => {
+        const scope = button.dataset.enemyScope;
         const index = Number(button.dataset.enemyIndex);
-        const state = core.loadState();
+        const state = loadScopedState(scope);
         const enemy = state.enemies?.[index];
         if (!enemy || !confirm(`删除仇敌"${enemy.name}"？`)) return;
         state.enemies.splice(index, 1);
-        core.saveState(state);
+        saveScopedState(scope, state);
         showToast('仇敌已删除');
         refresh();
       };
     });
     document.querySelectorAll('.we-enemy-copy').forEach(button => {
       button.onclick = () => {
+        const scope = button.dataset.enemyScope;
         const index = Number(button.dataset.enemyIndex);
-        const state = core.loadState();
+        const state = loadScopedState(scope);
         const enemy = state.enemies?.[index];
         if (!enemy) return;
         const copy = JSON.parse(JSON.stringify(enemy));
-        state.enemies.push(copy);
-        core.saveState(state);
+        state.enemies.splice(index + 1, 0, copy);
+        saveScopedState(scope, state);
         showToast('仇敌已复制');
         refresh();
       };
@@ -1320,7 +1691,7 @@ window.WORLD_ENGINE_UI = (function() {
     // ===== 影响链编辑器事件 =====
     document.querySelectorAll('.we-influence-edit').forEach(button => {
       button.onclick = () => {
-        editingInfluence = { index: Number(button.dataset.influenceIndex) };
+        editingInfluence = { scope: button.dataset.influenceScope, index: Number(button.dataset.influenceIndex) };
         refresh();
       };
     });
@@ -1330,9 +1701,10 @@ window.WORLD_ENGINE_UI = (function() {
     document.querySelectorAll('.we-influence-editor-save').forEach(button => {
       button.onclick = () => {
         const editor = button.closest('.we-event-editor');
+        const scope = editor.dataset.influenceScope;
         const index = Number(editor.dataset.influenceIndex);
-        const state = core.loadState();
-        const inf = state.influenceChain?.[index];
+        const scopedState = loadScopedState(scope);
+        const inf = scopedState.influenceChain?.[index];
         if (!inf) return;
         const trigger = editor.querySelector('.we-influence-edit-trigger').value.trim();
         const impact = editor.querySelector('.we-influence-edit-impact').value.trim();
@@ -1340,7 +1712,7 @@ window.WORLD_ENGINE_UI = (function() {
         inf.trigger = trigger;
         inf.impact = impact;
         inf.fallout = editor.querySelector('.we-influence-edit-fallout').value.trim();
-        core.saveState(state);
+        saveScopedState(scope, scopedState);
         editingInfluence = null;
         showToast('影响链修改已保存');
         refresh();
@@ -1348,34 +1720,37 @@ window.WORLD_ENGINE_UI = (function() {
     });
     document.querySelectorAll('.we-influence-delete').forEach(button => {
       button.onclick = () => {
+        const scope = button.dataset.influenceScope;
         const index = Number(button.dataset.influenceIndex);
-        const state = core.loadState();
-        const inf = state.influenceChain?.[index];
+        const scopedState = loadScopedState(scope);
+        const inf = scopedState.influenceChain?.[index];
         if (!inf || !confirm(`删除影响链"${inf.trigger}"？`)) return;
-        state.influenceChain.splice(index, 1);
-        core.saveState(state);
+        scopedState.influenceChain.splice(index, 1);
+        saveScopedState(scope, scopedState);
         showToast('影响链已删除');
         refresh();
       };
     });
     document.querySelectorAll('.we-influence-copy').forEach(button => {
       button.onclick = () => {
+        const scope = button.dataset.influenceScope;
         const index = Number(button.dataset.influenceIndex);
-        const state = core.loadState();
-        const inf = state.influenceChain?.[index];
+        const scopedState = loadScopedState(scope);
+        const inf = scopedState.influenceChain?.[index];
         if (!inf) return;
         const copy = JSON.parse(JSON.stringify(inf));
-        state.influenceChain.push(copy);
-        core.saveState(state);
+        copy._createdRound = Number(scopedState.round) || 0;
+        scopedState.influenceChain.push(copy);
+        saveScopedState(scope, scopedState);
         showToast('影响链已复制');
         refresh();
       };
     });
 
-    // ===== 区域突发事件编辑器事件 =====
+    // ===== 区域事件编辑器事件 =====
     document.querySelectorAll('.we-ri-edit').forEach(button => {
       button.onclick = () => {
-        editingRI = { active: true };
+        editingRI = { active: true, scope: button.dataset.riScope };
         refresh();
       };
     });
@@ -1385,155 +1760,178 @@ window.WORLD_ENGINE_UI = (function() {
     document.querySelectorAll('.we-ri-editor-save').forEach(button => {
       button.onclick = () => {
         const editor = button.closest('.we-event-editor');
-        const state = core.loadState();
+        const scope = editor.dataset.riScope;
+        const state = loadScopedState(scope);
         if (!state.regionalIncident) {
-          state.regionalIncident = { active: false, title: '', type: '', scope: '', impact: '', cooldown: 0, _retry: false, _retryType: '' };
+          state.regionalIncident = { active: false, title: '', type: '', scope: '', impact: '', duration: 0, cooldown: 0, _retry: false, _retryType: '' };
         }
         const ri = state.regionalIncident;
         ri.active = editor.querySelector('.we-ri-edit-active').value === 'true';
         ri.title = editor.querySelector('.we-ri-edit-title').value.trim();
         ri.type = editor.querySelector('.we-ri-edit-type').value;
         ri.scope = editor.querySelector('.we-ri-edit-scope').value.trim();
+        ri.duration = Math.max(0, Number(editor.querySelector('.we-ri-edit-duration').value) || 0);
         ri.cooldown = Math.max(0, Number(editor.querySelector('.we-ri-edit-cooldown').value) || 0);
         ri.impact = editor.querySelector('.we-ri-edit-impact').value.trim();
-        core.saveState(state);
+        saveScopedState(scope, state);
         editingRI = null;
-        showToast('区域突发事件修改已保存');
+        showToast('区域事件修改已保存');
         refresh();
       };
     });
     document.querySelectorAll('.we-ri-delete').forEach(button => {
       button.onclick = () => {
-        const state = core.loadState();
+        const scope = button.dataset.riScope;
+        const state = loadScopedState(scope);
         if (!state.regionalIncident) return;
-        if (!confirm('清除区域突发事件？')) return;
+        if (!confirm('清除区域事件？')) return;
         state.regionalIncident = { active: false, title: '', type: '', scope: '', impact: '', cooldown: state.regionalIncident.cooldown || 0, _retry: false, _retryType: '' };
-        core.saveState(state);
-        showToast('区域突发事件已清除');
+        saveScopedState(scope, state);
+        showToast('区域事件已清除');
         refresh();
       };
     });
     document.querySelectorAll('.we-ri-copy').forEach(button => {
       button.onclick = () => {
-        const state = core.loadState();
+        const scope = button.dataset.riScope;
+        const state = loadScopedState(scope);
         if (!state.regionalIncident) return;
         const copy = JSON.parse(JSON.stringify(state.regionalIncident));
         copy._retry = false;
         copy._retryType = '';
         copy.cooldown = 0;
         state.regionalIncident = copy;
-        core.saveState(state);
-        showToast('区域突发事件已复制（冷却已重置）');
+        saveScopedState(scope, state);
+        showToast('区域事件已复制（冷却已重置）');
         refresh();
       };
     });
 
-    // ===== 黑盒隐秘行为编辑器事件 =====
-    document.querySelectorAll('.we-bba-edit').forEach(button => {
+    // ===== 秘密（隐秘行为/资产）统一编辑器事件 =====
+    const SECRET_ARR = { action: 'secretActions', asset: 'secretAssets' };
+
+    document.querySelectorAll('.we-secret-edit').forEach(button => {
       button.onclick = () => {
-        editingBBAction = { index: Number(button.dataset.bbaIndex) };
+        const list = button.dataset.secretList;
+        editingSecret = { scope: button.dataset.secretScope, list, index: Number(button.dataset.secretIndex), view: list };
         refresh();
       };
     });
-    document.querySelectorAll('.we-bba-editor-close').forEach(button => {
-      button.onclick = () => { editingBBAction = null; refresh(); };
+    document.querySelectorAll('.we-secret-editor-close').forEach(button => {
+      button.onclick = () => { editingSecret = null; refresh(); };
     });
-    document.querySelectorAll('.we-bba-editor-save').forEach(button => {
+    // 类型下拉：仅切换显示的表单(view)，不动数据、不保存
+    document.querySelectorAll('.we-secret-type').forEach(select => {
+      select.onchange = () => {
+        if (editingSecret) { editingSecret.view = select.value; refresh(); }
+      };
+    });
+    document.querySelectorAll('.we-secret-save').forEach(button => {
       button.onclick = () => {
-        const editor = button.closest('.we-event-editor');
-        const index = Number(editor.dataset.bbaIndex);
-        const state = core.loadState();
-        const a = state.blackbox?.secretActions?.[index];
-        if (!a) return;
-        const action = editor.querySelector('.we-bba-edit-action').value.trim();
-        if (!action) { showToast('行为描述不能为空', true); return; }
-        a.action = action;
-        a.witnesses = editor.querySelector('.we-bba-edit-witnesses').value.trim() || '无';
-        core.saveState(state);
-        editingBBAction = null;
-        showToast('隐秘行为修改已保存');
+        const editor = button.closest('.we-secret-editor');
+        const scope = editor.dataset.secretScope;
+        const list = editor.dataset.secretList;            // 条目当前所在桶
+        const index = Number(editor.dataset.secretIndex);
+        const view = editor.dataset.secretView;            // 目标类型（可能与 list 不同）
+        const state = loadScopedState(scope);
+        state.blackbox = state.blackbox || {};
+        const srcArr = state.blackbox[SECRET_ARR[list]];
+        if (!srcArr || srcArr[index] === undefined) return;
+
+        // 按 view 读取表单，组装目标条目
+        let item, okMsg;
+        if (view === 'action') {
+          const action = editor.querySelector('.we-secret-f-action').value.trim();
+          if (!action) { showToast('行为描述不能为空', true); return; }
+          item = { action, witnesses: editor.querySelector('.we-secret-f-witnesses').value.trim() || '无' };
+        } else {
+          const name = editor.querySelector('.we-secret-f-name').value.trim();
+          if (!name) { showToast('资产名称不能为空', true); return; }
+          item = {
+            name,
+            exposure: Math.min(100, Math.max(0, Number(editor.querySelector('.we-secret-f-exposure').value) || 0)),
+            status: editor.querySelector('.we-secret-f-status').value
+          };
+        }
+
+        if (view === list) {
+          srcArr[index] = item;                            // 原地更新
+          okMsg = view === 'action' ? '隐秘行为已保存' : '隐秘资产已保存';
+        } else {
+          srcArr.splice(index, 1);                         // 从旧桶移除
+          const arrKey = SECRET_ARR[view];
+          if (!Array.isArray(state.blackbox[arrKey])) state.blackbox[arrKey] = [];
+          state.blackbox[arrKey].push(item);               // 落入新桶 = 真正的类型转换
+          okMsg = view === 'action' ? '已转为隐秘行为' : '已转为隐秘资产';
+        }
+        saveScopedState(scope, state);
+        editingSecret = null;
+        showToast(okMsg);
         refresh();
       };
     });
-    document.querySelectorAll('.we-bba-delete').forEach(button => {
+    document.querySelectorAll('.we-secret-del').forEach(button => {
       button.onclick = () => {
-        const index = Number(button.dataset.bbaIndex);
-        const state = core.loadState();
-        const a = state.blackbox?.secretActions?.[index];
-        if (!a || !confirm(`删除隐秘行为？`)) return;
-        state.blackbox.secretActions.splice(index, 1);
-        core.saveState(state);
-        showToast('隐秘行为已删除');
+        const scope = button.dataset.secretScope;
+        const list = button.dataset.secretList;
+        const index = Number(button.dataset.secretIndex);
+        const state = loadScopedState(scope);
+        const arr = state.blackbox?.[SECRET_ARR[list]];
+        if (!arr || arr[index] === undefined) return;
+        if (!confirm(list === 'action' ? '删除隐秘行为？' : '删除隐秘资产？')) return;
+        arr.splice(index, 1);
+        saveScopedState(scope, state);
+        showToast('已删除');
         refresh();
       };
     });
-    document.querySelectorAll('.we-bba-copy').forEach(button => {
+    document.querySelectorAll('.we-secret-copy').forEach(button => {
       button.onclick = () => {
-        const index = Number(button.dataset.bbaIndex);
-        const state = core.loadState();
-        const a = state.blackbox?.secretActions?.[index];
-        if (!a) return;
-        const copy = JSON.parse(JSON.stringify(a));
-        state.blackbox.secretActions.push(copy);
-        core.saveState(state);
-        showToast('隐秘行为已复制');
+        const scope = button.dataset.secretScope;
+        const list = button.dataset.secretList;
+        const index = Number(button.dataset.secretIndex);
+        const state = loadScopedState(scope);
+        const arr = state.blackbox?.[SECRET_ARR[list]];
+        if (!arr || arr[index] === undefined) return;
+        arr.splice(index + 1, 0, JSON.parse(JSON.stringify(arr[index])));  // 就近插入
+        saveScopedState(scope, state);
+        showToast('已复制');
         refresh();
       };
     });
 
-    // ===== 黑盒隐秘资产编辑器事件 =====
-    document.querySelectorAll('.we-bbs-edit').forEach(button => {
-      button.onclick = () => {
-        editingBBAsset = { index: Number(button.dataset.bbsIndex) };
-        refresh();
+    // ===== 导航事件 =====
+    const backBtn = document.getElementById('we-btn-back');
+    if (backBtn) backBtn.onclick = () => { _currentView = 'home'; refresh(); };
+
+    const settingsOpenBtn = document.getElementById('we-btn-settings-open');
+    if (settingsOpenBtn) settingsOpenBtn.onclick = () => { _currentView = 'settings'; refresh(); };
+
+    document.querySelectorAll('.we-nav-row[data-view]').forEach(row => {
+      row.onclick = () => {
+        if (_selectedNavView === row.dataset.view) {
+          // 二次点击：进入分页
+          _selectedNavView = null;
+          _currentView = row.dataset.view;
+          refresh();
+        } else {
+          // 首次点击：选中该行
+          _selectedNavView = row.dataset.view;
+          refresh();
+        }
       };
     });
-    document.querySelectorAll('.we-bbs-editor-close').forEach(button => {
-      button.onclick = () => { editingBBAsset = null; refresh(); };
-    });
-    document.querySelectorAll('.we-bbs-editor-save').forEach(button => {
-      button.onclick = () => {
-        const editor = button.closest('.we-event-editor');
-        const index = Number(editor.dataset.bbsIndex);
-        const state = core.loadState();
-        const a = state.blackbox?.secretAssets?.[index];
-        if (!a) return;
-        const name = editor.querySelector('.we-bbs-edit-name').value.trim();
-        if (!name) { showToast('资产名称不能为空', true); return; }
-        a.name = name;
-        a.exposure = Math.min(100, Math.max(0, Number(editor.querySelector('.we-bbs-edit-exposure').value) || 0));
-        a.status = editor.querySelector('.we-bbs-edit-status').value;
-        core.saveState(state);
-        editingBBAsset = null;
-        showToast('隐秘资产修改已保存');
-        refresh();
+
+    // 点击导航列表以外的地方取消选中
+    const panelBody = panelBodyElement;
+    if (panelBody) {
+      panelBody.onclick = (e) => {
+        if (_currentView === 'home' && _selectedNavView && !e.target.closest('.we-nav-row')) {
+          _selectedNavView = null;
+          refresh();
+        }
       };
-    });
-    document.querySelectorAll('.we-bbs-delete').forEach(button => {
-      button.onclick = () => {
-        const index = Number(button.dataset.bbsIndex);
-        const state = core.loadState();
-        const a = state.blackbox?.secretAssets?.[index];
-        if (!a || !confirm(`删除隐秘资产"${a.name}"？`)) return;
-        state.blackbox.secretAssets.splice(index, 1);
-        core.saveState(state);
-        showToast('隐秘资产已删除');
-        refresh();
-      };
-    });
-    document.querySelectorAll('.we-bbs-copy').forEach(button => {
-      button.onclick = () => {
-        const index = Number(button.dataset.bbsIndex);
-        const state = core.loadState();
-        const a = state.blackbox?.secretAssets?.[index];
-        if (!a) return;
-        const copy = JSON.parse(JSON.stringify(a));
-        state.blackbox.secretAssets.push(copy);
-        core.saveState(state);
-        showToast('隐秘资产已复制');
-        refresh();
-      };
-    });
+    }
 
     // ===== 区块折叠/展开事件 =====
     document.querySelectorAll('.we-section-toggle').forEach(toggle => {
@@ -1547,47 +1945,55 @@ window.WORLD_ENGINE_UI = (function() {
       };
     });
 
-    if (evolveBtn) {
-      const abortBtn = document.getElementById('we-btn-abort');
-
-      evolveBtn.onclick = async () => {
-        if (isEvolving) return;
-        // 后台已有推演（如自动推演）在跑：提示而非触发，避免 busy 被当成「推演失败」
-        if (evolution.isRunning?.()) {
-          if (window.__WE_SetExternalStatus) window.__WE_SetExternalStatus('⏳ 已有推演进行中...');
-          showToast('⏳ 已有推演进行中，请稍候');
-          return;
-        }
-        isEvolving = true;
-        setEvolvingUI(true);
-        if (window.__WE_SetExternalStatus) window.__WE_SetExternalStatus('⏳ 推演中...');
-        try {
-          const ctx = SillyTavern.getContext();
-          const s = core.loadState();
-          const chat = ctx?.chat || [];
-          const lastMsg = chat[chat.length - 1];
-          const userMsg = lastMsg?.is_user ? (lastMsg.mes || '') : '';
-          const aiMsg = !lastMsg?.is_user ? (lastMsg?.mes || '') : '';
-          const ok = await evolution.evolve(s, userMsg, aiMsg);
-          if (ok && window.WORLD_ENGINE_LEDGER) window.WORLD_ENGINE_LEDGER.recordChanges(s);
-          if (ok && window.WORLD_ENGINE?.applyInjection) window.WORLD_ENGINE.applyInjection();
-          if (window.__WE_SetExternalStatus) window.__WE_SetExternalStatus(ok ? '✅ 推演完成' : '❌ 推演失败', !ok);
-          if (ok) showToast('✅ 推演完成');
-        } catch(e) {
-          if (window.__WE_SetExternalStatus) window.__WE_SetExternalStatus('❌ 推演失败: ' + e.message, true);
-          showToast('❌ ' + e.message, true);
-        }
-        isEvolving = false;
-        setEvolvingUI(false);
-        refresh();
-      };
-
-      if (abortBtn) {
-        abortBtn.onclick = () => {
-          evolution.abort();
-          showToast('已发送停止信号');
-        };
+    // 手动推演：两个按钮，显式指定基底，不看 isNewRound。
+    //   重新推演 → 喂存档点 B（mode 'redo'），面板显示存档点；
+    //   向前推演 → 喂当前状态 A（mode 'forward'），面板显示当前状态。
+    async function runManualEvolve(mode, scope) {
+      if (isEvolving) return;
+      // 后台已有推演（如自动推演）在跑：提示而非触发，避免 busy 被当成「推演失败」
+      if (evolution.isRunning?.()) {
+        if (window.__WE_SetExternalStatus) window.__WE_SetExternalStatus('已有推演进行中...');
+        showToast('已有推演进行中，请稍候');
+        return;
       }
+      isEvolving = true;
+      setEvolvingUI(true, scope);
+      refresh(true); // 推演开始：立刻按基底翻面（重新推演→存档点 B / 向前推演→当前状态 A），等出新结果再翻
+      if (window.__WE_SetExternalStatus) window.__WE_SetExternalStatus('推演中...');
+      try {
+        const ctx = SillyTavern.getContext();
+        const s = core.loadState();
+        const chat = ctx?.chat || [];
+        const lastMsg = chat[chat.length - 1];
+        const userMsg = lastMsg?.is_user ? (lastMsg.mes || '') : '';
+        const aiMsg = !lastMsg?.is_user ? (lastMsg?.mes || '') : '';
+        const ok = await evolution.evolve(s, userMsg, aiMsg, { mode });
+        if (ok && window.WORLD_ENGINE_LEDGER) window.WORLD_ENGINE_LEDGER.recordChanges(s);
+        if (ok && window.WORLD_ENGINE?.applyInjection) window.WORLD_ENGINE.applyInjection();
+        if (window.__WE_SetExternalStatus) window.__WE_SetExternalStatus(ok ? '推演完成' : '推演失败', !ok);
+        if (ok) showToast('推演完成');
+      } catch(e) {
+        if (window.__WE_SetExternalStatus) window.__WE_SetExternalStatus('推演失败: ' + e.message, true);
+        showToast('' + e.message, true);
+      }
+      isEvolving = false;
+      setEvolvingUI(false);
+      refresh();
+    }
+
+    const redoBtn = document.getElementById('we-btn-redo');
+    const forwardBtn = document.getElementById('we-btn-forward');
+    if (redoBtn) redoBtn.onclick = () => runManualEvolve('redo', 'checkpoint');
+    if (forwardBtn) forwardBtn.onclick = () => runManualEvolve('forward', 'state');
+
+    const abortBtn = document.getElementById('we-btn-abort');
+    if (abortBtn) {
+      abortBtn.onclick = () => {
+        evolution.abort();
+        showToast('已发送停止信号');
+      };
+    }
+    if (redoBtn || forwardBtn) {
       setEvolvingUI(isEvolving || Boolean(evolution.isRunning?.()));
     }
 
@@ -1608,7 +2014,7 @@ window.WORLD_ENGINE_UI = (function() {
         window.WORLD_ENGINE_STORE.setItem('world_engine_settings', JSON.stringify(ns));
         if (window.WORLD_ENGINE_API) window.WORLD_ENGINE_API.getSettings(true);
         window.WORLD_ENGINE?.applyInjection?.();
-        showToast('✅ 设置已保存');
+        showToast('设置已保存');
       };
     }
 
@@ -1647,20 +2053,24 @@ window.WORLD_ENGINE_UI = (function() {
         try {
           const entries = await worldbook.loadCurrentEntries();
           const currentChatId = worldbook.getChatId ? worldbook.getChatId() : (window.WORLD_ENGINE_CORE?.getChatId?.() || 'default');
+          // 用 hasSelection() 区分"从未保存"与"保存了空数组"，避免刷新后误触发自动全选
+          const isFirstVisit = worldbook.hasSelection ? !worldbook.hasSelection() : false;
           const savedIds = worldbook.getSelectedIds();
           _wbCachedEntries = entries;
           _wbCachedChatId = currentChatId;
-          // 首次进入该聊天（无历史保存记录）则自动全选启用条目
-          if (!savedIds.length && entries.length) {
+          // 首次进入该聊天（存储中无记录）则自动全选启用条目
+          if (isFirstVisit && entries.length) {
             const allIds = entries.filter(e => !e.disabled).map(e => e.id);
             worldbook.saveSelectedIds(allIds);
             _wbCachedSelectedIds = new Set(allIds);
-            showToast(`✅ 已自动全选 ${allIds.length} 条世界书条目`);
+            showToast(`已自动全选 ${allIds.length} 条世界书条目`);
           } else {
             const enabledIds = new Set(entries.filter(e => !e.disabled).map(e => e.id));
             const validSavedIds = savedIds.filter(id => enabledIds.has(id));
             _wbCachedSelectedIds = new Set(validSavedIds);
-            if (validSavedIds.length !== savedIds.length) {
+            // 仅在有匹配条目时才回写，防止刷新后 entry.world 尚未加载导致 ID 全部不匹配、
+            // 误将保存记录清空为 []（清空后下次开面板会误触发自动全选）
+            if (validSavedIds.length > 0 && validSavedIds.length !== savedIds.length) {
               worldbook.saveSelectedIds(validSavedIds);
             }
           }
@@ -1769,7 +2179,7 @@ window.WORLD_ENGINE_UI = (function() {
       };
       if (saveWorldbookBtn) saveWorldbookBtn.onclick = () => {
         worldbook.saveSelectedIds([..._wbCachedSelectedIds]);
-        showToast(`✅ 已保存 ${_wbCachedSelectedIds.size} 条后台世界书条目`);
+        showToast(`已保存 ${_wbCachedSelectedIds.size} 条后台世界书条目`);
         updateWorldbookSummary();
       };
       // refresh() 重建 DOM 时，如果 chatId 未变且已有缓存，直接渲染，避免勾选丢失
@@ -1785,9 +2195,10 @@ window.WORLD_ENGINE_UI = (function() {
     if (resetBtn) {
       resetBtn.onclick = () => {
         if (confirm('重置当前聊天所有世界状态和记忆？不可恢复！')) {
-          const ns = core.getDefaultState();
-          core.saveState(ns);
-          showToast('🔄 世界已重置');
+          core.clearState();
+          core.clearCheckpoint();
+          core.saveFingerprint(String(core.getChatLayer()));
+          showToast('世界已重置');
           refresh();
         }
       };
@@ -1824,7 +2235,7 @@ window.WORLD_ENGINE_UI = (function() {
     if (fetchBtn) {
       fetchBtn.onclick = async () => {
         const api = window.WORLD_ENGINE_API;
-        if (!api) { showToast('❌ API 模块未加载', true); return; }
+        if (!api) { showToast('API 模块未加载', true); return; }
         window.WORLD_ENGINE_STORE.setItem('world_engine_settings', JSON.stringify({
           ...(api.getSettings ? api.getSettings(true) : {}),
           apiUrl: document.getElementById('we-api-url')?.value || '',
@@ -1834,7 +2245,7 @@ window.WORLD_ENGINE_UI = (function() {
         }));
         if (api.getSettings) api.getSettings(true);
         fetchBtn.disabled = true;
-        fetchBtn.textContent = '⏳ 获取中...';
+        fetchBtn.textContent = '获取中...';
         try {
           const models = await api.fetchModelList();
           const select = document.getElementById('we-model-list');
@@ -1847,12 +2258,12 @@ window.WORLD_ENGINE_UI = (function() {
               if (modelInput) modelInput.value = select.value;
             };
           }
-          showToast('✅ 获取到 ' + models.length + ' 个模型');
+          showToast('获取到 ' + models.length + ' 个模型');
         } catch(e) {
-          showToast('❌ ' + e.message, true);
+          showToast('' + e.message, true);
         }
         fetchBtn.disabled = false;
-        fetchBtn.innerHTML = '📋 获取列表';
+        fetchBtn.innerHTML = '获取列表';
       };
     }
 
@@ -1878,7 +2289,7 @@ window.WORLD_ENGINE_UI = (function() {
         a.download = 'world-engine-' + core.getChatId() + '-' + Date.now() + '.json';
         a.click();
         URL.revokeObjectURL(url);
-        showToast('✅ 已导出');
+        showToast('已导出');
       };
     }
 
@@ -1910,26 +2321,27 @@ window.WORLD_ENGINE_UI = (function() {
                 _retryType: String(data._retryType || '')
               };
               core.saveState(state);
-              showToast('✅ 区域突发事件导入成功');
+              showToast('区域事件导入成功');
               refresh();
               return;
             }
-            if (data.version !== '1.2') { showToast('❌ 不支持的存档格式版本', true); return; }
-            if (!data.state) { showToast('❌ 无效的导入文件', true); return; }
+            if (data.version !== '1.2') { showToast('不支持的存档格式版本', true); return; }
+            if (!data.state) { showToast('无效的导入文件', true); return; }
             const s = data.state;
-            if (s.round === undefined) { showToast('❌ 缺少 round 字段', true); return; }
+            if (s.round === undefined) { showToast('缺少 round 字段', true); return; }
             core.importState(s);
             if (Object.prototype.hasOwnProperty.call(data, 'checkpoint')) {
-              if (data.checkpoint) core.saveCheckpoint(data.checkpoint);
+              if (data.checkpoint) {
+                data.checkpoint.chatLayer = core.getChatLayer();
+                core.saveCheckpoint(data.checkpoint);
+              }
               else core.clearCheckpoint();
             }
-            if (Object.prototype.hasOwnProperty.call(data, 'fingerprint')) {
-              core.saveFingerprint(data.fingerprint || '');
-            }
-            showToast('✅ 导入成功！第' + s.round + '轮，' + (s.memories||[]).filter(m=>m.type==='ledger').length + '轮账本');
+            core.saveFingerprint(String(core.getChatLayer()));
+            showToast('导入成功！第' + s.round + '轮，' + (s.memories||[]).filter(m=>m.type==='ledger').length + '轮账本');
             refresh();
           } catch(err) {
-            showToast('❌ 解析失败: ' + err.message, true);
+            showToast('解析失败: ' + err.message, true);
           }
         };
         reader.readAsText(file);
@@ -1954,9 +2366,9 @@ window.WORLD_ENGINE_UI = (function() {
         const evo = window.WORLD_ENGINE_EVOLUTION;
         if (!evo || !evo.getLastDebug) return;
         const dbg = evo.getLastDebug();
-        if (!dbg.prompt) { showToast('❌ 无 Prompt 可导出', true); return; }
+        if (!dbg.prompt) { showToast('无 Prompt 可导出', true); return; }
         setupDownload(dbg.prompt, 'prompt-' + Date.now() + '.txt');
-        showToast('✅ Prompt 已导出');
+        showToast('Prompt 已导出');
       };
     }
 
@@ -1966,9 +2378,9 @@ window.WORLD_ENGINE_UI = (function() {
         const evo = window.WORLD_ENGINE_EVOLUTION;
         if (!evo || !evo.getLastDebug) return;
         const dbg = evo.getLastDebug();
-        if (!dbg.rawResult) { showToast('❌ 无 API 返回可导出', true); return; }
+        if (!dbg.rawResult) { showToast('无 API 返回可导出', true); return; }
         setupDownload(dbg.rawResult, 'api-raw-' + Date.now() + '.txt');
-        showToast('✅ API 返回已导出');
+        showToast('API 返回已导出');
       };
     }
   }
@@ -2027,7 +2439,7 @@ window.WORLD_ENGINE_UI = (function() {
     try {
       const ctx = SillyTavern.getContext();
       const chat = ctx?.chat || [];
-      return chat.length || 0;
+      return Math.max(0, chat.length - 1);
     } catch(e) { return '?'; }
   }
 
@@ -2047,9 +2459,11 @@ window.WORLD_ENGINE_UI = (function() {
       var dim = dot.getAttribute('data-dim');
       var level = dot.getAttribute('data-level');
       if (dim && level) {
-        var s = window.WORLD_ENGINE_CORE.loadState();
+        var scope = dot.getAttribute('data-rep-scope');
+        var s = loadScopedState(scope);
+        s.reputation = s.reputation || {};
         s.reputation[dim] = level;
-        window.WORLD_ENGINE_CORE.saveState(s);
+        saveScopedState(scope, s);
         refresh();
       }
       return;
@@ -2059,9 +2473,11 @@ window.WORLD_ENGINE_UI = (function() {
     if (cb) {
       var c = cb.getAttribute('data-climate');
       if (c) {
-        var s = window.WORLD_ENGINE_CORE.loadState();
+        var scope = cb.getAttribute('data-climate-scope');
+        var s = loadScopedState(scope);
+        s.economy = s.economy || {};
         s.economy.climate = c;
-        window.WORLD_ENGINE_CORE.saveState(s);
+        saveScopedState(scope, s);
         refresh();
       }
       return;
@@ -2096,27 +2512,59 @@ window.WORLD_ENGINE_UI = (function() {
     if (sd) {
       var idx = parseInt(sd.getAttribute('data-sigidx'));
       if (!isNaN(idx)) {
-        var s = window.WORLD_ENGINE_CORE.loadState();
-        if (s.economy.signals && s.economy.signals[idx] !== undefined) {
+        var scope = sd.getAttribute('data-sig-scope');
+        var s = loadScopedState(scope);
+        if (s.economy && s.economy.signals && s.economy.signals[idx] !== undefined) {
           s.economy.signals.splice(idx, 1);
-          window.WORLD_ENGINE_CORE.saveState(s);
+          saveScopedState(scope, s);
           refresh();
         }
       }
       return;
     }
     // 添加 signal
-    if (e.target.closest('.we-signal-add')) {
-      var s = window.WORLD_ENGINE_CORE.loadState();
+    var sa = e.target.closest('.we-signal-add');
+    if (sa) {
+      var scope = sa.getAttribute('data-sig-scope');
+      var s = loadScopedState(scope);
+      s.economy = s.economy || {};
       if (!s.economy.signals) s.economy.signals = [];
       if (s.economy.signals.length < 5) {
         s.economy.signals.push({ summary: '新信号', scope: '区域' });
-        window.WORLD_ENGINE_CORE.saveState(s);
+        saveScopedState(scope, s);
         refresh();
       }
       return;
     }
+
+    // 单击信号卡片后显示删除按钮；再次点击同一卡片时保持显示，方便移动端操作
+    var signalCard = e.target.closest('.we-signal-item');
+    if (signalCard && panelBodyElement && panelBodyElement.contains(signalCard)) {
+      panelBodyElement.querySelectorAll('.we-card-active').forEach(function(c){ c.classList.remove('we-card-active'); });
+      signalCard.classList.add('we-card-active');
+      return;
+    }
+
+    // ===== 单击条目卡片显示/隐藏其编辑按钮（移动端无悬停，统一改为点按）=====
+    if (!panelBodyElement || !panelBodyElement.contains(e.target)) return;
+    // 点在按钮/输入控件/展开的编辑器内：交给各自处理器，不切换
+    if (e.target.closest('button, select, input, textarea, label, a, .we-event-editor, .we-rep-dot, .we-climate-btn, .we-signal-item, .we-list-arrow, .we-nav-row, .we-section-toggle')) return;
+    var card = findActionCard(e.target);
+    var wasActive = card && card.classList.contains('we-card-active');
+    // 先收起其它已展开的卡片
+    panelBodyElement.querySelectorAll('.we-card-active').forEach(function(c){ c.classList.remove('we-card-active'); });
+    if (card && !wasActive) card.classList.add('we-card-active');
   });
+
+  /** 找到包含编辑按钮组的条目卡片（其直接子节点里有 .we-event-actions / .we-secret-ops） */
+  function findActionCard(target) {
+    var el = target;
+    while (el && el.nodeType === 1 && el.id !== 'we-panel-body') {
+      if (el.querySelector && el.querySelector(':scope > .we-event-actions, :scope > .we-secret-ops')) return el;
+      el = el.parentElement;
+    }
+    return null;
+  }
 
   // 全局事件委托：signal 双击编辑
   document.addEventListener('dblclick', function(e) {
@@ -2131,6 +2579,7 @@ window.WORLD_ENGINE_UI = (function() {
     var del = parent.querySelector('.we-signal-del');
     var idx = del ? parseInt(del.getAttribute('data-sigidx')) : -1;
     if (isNaN(idx)) return;
+    var dispScope = parent.getAttribute('data-sig-scope');
     var oldText = item.textContent;
     item.contentEditable = 'true';
     item.focus();
@@ -2142,11 +2591,11 @@ window.WORLD_ENGINE_UI = (function() {
     sel.addRange(range);
     item.onblur = function() {
       item.contentEditable = 'false';
-      var s = window.WORLD_ENGINE_CORE.loadState();
-      if (s.economy.signals && s.economy.signals[idx]) {
+      var s = loadScopedState(dispScope);
+      if (s.economy && s.economy.signals && s.economy.signals[idx]) {
         if (isScope) s.economy.signals[idx].scope = item.textContent;
         else s.economy.signals[idx].summary = item.textContent;
-        window.WORLD_ENGINE_CORE.saveState(s);
+        saveScopedState(dispScope, s);
       }
     };
     item.onkeydown = function(ke) {
@@ -2155,14 +2604,18 @@ window.WORLD_ENGINE_UI = (function() {
   });
 
   // ========== 推演 UI 状态切换 ==========
-  function setEvolvingUI(active) {
+  function setEvolvingUI(active, scope) {
+    // 只置标志，绝不在这里调 refresh()：bindEvents() 每次刷新都会调用本函数，
+    // 一旦回头再 refresh 就会 setEvolvingUI→refresh→bindEvents→setEvolvingUI 无限递归卡死。
+    // 显示哪份由 getActiveInjected 守卫 + _evolvingScope 负责，刷新由调用方在外面做。
+    _evolving = !!active;
+    if (active && scope) _evolvingScope = scope;
     const abortBtn = document.getElementById('we-btn-abort');
-    const evolveBtn = document.getElementById('we-btn-evolve');
     if (abortBtn) abortBtn.disabled = !active;
-    if (evolveBtn) {
-      evolveBtn.disabled = active;
-      evolveBtn.textContent = active ? '⏳ 推演中...' : '🌀 手动推演';
-    }
+    ['we-btn-redo', 'we-btn-forward'].forEach(id => {
+      const b = document.getElementById(id);
+      if (b) b.disabled = active;
+    });
     const ball = document.getElementById('we-input-btn');
     if (ball && active) {
       ball.classList.add('we-ball-evolving');
@@ -2170,6 +2623,10 @@ window.WORLD_ENGINE_UI = (function() {
     } else if (ball && !active) {
       ball.classList.remove('we-ball-evolving');
     }
+  }
+
+  function setInjectedScope(scope) {
+    _injectedScope = scope === 'checkpoint' ? 'checkpoint' : 'state';
   }
 
   // ========== 世界引擎悬浮球 ==========
@@ -2189,8 +2646,35 @@ window.WORLD_ENGINE_UI = (function() {
     return null;
   }
 
-  function saveBallPos(left, top) {
-    try { localStorage.setItem(WE_BALL_POS_KEY, JSON.stringify({ left, top })); } catch (_) {}
+  function saveBallPos(left, top, tucked, side) {
+    try { localStorage.setItem(WE_BALL_POS_KEY, JSON.stringify({ left, top, tucked: !!tucked, side: side || null })); } catch (_) {}
+  }
+
+  // 侧边吸附参数
+  const WE_TUCK_EDGE = 28;    // 距边缘多近算「吸附」
+  const WE_TUCK_HANDLE = 15;  // 缩进后露出的小条宽度
+  const WE_TUCK_INSET = 8;    // 拉出后距边缘的留白
+
+  function applyBallTuck(ball, side) {
+    const vw = window.innerWidth;
+    const size = ball.offsetWidth || 52;
+    ball.classList.add('we-ball-tucked');
+    ball.classList.toggle('we-ball-tucked-left', side === 'left');
+    ball.classList.toggle('we-ball-tucked-right', side === 'right');
+    ball.style.left = (side === 'left' ? (WE_TUCK_HANDLE - size) : (vw - WE_TUCK_HANDLE)) + 'px';
+  }
+
+  function untuckBall(ball) {
+    const pos = loadBallPos() || {};
+    const vw = window.innerWidth, vh = window.innerHeight, size = ball.offsetWidth || 52;
+    let left = typeof pos.left === 'number' ? pos.left : (vw - size - 18);
+    let top = typeof pos.top === 'number' ? pos.top : (vh - size - 90);
+    left = Math.max(4, Math.min(left, vw - size - 4));
+    top = Math.max(4, Math.min(top, vh - size - 4));
+    ball.classList.remove('we-ball-tucked', 'we-ball-tucked-left', 'we-ball-tucked-right');
+    ball.style.left = left + 'px';
+    ball.style.top = top + 'px';
+    saveBallPos(left, top, false, null);
   }
 
   function applyBallPos(ball) {
@@ -2201,10 +2685,16 @@ window.WORLD_ENGINE_UI = (function() {
     // 钳制进可视区域，避免拖出屏幕后找不到
     pos.left = Math.max(4, Math.min(pos.left, vw - size - 4));
     pos.top = Math.max(4, Math.min(pos.top, vh - size - 4));
-    ball.style.left = pos.left + 'px';
     ball.style.top = pos.top + 'px';
     ball.style.right = 'auto';
     ball.style.bottom = 'auto';
+    if (pos.tucked && (pos.side === 'left' || pos.side === 'right')) {
+      ball.style.left = pos.left + 'px';   // 记录的是「拉出后」的位置
+      applyBallTuck(ball, pos.side);        // 视觉上缩到边缘
+    } else {
+      ball.classList.remove('we-ball-tucked', 'we-ball-tucked-left', 'we-ball-tucked-right');
+      ball.style.left = pos.left + 'px';
+    }
   }
 
   function makeBallDraggable(ball) {
@@ -2241,13 +2731,29 @@ window.WORLD_ENGINE_UI = (function() {
       document.removeEventListener('mouseup', onUp);
       document.removeEventListener('touchmove', onMove);
       document.removeEventListener('touchend', onUp);
-      if (moved) saveBallPos(parseFloat(ball.style.left), parseFloat(ball.style.top));
+      if (!moved) return;
+      const vw = window.innerWidth, size = ball.offsetWidth || 52;
+      const left = parseFloat(ball.style.left) || 0;
+      const top = parseFloat(ball.style.top) || 0;
+      if (left <= WE_TUCK_EDGE) {                          // 贴左缘 → 缩进左侧
+        saveBallPos(WE_TUCK_INSET, top, true, 'left');
+        applyBallTuck(ball, 'left');
+      } else if (left >= vw - size - WE_TUCK_EDGE) {        // 贴右缘 → 缩进右侧
+        saveBallPos(vw - size - WE_TUCK_INSET, top, true, 'right');
+        applyBallTuck(ball, 'right');
+      } else {
+        saveBallPos(left, top, false, null);
+      }
     };
     ball.addEventListener('mousedown', onDown);
     ball.addEventListener('touchstart', onDown, { passive: true });
-    // 仅在没拖动时才视为点击
+    // 点击处理：拖动后不算点击；已缩进则「拉出来」而非开面板
     ball.addEventListener('click', (e) => {
-      if (moved) { e.preventDefault(); e.stopImmediatePropagation(); moved = false; }
+      if (moved) { e.preventDefault(); e.stopImmediatePropagation(); moved = false; return; }
+      if (ball.classList.contains('we-ball-tucked')) {
+        e.preventDefault(); e.stopImmediatePropagation();
+        untuckBall(ball);
+      }
     }, true);
   }
 
@@ -2281,15 +2787,15 @@ window.WORLD_ENGINE_UI = (function() {
       if (ring) ring.style.setProperty('--we-ring-pct', '0deg');
     };
 
-    if (/推演中|⏳/.test(text)) {
+    if (/推演中/.test(text)) {
       ball.classList.add('we-ball-evolving');
       if (badge) badge.textContent = '';
       clearCount(); // 推演进行中不展示轮次计数，避免残留旧的 N/X
-    } else if (isError || /失败|异常|❌/.test(text)) {
+    } else if (isError || /失败|异常/.test(text)) {
       ball.classList.add('we-ball-fail');
       if (badge) badge.textContent = '✕';
       _ballStatusTimer = setTimeout(() => clearBallBadge(), 6000);
-    } else if (/完成|✅/.test(text)) {
+    } else if (/完成/.test(text)) {
       ball.classList.add('we-ball-success');
       if (badge) badge.textContent = '✓';
       clearCount(); // 推演完成 → 计数已归零，清掉进度环与数字
@@ -2363,5 +2869,5 @@ window.WORLD_ENGINE_UI = (function() {
     observeInputButton();
   }
 
-  return { buildPanel, buildInputButton, showPanel, hidePanel, togglePanel, refresh, setStatus, setEvolvingUI };
+  return { buildPanel, buildInputButton, showPanel, hidePanel, togglePanel, refresh, setStatus, setEvolvingUI, setInjectedScope };
 })();

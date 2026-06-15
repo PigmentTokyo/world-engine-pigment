@@ -38,7 +38,8 @@ window.WORLD_ENGINE_EVOLUTION = (function() {
 
   const REGIONAL_INCIDENT_CONFIG = {
     chance: 0.03,
-    cooldownRounds: 10,
+    durationRounds: 5,
+    cooldownRounds: 5,
     typeWeights: [
       { type: 'banditry', label: '盗匪劫掠', weight: 18 },
       { type: 'fire', label: '大火', weight: 14 },
@@ -78,11 +79,28 @@ window.WORLD_ENGINE_EVOLUTION = (function() {
         type: '',
         scope: '',
         impact: '',
+        duration: 0,
         cooldown: 0,
         _retry: false,
         _retryType: ''
       };
     }
+  }
+
+  function getIncidentTypeLabel(type) {
+    const found = REGIONAL_INCIDENT_CONFIG.typeWeights.find(t => t.type === type);
+    return found ? found.label : type;
+  }
+
+  function buildRegionalIncidentOngoingPrompt(incident) {
+    return `
+【区域突发事件持续中（剩余 ${incident.duration} 轮）】
+标题：${incident.title}
+类型：${getIncidentTypeLabel(incident.type)}
+范围：${incident.scope}
+当前影响：${incident.impact}
+该事件仍处于活跃期。请在本轮推演中延续其余波（经济、风声、势力行动等），不得将其写成已经平息，也不得在 regionalIncident 字段生成新事件。
+`;
   }
 
   function weightedPick(items, randomFn = Math.random) {
@@ -155,14 +173,36 @@ type：${picked.type}
     ensureRegionalIncident(state);
     const incident = state.regionalIncident;
 
+    // 事件持续中：每轮倒计时，归零后消散并进入冷却
+    if (incident.active) {
+      const remaining = Math.max(0, (incident.duration || 0) - 1);
+      incident.duration = remaining;
+      if (remaining <= 0) {
+        const title = incident.title;
+        incident.active = false;
+        incident.title = '';
+        incident.type = '';
+        incident.scope = '';
+        incident.impact = '';
+        incident.duration = 0;
+        incident.cooldown = REGIONAL_INCIDENT_CONFIG.cooldownRounds;
+        incident._retry = false;
+        incident._retryType = '';
+        console.log('[世界引擎] 区域突发事件已消散（持续期满）:', title);
+        return { triggered: false, injectPrompt: '', reason: 'expired' };
+      }
+      // 仍在持续，注入"持续中"提示
+      return {
+        triggered: true,
+        ongoing: true,
+        injectPrompt: buildRegionalIncidentOngoingPrompt(incident),
+        reason: 'ongoing'
+      };
+    }
+
     // 冷却中
     if ((incident.cooldown || 0) > 0) {
       incident.cooldown = Math.max(0, incident.cooldown - 1);
-      incident.active = false;
-      incident.title = '';
-      incident.type = '';
-      incident.scope = '';
-      incident.impact = '';
       return { triggered: false, injectPrompt: '', reason: 'cooldown' };
     }
 
@@ -175,7 +215,7 @@ type：${picked.type}
     let triggerLabel = '';
 
     if (incident._retry && triggerType) {
-      // 上轮骰子成功但API未返回 → 重试，类型不变
+      // 上轮骰子成功但 API 未返回 → 重试，类型不变
       triggerNow = true;
       incident._retry = false;
       incident._retryType = '';
@@ -193,7 +233,7 @@ type：${picked.type}
       return { triggered: false, injectPrompt: '', chance, dice, reason: 'miss' };
     }
 
-    // 触发
+    // 触发（首轮）
     let picked;
     if (!triggerNow) {
       picked = weightedPick(REGIONAL_INCIDENT_CONFIG.typeWeights, randomFn);
@@ -203,18 +243,18 @@ type：${picked.type}
 
     incident.active = true;
     incident.type = triggerType;
-    if (picked) {
-      incident.cooldown = REGIONAL_INCIDENT_CONFIG.cooldownRounds;
-    }
+    incident.duration = REGIONAL_INCIDENT_CONFIG.durationRounds; // 持续轮数，冷却在消散后才开始
+    incident.cooldown = 0;
 
     return {
       triggered: true,
+      ongoing: false,
       incidentType: triggerType,
       incidentLabel: triggerLabel,
       injectPrompt: buildRegionalIncidentPrompt({ type: triggerType, label: triggerLabel || triggerType }),
       chance,
       dice,
-      reason: incident._retry ? 'retry' : 'hit'
+      reason: triggerNow ? 'retry' : 'hit'
     };
   }
 
@@ -233,7 +273,14 @@ type：${picked.type}
       return;
     }
 
-    // 本地骰子触发了，检查 API 是否返回了 regionalIncident
+    // 持续中的事件（已有标题）：内容固定，不接受 API 覆盖
+    if (incident.title) {
+      if (update.regionalIncident) delete update.regionalIncident;
+      return;
+    }
+
+    // 新触发首轮（尚无标题）：合并 API 返回的事件内容
+    const duration = incident.duration || REGIONAL_INCIDENT_CONFIG.durationRounds;
     if (update.regionalIncident && update.regionalIncident.active) {
       state.regionalIncident = {
         active: true,
@@ -241,23 +288,20 @@ type：${picked.type}
         type: update.regionalIncident.type || incident.type || 'other',
         scope: update.regionalIncident.scope || '未知区域',
         impact: update.regionalIncident.impact || '区域秩序受到冲击。',
-        cooldown: REGIONAL_INCIDENT_CONFIG.cooldownRounds,
+        duration,
+        cooldown: 0,
         _retry: false,
         _retryType: ''
       };
     } else {
       // API 没返回 → 设置重试标记，下轮继续
-      incident._retry = true;
-      if (incident.type) {
-        incident._retryType = incident.type;
-      }
-      // 不清空 active/type，让下轮 mergeRegionalIncident 能检测到重试
       state.regionalIncident = {
         active: false,
         title: '区域突发事件生成失败（将在下一轮重试）',
         type: incident.type || 'other',
         scope: '未知区域',
         impact: '本地骰子触发区域突发事件，但 API 未返回 regionalIncident。下一轮将重试同类型。',
+        duration: 0,
         cooldown: 0,
         _retry: true,
         _retryType: incident.type || ''
@@ -648,15 +692,23 @@ ${extraInstruction ? '\n' + extraInstruction : ''}`;
   let _abortController = null;
   let _isRunning = false;
 
-  async function evolve(state, userMsg, aiMsg) {
+  async function evolve(state, userMsg, aiMsg, opts) {
     if (_isRunning) {
       console.warn('[世界引擎] ⚠️ 已有推演正在进行，跳过重复请求');
       return false;
     }
 
     delete state._terminalEventsThisRound;
+    const hadStoredState = core.hasState();
     const backup = JSON.parse(JSON.stringify(state));
-    const isNew = core.isNewRound();
+    // 基底由调用方显式指定（手动双按钮）：
+    //   'forward' = 向前推演，从当前状态推、推完存档点前移（等同新轮次）；
+    //   'redo'    = 重新推演，从存档点恢复再推、轮次不变；
+    //   不传      = 自动推演，沿用 isNewRound() 判断。
+    const mode = opts && opts.mode;
+    const isNew = mode === 'forward' ? true
+                : mode === 'redo'    ? false
+                : core.isNewRound();
 
     if (isNew) {
       console.log('[世界引擎] 📌 新轮次');
@@ -769,15 +821,36 @@ ${extraInstruction ? '\n' + extraInstruction : ''}`;
 
       // 影响链
       if (update.influenceChain.length) {
+        const completedRound = state.round + 1;
         for (const influence of update.influenceChain) {
           if (!influence.trigger || !influence.impact) continue;
           influence.fallout = influence.fallout || '';
           const idx = (state.influenceChain || []).findIndex(existing => existing.trigger === influence.trigger);
-          if (idx !== -1) state.influenceChain[idx] = influence;
-          else state.influenceChain.unshift(influence);
+          if (idx !== -1) {
+            influence._createdRound = state.influenceChain[idx]._createdRound ?? completedRound;
+            state.influenceChain[idx] = influence;
+          } else {
+            influence._createdRound = completedRound;
+            state.influenceChain.unshift(influence);
+          }
         }
         if (state.influenceChain.length > 12) state.influenceChain.length = 12;
       }
+
+      // Influence entries expire after 8 rounds; updates to the same trigger do not renew them.
+      const completedRound = state.round + 1;
+      const cleanedInfluence = (state.influenceChain || []).filter(influence => {
+        if (!influence || typeof influence !== 'object') return false;
+        if (influence._createdRound === undefined) influence._createdRound = state.round;
+        return (completedRound - influence._createdRound) < 8;
+      });
+      if (cleanedInfluence.length !== (state.influenceChain || []).length) {
+        console.log('[World Engine] auto-removed influence entries:', (state.influenceChain || [])
+          .filter(influence => !cleanedInfluence.includes(influence))
+          .map(influence => influence.trigger)
+          .join(', '));
+      }
+      state.influenceChain = cleanedInfluence;
 
       // economy signals 上限
       if (state.economy && state.economy.signals && state.economy.signals.length > 8) {
@@ -838,11 +911,9 @@ ${extraInstruction ? '\n' + extraInstruction : ''}`;
 
       // 推演成功 → 存档点推进（backup 即推演前状态）
       if (isNew) {
-        core.saveCheckpoint(backup);
-        // fingerprint 存存档点楼层（backup.chatLayer+1），作为下一轮计数起点
-        // 这样 anchor = 上次推演起点，重 roll 时 c 仍等于 everyX，自然触发
-        const prevFp = backup.chatLayer != null ? Number(backup.chatLayer) + 1 : 0;
-        core.saveFingerprint(String(prevFp));
+        // 首次推演不创建空白存档点；后续旧当前状态成为存档点并保留原层数。
+        if (hadStoredState) core.saveCheckpoint(backup);
+        core.saveFingerprint(core.getChatFingerprint());
         console.log('[世界引擎] ✅ 推演完成，新轮次第', state.round, '轮，存档点已推进');
       } else {
         console.log('[世界引擎] ✅ 推演完成（重roll），轮次不变');

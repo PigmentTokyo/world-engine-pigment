@@ -157,7 +157,7 @@
           const context = inject.buildContext(state, tags);
 
           // 只在使用当前状态时写回（存档点状态不应被覆盖）
-          if (!stateOverride) {
+          if (!stateOverride && core.hasState()) {
             state.lastInjection = { timestamp: Date.now(), round: currentRound, context, tagsUsed: tags };
             core.saveState(state);
           }
@@ -175,18 +175,25 @@
         const state = core.loadState();
         const chatLayer = core.getChatLayer();
         const stateLayer = Number.isFinite(Number(state.chatLayer)) ? Number(state.chatLayer) : chatLayer;
+        let injectedScope = 'state';
         if (chatLayer < stateLayer) {
           const checkpoint = core.restoreCheckpoint();
           if (checkpoint) {
+            injectedScope = 'checkpoint';
             console.log(`[世界引擎] 正文注入判定：对话层数 ${chatLayer} < 当前状态层数 ${stateLayer}，注入存档点`);
             applyInjection(checkpoint);
-            return;
+          } else {
+            console.warn(`[世界引擎] 正文注入判定：对话层数 ${chatLayer} < 当前状态层数 ${stateLayer}，但无存档点，回退到当前状态`);
+            applyInjection();
           }
-          console.warn(`[世界引擎] 正文注入判定：对话层数 ${chatLayer} < 当前状态层数 ${stateLayer}，但无存档点，回退到当前状态`);
         } else {
           console.log(`[世界引擎] 正文注入判定：对话层数 ${chatLayer} >= 当前状态层数 ${stateLayer}，注入当前状态`);
+          applyInjection();
         }
-        applyInjection();
+        // 注入正文后刷新面板，让「当前状态」跟随实际注入的那份：
+        // 重 roll（对话层数 < 状态层数）→ 显示存档点；否则 → 显示当前状态。
+        if (ui && ui.setInjectedScope) ui.setInjectedScope(injectedScope);
+        if (ui && ui.refresh) ui.refresh(true);
       }
 
       // ========== 收到完整回复后：世界推演 + 记录账本 ==========
@@ -249,12 +256,16 @@
         {
           const L = core.getChatLayer();
           const cp = core.restoreCheckpoint();
-          let anchor;
+          const storedState = core.hasState() ? core.loadState() : null;
+          let anchor = null;
           if (cp && cp.chatLayer != null) {
             anchor = Number(cp.chatLayer);
-          } else {
-            anchor = Number(core.loadFingerprint()) || 0;
+          } else if (storedState && storedState.chatLayer != null) {
+            anchor = Number(storedState.chatLayer);
+          } else if (core.loadFingerprint() !== '') {
+            anchor = Number(core.loadFingerprint());
           }
+          if (!Number.isFinite(anchor)) anchor = L;
           const c = Math.floor(Math.max(0, L - anchor) / 2);
           const doEvolve = c > 0 && c % everyX === 0;
 
@@ -262,7 +273,7 @@
             lastProcessedMessageKey = currentKey;
             const pos = c % everyX || (c === 0 ? 0 : everyX);
             if (window.__WE_SetExternalStatus) {
-              window.__WE_SetExternalStatus(`⏸ 第 ${pos}/${everyX} 轮，未到推演`);
+              window.__WE_SetExternalStatus(`第 ${pos}/${everyX} 轮，未到推演`);
             }
             if (ui) ui.refresh(true);
             return;
@@ -273,8 +284,10 @@
         try {
           const state = core.loadState();
           const isNewRound = core.isNewRound();
-          if (window.__WE_SetExternalStatus) window.__WE_SetExternalStatus('⏳ 推演中...');
-          if (ui && ui.setEvolvingUI) ui.setEvolvingUI(true);
+          if (window.__WE_SetExternalStatus) window.__WE_SetExternalStatus('推演中...');
+          // 自动推演的显示基底跟随 isNewRound：新轮次→当前状态，重 roll→存档点
+          if (ui && ui.setEvolvingUI) ui.setEvolvingUI(true, isNewRound ? 'state' : 'checkpoint');
+          if (ui && ui.refresh) ui.refresh(true); // 推演开始：立刻按基底翻面，等出新结果再翻
 
           const success = await evolution.evolve(state, '', aiMsg);
           if (success) {
@@ -288,10 +301,10 @@
           } else {
             console.warn('[世界引擎] ⚠️ 推演失败或已中止');
           }
-          if (window.__WE_SetExternalStatus) window.__WE_SetExternalStatus(success ? '✅ 推演完成' : '❌ 推演失败或已中止', !success);
+          if (window.__WE_SetExternalStatus) window.__WE_SetExternalStatus(success ? '推演完成' : '推演失败或已中止', !success);
         } catch(e) {
           console.error('[世界引擎] 处理失败', e);
-          if (window.__WE_SetExternalStatus) window.__WE_SetExternalStatus('❌ 推演异常: ' + e.message, true);
+          if (window.__WE_SetExternalStatus) window.__WE_SetExternalStatus('推演异常: ' + e.message, true);
         } finally {
           isEvolving = false;
           if (ui) { ui.setEvolvingUI(false); ui.refresh(true); }
@@ -302,14 +315,35 @@
         clearAutoEvolveTimer();
         const ctx = SillyTavern.getContext();
         const chat = ctx?.chat || [];
+        const currentLayer = core.getChatLayer();
         if (chat.length === 0) {
-          const state = core.loadState();
-          state.round = 0;
-          core.saveState(state);
+          core.clearState();
           core.clearCheckpoint();
+          core.saveFingerprint(String(currentLayer));
         }
-        if (!core.restoreCheckpoint()) {
-          core.saveFingerprint(String(core.getChatLayer()));
+        let storedState = null;
+        if (core.hasState()) {
+          storedState = core.loadState();
+          if (!Number.isFinite(Number(storedState.chatLayer))) {
+            storedState.chatLayer = currentLayer;
+            core.saveState(storedState);
+          }
+        }
+        const checkpoint = core.restoreCheckpoint();
+        if (checkpoint && !Number.isFinite(Number(checkpoint.chatLayer))) {
+          checkpoint.chatLayer = storedState && Number.isFinite(Number(storedState.chatLayer))
+            ? Number(storedState.chatLayer)
+            : currentLayer;
+          core.saveCheckpoint(checkpoint);
+        }
+        // 迁移旧版 fingerprint（旧语义为 chat.length）到统一层数（chat.length - 1）。
+        const savedFingerprint = Number(core.loadFingerprint());
+        if (Number.isFinite(savedFingerprint) && savedFingerprint === currentLayer + 1 &&
+            (!storedState || Number(storedState.chatLayer) === currentLayer)) {
+          core.saveFingerprint(String(currentLayer));
+        }
+        if (chat.length > 0 && !core.restoreCheckpoint() && !core.hasState() && core.loadFingerprint() === '') {
+          core.saveFingerprint(String(currentLayer));
         }
         applyInjectionForCurrentRound();
         console.log('[世界引擎] 聊天已加载，注入已更新');

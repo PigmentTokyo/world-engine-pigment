@@ -27,6 +27,11 @@ window.WORLD_ENGINE_WORLDBOOK = (function() {
     return parseStored(window.WORLD_ENGINE_STORE.getItem(getSelectionKey())).ids;
   }
 
+  // 区分"从未保存"（key 不存在）和"保存了空选择"（key 存在但 ids 为 []）
+  function hasSelection() {
+    return window.WORLD_ENGINE_STORE.getItem(getSelectionKey()) !== null;
+  }
+
   // 找出最老的一条其它聊天的选择记录（按保存时间戳；老格式无时间戳视为最老）
   function removeOldestOtherSelection() {
     const currentKey = getSelectionKey();
@@ -130,6 +135,7 @@ ${content}`;
 
   return {
     getChatId,
+    hasSelection,
     getSelectedIds,
     saveSelectedIds,
     loadCurrentEntries,

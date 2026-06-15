@@ -37,7 +37,7 @@ window.WORLD_ENGINE_API = (function() {
   async function callApi(prompt, maxTokens, temperature, signal) {
     const settings = getSettings();
     const url = normalizeUrl(settings.apiUrl);
-    if (!url) throw new Error('❌ 未配置 API URL，请在设置中填写');
+    if (!url) throw new Error('未配置 API URL，请在设置中填写');
 
     const body = {
       model: settings.model || 'gpt-3.5-turbo',
