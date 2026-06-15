@@ -1285,6 +1285,7 @@ window.WORLD_ENGINE_UI = (function() {
       : JSON.parse(window.WORLD_ENGINE_STORE.getItem('world_engine_settings') || '{}');
     const mode = settings.evolveMode === 'manual' ? 'manual' : 'auto';
     const everyX = Math.max(1, parseInt(settings.evolveEveryX) || 1);
+    const readRounds = Math.min(everyX, Math.max(1, parseInt(settings.evolveReadRounds) || 1));
 
     const sec = (id, title, body) =>
       '<div class="we-section"><div class="we-section-title">' + sectionHeader(title, id) + '</div>' +
@@ -1324,6 +1325,11 @@ window.WORLD_ENGINE_UI = (function() {
         <label>每几轮推演一次（X）</label>
         <input type="number" id="we-evolve-everyx" min="1" step="1" value="${everyX}" style="width:100%;">
         <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">填 1 = 每轮推演；填 3 = 每向前 3 轮推演一次。重 roll 不计入轮数。</div>
+      </div>
+      <div class="we-input-group" id="we-evolve-readrounds-group" style="${mode === 'manual' ? 'display:none;' : ''}">
+        <label>每次推演读取最近几轮对话（a）</label>
+        <input type="number" id="we-evolve-readrounds" min="1" max="${everyX}" step="1" value="${readRounds}" style="width:100%;">
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">从当前层往前取 a 轮的「用户输入 + AI 输出」喂给后台推演。最小 1，最大不超过 X（每次推演的轮数）。默认 1 = 只读最新一轮。</div>
       </div>`;
 
     const injectBody = `
@@ -2058,8 +2064,11 @@ window.WORLD_ENGINE_UI = (function() {
           injectIntoPrompt: document.getElementById('we-inject-into-prompt')?.checked !== false,
           evolveMode: document.getElementById('we-evolve-mode')?.value === 'manual' ? 'manual' : 'auto',
           evolveEveryX: Math.max(1, parseInt(document.getElementById('we-evolve-everyx')?.value) || 1),
+          evolveReadRounds: Math.max(1, parseInt(document.getElementById('we-evolve-readrounds')?.value) || 1),
           displayMode: document.getElementById('we-display-mode')?.value === 'expand' ? 'expand' : 'mask'
         };
+        // a 不得超过 X（每次推演的轮数）
+        ns.evolveReadRounds = Math.min(ns.evolveReadRounds, ns.evolveEveryX);
         window.WORLD_ENGINE_STORE.setItem('world_engine_settings', JSON.stringify(ns));
         if (window.WORLD_ENGINE_API) window.WORLD_ENGINE_API.getSettings(true);
         window.WORLD_ENGINE?.applyInjection?.();
@@ -2071,8 +2080,11 @@ window.WORLD_ENGINE_UI = (function() {
     const evolveModeSel = document.getElementById('we-evolve-mode');
     if (evolveModeSel) {
       evolveModeSel.onchange = () => {
+        const hidden = evolveModeSel.value === 'manual' ? 'none' : '';
         const group = document.getElementById('we-evolve-everyx-group');
-        if (group) group.style.display = evolveModeSel.value === 'manual' ? 'none' : '';
+        if (group) group.style.display = hidden;
+        const rgroup = document.getElementById('we-evolve-readrounds-group');
+        if (rgroup) rgroup.style.display = hidden;
       };
     }
 
