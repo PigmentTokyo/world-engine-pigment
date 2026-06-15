@@ -289,7 +289,15 @@
           if (ui && ui.setEvolvingUI) ui.setEvolvingUI(true, isNewRound ? 'state' : 'checkpoint');
           if (ui && ui.refresh) ui.refresh(true); // 推演开始：立刻按基底翻面，等出新结果再翻
 
-          const success = await evolution.evolve(state, '', aiMsg);
+          // 取最近 a 轮（用户输入+AI 输出）喂后台；a∈[1,X]，start 做负数保护
+          const readRounds = Math.min(everyX, Math.max(1, parseInt(settings.evolveReadRounds) || 1));
+          const start = Math.max(0, chat.length - readRounds * 2);
+          const dialogueText = chat.slice(start)
+            .map(m => (m.is_user ? '用户' : 'AI') + '：' + ((m.mes || '').trim()))
+            .filter(line => line.length > 3)
+            .join('\n');
+
+          const success = await evolution.evolve(state, '', aiMsg, { dialogueText });
           if (success) {
             lastProcessedMessageKey = currentKey;
             ledger.recordChanges(state);

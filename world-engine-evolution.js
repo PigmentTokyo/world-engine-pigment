@@ -609,7 +609,7 @@ type：${picked.type}
   "blackbox": { "secretActions": [], "secretAssets": [] }
 }`;
 
-  async function callEvolutionAPI(state, userMsg, aiMsg, extraInstruction = '') {
+  async function callEvolutionAPI(state, userMsg, aiMsg, extraInstruction = '', dialogueText = '') {
     const rulesLoader = window.WORLD_ENGINE_RULES;
     const fullRules = rulesLoader ? rulesLoader.getAllRulesText() : '【规则加载失败】';
     const worldbookSection = await window.WORLD_ENGINE_WORLDBOOK?.buildPromptSection?.() || '';
@@ -652,9 +652,8 @@ ${JSON.stringify({
   blackbox: state.blackbox || { secretActions: [], secretAssets: [] }
 }, null, 2)}
 
-## 本轮对话
-用户：${userMsg || ''}
-AI：${aiMsg || ''}
+## 近期对话
+${dialogueText ? dialogueText : `用户：${userMsg || ''}\nAI：${aiMsg || ''}`}
 
 ${OUTPUT_INSTRUCTIONS}
 ${JSON_EXAMPLE}
@@ -746,7 +745,7 @@ ${extraInstruction ? '\n' + extraInstruction : ''}${toneSection}`;
       const regionalIncidentRoll = rollRegionalIncident(state);
 
       // 第4步：喂给 API 做叙事更新
-      const update = await callEvolutionAPI(state, userMsg, aiMsg, regionalIncidentRoll.injectPrompt);
+      const update = await callEvolutionAPI(state, userMsg, aiMsg, regionalIncidentRoll.injectPrompt, (opts && opts.dialogueText) || '');
 
       // 第5步：合并 API 返回
       for (const ev of update.events) {
