@@ -71,9 +71,6 @@ window.WORLD_ENGINE_INJECT = (function() {
     const rulesLoader = window.WORLD_ENGINE_RULES;
     const rulesSummary = rulesLoader ? rulesLoader.getCoreRulesSummary() : '';
 
-    // 重大事件账本
-    const ledgerText = ledger.buildLedgerText(worldState);
-
     // 事件链：Lv3/4 全注入，Lv1/2 仅已爆发/已完成终局注入
     const visibleEvents = (worldState.events || []).filter(e => {
       if (e.level >= 3) return true;
@@ -183,9 +180,6 @@ window.WORLD_ENGINE_INJECT = (function() {
 经济：${econText}
 区域事件：${riText}
 黑盒：${blackboxText}
-
-【近期重大事件账本】
-${ledgerText}
 
 ${rulesSummary}
     `.trim();
