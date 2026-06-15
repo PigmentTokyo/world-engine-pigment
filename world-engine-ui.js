@@ -1286,6 +1286,13 @@ window.WORLD_ENGINE_UI = (function() {
     const mode = settings.evolveMode === 'manual' ? 'manual' : 'auto';
     const everyX = Math.max(1, parseInt(settings.evolveEveryX) || 1);
     const readRounds = Math.min(everyX, Math.max(1, parseInt(settings.evolveReadRounds) || 1));
+    // 按时间模式的当前值
+    const _stForTime = core.hasState() ? core.loadState() : null;
+    const _cpForTime = core.restoreCheckpoint();
+    const stTimeVal = (_stForTime && _stForTime.time != null) ? _stForTime.time : '';
+    const cpTimeVal = (_cpForTime && _cpForTime.time != null) ? _cpForTime.time : '';
+    const lastDayVal = (core.getLastStoryDay && core.getLastStoryDay() != null) ? core.getLastStoryDay() : '';
+    const tv = (k, d) => (settings[k] != null && settings[k] !== '') ? settings[k] : d;
 
     const sec = (id, title, body) =>
       '<div class="we-section"><div class="we-section-title">' + sectionHeader(title, id) + '</div>' +
@@ -1317,19 +1324,70 @@ window.WORLD_ENGINE_UI = (function() {
       <div class="we-input-group">
         <label>推演模式</label>
         <select id="we-evolve-mode" style="width:100%;">
-          <option value="auto" ${mode === 'auto' ? 'selected' : ''}>自动（每 X 轮推演一次）</option>
+          <option value="auto" ${mode === 'auto' ? 'selected' : ''}>自动 · 按轮（每 X 轮推演一次）</option>
+          <option value="time" ${mode === 'time' ? 'selected' : ''}>自动 · 按时间（正文日期差够 N 天）</option>
           <option value="manual" ${mode === 'manual' ? 'selected' : ''}>手动（仅点「手动推演」才触发）</option>
         </select>
       </div>
-      <div class="we-input-group" id="we-evolve-everyx-group" style="${mode === 'manual' ? 'display:none;' : ''}">
+      <div class="we-input-group" id="we-evolve-everyx-group" style="${mode === 'auto' ? '' : 'display:none;'}">
         <label>每几轮推演一次（X）</label>
         <input type="number" id="we-evolve-everyx" min="1" step="1" value="${everyX}" style="width:100%;">
         <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">填 1 = 每轮推演；填 3 = 每向前 3 轮推演一次。重 roll 不计入轮数。</div>
       </div>
-      <div class="we-input-group" id="we-evolve-readrounds-group" style="${mode === 'manual' ? 'display:none;' : ''}">
+      <div class="we-input-group" id="we-evolve-readrounds-group" style="${mode === 'auto' ? '' : 'display:none;'}">
         <label>每次推演读取最近几轮对话（a）</label>
         <input type="number" id="we-evolve-readrounds" min="1" max="${everyX}" step="1" value="${readRounds}" style="width:100%;">
         <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">从当前层往前取 a 轮的「用户输入 + AI 输出」喂给后台推演。最小 1，最大不超过 X（每次推演的轮数）。默认 1 = 只读最新一轮。</div>
+      </div>
+      <div id="we-evolve-time-group" style="${mode === 'time' ? '' : 'display:none;'}">
+        <div class="we-input-group" style="display:flex;gap:6px;">
+          <div style="flex:1;"><label>取正文前 N 字</label><input type="number" id="we-time-front" min="0" step="1" value="${tv('evolveTimeFront', 0)}" style="width:100%;"></div>
+          <div style="flex:1;"><label>取正文后 N 字</label><input type="number" id="we-time-back" min="0" step="1" value="${tv('evolveTimeBack', 80)}" style="width:100%;"></div>
+        </div>
+        <div class="we-input-group">
+          <label>日期正则（6 框：1/3/5 抓数字 → 捕获组，2/4/6 单位）</label>
+          <div style="display:flex;gap:4px;flex-wrap:wrap;">
+            <input type="text" id="we-time-re1" value="${u(tv('evolveTimeRe1',''))}" placeholder="框1 如 \\d+ 或 [一二三...]+" style="flex:1 1 30%;">
+            <input type="text" id="we-time-re2" value="${u(tv('evolveTimeRe2',''))}" placeholder="框2 单位 如 年" style="flex:1 1 18%;">
+            <input type="text" id="we-time-re3" value="${u(tv('evolveTimeRe3',''))}" placeholder="框3" style="flex:1 1 30%;">
+            <input type="text" id="we-time-re4" value="${u(tv('evolveTimeRe4',''))}" placeholder="框4 如 月" style="flex:1 1 18%;">
+            <input type="text" id="we-time-re5" value="${u(tv('evolveTimeRe5',''))}" placeholder="框5" style="flex:1 1 30%;">
+            <input type="text" id="we-time-re6" value="${u(tv('evolveTimeRe6',''))}" placeholder="框6 如 日/号" style="flex:1 1 18%;">
+          </div>
+          <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">某框留空即跳过。中文数字自动换算，多个日期取最后一个。</div>
+        </div>
+        <div class="we-input-group" style="display:flex;gap:6px;">
+          <div style="flex:1;"><label>乘数A（框1）</label><input type="number" id="we-time-mul1" step="any" value="${tv('evolveTimeMul1',360)}" style="width:100%;"></div>
+          <div style="flex:1;"><label>乘数B（框3）</label><input type="number" id="we-time-mul2" step="any" value="${tv('evolveTimeMul2',30)}" style="width:100%;"></div>
+          <div style="flex:1;"><label>乘数C（框5）</label><input type="number" id="we-time-mul3" step="any" value="${tv('evolveTimeMul3',1)}" style="width:100%;"></div>
+        </div>
+        <div class="we-input-group">
+          <label>满 N 天推演一次</label>
+          <input type="number" id="we-time-threshold" min="1" step="1" value="${tv('evolveTimeThreshold',1)}" style="width:100%;">
+        </div>
+        <div class="we-input-group">
+          <label>最多读取最近 X 轮对话</label>
+          <input type="number" id="we-time-maxrounds" min="1" step="1" value="${tv('evolveTimeMaxRounds',10)}" style="width:100%;">
+          <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">自上次推演以来跨了几轮就读几轮，超过 X 则只读最近 X 轮，封顶防止 prompt 过长。</div>
+        </div>
+        <div class="we-input-group" style="border-top:1px solid var(--we-border,#3a3a3a);padding-top:8px;">
+          <label>当前状态时间（总天数）</label>
+          <input type="number" id="we-time-state" step="any" value="${stTimeVal}" placeholder="state.time，空则不写" style="width:100%;">
+        </div>
+        <div class="we-input-group">
+          <label>存档点时间（总天数）</label>
+          <input type="number" id="we-time-checkpoint" step="any" value="${cpTimeVal}" placeholder="checkpoint.time，空则不写" style="width:100%;">
+        </div>
+        <div class="we-input-group">
+          <label>本轮对话时间（总天数）</label>
+          <input type="number" id="we-time-current" step="any" value="${lastDayVal}" placeholder="保存即判断是否推演" style="width:100%;">
+          <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">保存后：与基准时间相减，够 N 天则立即推演。三个时间框都只在有值时写入，写错可关闭插件重开重填。</div>
+        </div>
+      </div>
+      <div class="we-input-group">
+        <label>输入输出过滤器（每行一条正则）</label>
+        <textarea id="we-filter-regex" rows="3" style="width:100%;resize:vertical;" placeholder="每行一条正则，匹配到的内容会被删除\n例如 &lt;think&gt;[\\s\\S]*?&lt;/think&gt;">${u(tv('evolveFilterRegex',''))}</textarea>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">对每条「用户/AI」文本逐行做 g 全局替换为空，再拼装喂后台推演。不影响聊天正文，也不影响日期抓取。</div>
       </div>`;
 
     const injectBody = `
@@ -2028,7 +2086,7 @@ window.WORLD_ENGINE_UI = (function() {
           : Math.min(everyX, Math.max(1, parseInt(st.evolveReadRounds) || 1));
         const start = Math.max(0, chat.length - rounds * 2);
         const dialogueText = chat.slice(start)
-          .map(m => (m.is_user ? '用户' : 'AI') + '：' + ((m.mes || '').trim()))
+          .map(m => (m.is_user ? '用户' : 'AI') + '：' + core.filterDialogue((m.mes || '').trim(), st))
           .filter(line => line.length > 3)
           .join('\n');
         const ok = await evolution.evolve(s, userMsg, aiMsg, { mode, dialogueText });
@@ -2067,35 +2125,72 @@ window.WORLD_ENGINE_UI = (function() {
     const saveBtn = document.getElementById('we-save-settings');
     if (saveBtn) {
       saveBtn.onclick = () => {
+        const _modeRaw = document.getElementById('we-evolve-mode')?.value;
+        const gv = id => document.getElementById(id)?.value;
         const ns = {
           ...(window.WORLD_ENGINE_API ? window.WORLD_ENGINE_API.getSettings(true) : {}),
           apiUrl: document.getElementById('we-api-url')?.value || '',
           apiKey: document.getElementById('we-api-key')?.value || '',
           model: document.getElementById('we-model')?.value || 'gpt-3.5-turbo',
           injectIntoPrompt: document.getElementById('we-inject-into-prompt')?.checked !== false,
-          evolveMode: document.getElementById('we-evolve-mode')?.value === 'manual' ? 'manual' : 'auto',
+          evolveMode: (_modeRaw === 'manual' || _modeRaw === 'time') ? _modeRaw : 'auto',
           evolveEveryX: Math.max(1, parseInt(document.getElementById('we-evolve-everyx')?.value) || 1),
           evolveReadRounds: Math.max(1, parseInt(document.getElementById('we-evolve-readrounds')?.value) || 1),
-          displayMode: document.getElementById('we-display-mode')?.value === 'expand' ? 'expand' : 'mask'
+          evolveFilterRegex: gv('we-filter-regex') || '',
+          displayMode: document.getElementById('we-display-mode')?.value === 'expand' ? 'expand' : 'mask',
+          // 按时间模式
+          evolveTimeFront: Math.max(0, parseInt(gv('we-time-front')) || 0),
+          evolveTimeBack: Math.max(0, parseInt(gv('we-time-back')) || 0),
+          evolveTimeRe1: gv('we-time-re1') || '', evolveTimeRe2: gv('we-time-re2') || '',
+          evolveTimeRe3: gv('we-time-re3') || '', evolveTimeRe4: gv('we-time-re4') || '',
+          evolveTimeRe5: gv('we-time-re5') || '', evolveTimeRe6: gv('we-time-re6') || '',
+          evolveTimeMul1: parseFloat(gv('we-time-mul1')) || 0,
+          evolveTimeMul2: parseFloat(gv('we-time-mul2')) || 0,
+          evolveTimeMul3: parseFloat(gv('we-time-mul3')) || 0,
+          evolveTimeThreshold: Math.max(1, parseInt(gv('we-time-threshold')) || 1),
+          evolveTimeMaxRounds: Math.max(1, parseInt(gv('we-time-maxrounds')) || 10)
         };
         // a 不得超过 X（每次推演的轮数）
         ns.evolveReadRounds = Math.min(ns.evolveReadRounds, ns.evolveEveryX);
         window.WORLD_ENGINE_STORE.setItem('world_engine_settings', JSON.stringify(ns));
         if (window.WORLD_ENGINE_API) window.WORLD_ENGINE_API.getSettings(true);
+
+        // 按时间模式：三个时间框「有值才写」，本轮对话时间写入后触发判断
+        if (ns.evolveMode === 'time') {
+          const stIn = gv('we-time-state');
+          if (stIn != null && stIn !== '') {
+            const s2 = core.loadState();
+            if (s2) { s2.time = Number(stIn); core.saveState(s2); }
+          }
+          const cpIn = gv('we-time-checkpoint');
+          if (cpIn != null && cpIn !== '') {
+            const cp2 = core.restoreCheckpoint();
+            if (cp2) { cp2.time = Number(cpIn); core.saveCheckpoint(cp2); }
+          }
+          const curIn = gv('we-time-current');
+          if (curIn != null && curIn !== '') {
+            window.WORLD_ENGINE?.manualTimeEvolve?.(Number(curIn));
+          }
+        }
+
         window.WORLD_ENGINE?.applyInjection?.();
         showToast('设置已保存');
       };
     }
 
-    // 推演模式切换：手动时隐藏 X 输入
+    // 推演模式切换：按轮显示 X/a，按时间显示时间组，手动都隐藏
     const evolveModeSel = document.getElementById('we-evolve-mode');
     if (evolveModeSel) {
       evolveModeSel.onchange = () => {
-        const hidden = evolveModeSel.value === 'manual' ? 'none' : '';
-        const group = document.getElementById('we-evolve-everyx-group');
-        if (group) group.style.display = hidden;
-        const rgroup = document.getElementById('we-evolve-readrounds-group');
-        if (rgroup) rgroup.style.display = hidden;
+        const v = evolveModeSel.value;
+        const roundShow = v === 'auto' ? '' : 'none';
+        const timeShow = v === 'time' ? '' : 'none';
+        const g1 = document.getElementById('we-evolve-everyx-group');
+        if (g1) g1.style.display = roundShow;
+        const g2 = document.getElementById('we-evolve-readrounds-group');
+        if (g2) g2.style.display = roundShow;
+        const g3 = document.getElementById('we-evolve-time-group');
+        if (g3) g3.style.display = timeShow;
       };
     }
 

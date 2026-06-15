@@ -14,7 +14,17 @@ window.WORLD_ENGINE_API = (function() {
       injectIntoPrompt: true,
       evolveMode: 'auto',
       evolveEveryX: 1,
-      tonePrompt: ''
+      evolveReadRounds: 1,
+      evolveFilterRegex: '',
+      tonePrompt: '',
+      // 按时间推演模式
+      evolveTimeFront: 0,
+      evolveTimeBack: 80,
+      evolveTimeRe1: '', evolveTimeRe2: '', evolveTimeRe3: '',
+      evolveTimeRe4: '', evolveTimeRe5: '', evolveTimeRe6: '',
+      evolveTimeMul1: 360, evolveTimeMul2: 30, evolveTimeMul3: 1,
+      evolveTimeThreshold: 1,
+      evolveTimeMaxRounds: 10
     };
     const raw = window.WORLD_ENGINE_STORE.getItem('world_engine_settings');
     if (raw) {

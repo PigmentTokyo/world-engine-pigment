@@ -311,6 +311,95 @@ window.WORLD_ENGINE_CORE = (function() {
     saveState(state);
   }
 
+  // 输入输出过滤器：按 settings.evolveFilterRegex（每行一条正则）把匹配内容删掉。
+  // 用于喂后台推演前清洗对话文本（思维链、状态栏、HTML 等）。
+  function filterDialogue(text, settings) {
+    if (!text) return text || '';
+    const raw = (settings && settings.evolveFilterRegex) || '';
+    if (!raw.trim()) return text;
+    let out = text;
+    for (const line of raw.split('\n')) {
+      const pat = line.trim();
+      if (!pat) continue;
+      try { out = out.replace(new RegExp(pat, 'g'), ''); } catch (e) {}
+    }
+    return out;
+  }
+
+  // ========== 故事时间解析（按时间推演模式用） ==========
+  // 中文数字 → 阿拉伯数字（阿拉伯数字原样返回，空 → 0）
+  function cnToNum(s) {
+    if (s == null) return 0;
+    s = String(s).trim();
+    if (s === '') return 0;
+    if (/^-?\d+$/.test(s)) return parseInt(s, 10);
+    const D = { 零:0, 〇:0, 一:1, 二:2, 两:2, 三:3, 四:4, 五:5, 六:6, 七:7, 八:8, 九:9 };
+    s = s.replace(/^初/, '');               // 初九 → 九
+    if (s.includes('廿')) return 20 + (D[s.replace('廿', '')] || 0);  // 廿三 → 23
+    if (s.includes('卅')) return 30 + (D[s.replace('卅', '')] || 0);
+    if (s.includes('十')) {                  // 十/十一/二十/二十七
+      const parts = s.split('十');
+      const a = parts[0], b = parts[1];
+      return (a ? (D[a] || 0) : 1) * 10 + (b ? (D[b] || 0) : 0);
+    }
+    if (D[s] != null) return D[s];
+    const n = parseInt(s, 10);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  // 模块级：最近一次从正文解析到的故事天数（供 UI「本轮对话时间」回显）
+  let _lastStoryDay = null;
+  function getLastStoryDay() { return _lastStoryDay; }
+  function setLastStoryDay(v) { _lastStoryDay = (v == null ? null : Number(v)); }
+
+  /**
+   * 从正文按设置解析故事「总天数」。解析不到返回 null。
+   * 规则：取窗口（前 front 字 + 后 back 字，都 0 则全文）→ 用 6 框拼正则
+   * （奇数框非空成捕获组，偶数框字面量）→ 取最后一个匹配 → 各捕获组 cnToNum × 乘数求和。
+   */
+  function parseStoryDay(text, settings) {
+    if (!text || !settings) return null;
+    const front = Math.max(0, parseInt(settings.evolveTimeFront) || 0);
+    const back = Math.max(0, parseInt(settings.evolveTimeBack) || 0);
+    let win;
+    if (front === 0 && back === 0) win = text;
+    else win = (front > 0 ? text.slice(0, front) : '') + '\n' + (back > 0 ? text.slice(-back) : '');
+
+    const boxes = [1, 2, 3, 4, 5, 6].map(i => settings['evolveTimeRe' + i] || '');
+    const muls = [
+      parseFloat(settings.evolveTimeMul1),
+      parseFloat(settings.evolveTimeMul2),
+      parseFloat(settings.evolveTimeMul3)
+    ];
+    let pattern = '';
+    const activeMuls = [];
+    for (let i = 0; i < 6; i++) {
+      const b = boxes[i];
+      if (i % 2 === 0) {                      // 数字框 1/3/5
+        if (b) { pattern += '(' + b + ')'; activeMuls.push(muls[i / 2]); }
+      } else {                               // 单位框 2/4/6（字面量，可空）
+        pattern += b;
+      }
+    }
+    if (!pattern || activeMuls.length === 0) return null;
+
+    let re;
+    try { re = new RegExp(pattern, 'g'); } catch (e) { return null; }
+    let m, last = null;
+    while ((m = re.exec(win)) !== null) {
+      last = m;
+      if (m.index === re.lastIndex) re.lastIndex++;   // 防零宽死循环
+    }
+    if (!last) return null;
+
+    let total = 0;
+    for (let k = 0; k < activeMuls.length; k++) {
+      const mul = Number.isFinite(activeMuls[k]) ? activeMuls[k] : 0;
+      total += cnToNum(last[k + 1]) * mul;
+    }
+    return total;
+  }
+
   function ensureEventFields(ev) {
     if (!ev.type || !EVENT_TYPES.includes(ev.type)) ev.type = 'conflict';
     if (ev.stageRound === undefined) ev.stageRound = 1;
@@ -466,6 +555,7 @@ window.WORLD_ENGINE_CORE = (function() {
     ensureEventFields, getUserName, renderUserName,
     saveCheckpoint, restoreCheckpoint, clearCheckpoint, getAnchorLayer, setAnchorLayer,
     getChatLayer, getChatFingerprint, saveFingerprint, loadFingerprint, isNewRound,
-    getCleanExport, importState
+    getCleanExport, importState,
+    cnToNum, parseStoryDay, getLastStoryDay, setLastStoryDay, filterDialogue
   };
 })();
