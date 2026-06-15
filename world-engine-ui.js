@@ -420,11 +420,6 @@ window.WORLD_ENGINE_UI = (function() {
       + '<button class="we-icon-btn" id="we-btn-back" title="返回"><i class="fa-solid fa-arrow-left"></i></button>'
       + '<span class="we-sub-title">设置</span>'
       + '</div>'
-      + '<div class="we-settings-evolve-actions">'
-      + '<button class="we-btn we-btn-primary" id="we-btn-redo" title="把存档点喂给后台推演，重出本轮结果">重新推演</button>'
-      + '<button class="we-btn we-btn-primary" id="we-btn-forward" title="把当前状态喂给后台推演，向前推进一轮">向前推演</button>'
-      + '<button class="we-btn we-btn-danger" id="we-btn-abort" style="background:var(--we-danger);color:#fff;" disabled>停止推演</button>'
-      + '</div>'
       + renderSettingsForm()
       + '<div class="we-section" style="margin-top:16px;"><div class="we-section-title">' + sectionHeader(checkpointTitle(checkpoint, cpLayer), 'checkpoint-section') + '</div>' + sectionBody('checkpoint-section', cpContent) + '</div>'
       + '<div class="we-settings-save-actions">'
@@ -2059,79 +2054,6 @@ window.WORLD_ENGINE_UI = (function() {
       };
     });
 
-    // 手动推演：两个按钮，显式指定基底，不看 isNewRound。
-    //   重新推演 → 喂存档点 B（mode 'redo'），面板显示存档点；
-    //   向前推演 → 喂当前状态 A（mode 'forward'），面板显示当前状态。
-    async function runManualEvolve(mode, scope) {
-      if (isEvolving) return;
-      // 后台已有推演（如自动推演）在跑：提示而非触发，避免 busy 被当成「推演失败」
-      if (evolution.isRunning?.()) {
-        if (window.__WE_SetExternalStatus) window.__WE_SetExternalStatus('已有推演进行中...');
-        showToast('已有推演进行中，请稍候');
-        return;
-      }
-      isEvolving = true;
-      setEvolvingUI(true, scope);
-      refresh(true); // 推演开始：立刻按基底翻面（重新推演→存档点 B / 向前推演→当前状态 A），等出新结果再翻
-      if (window.__WE_SetExternalStatus) window.__WE_SetExternalStatus('推演中...');
-      try {
-        const ctx = SillyTavern.getContext();
-        const s = core.loadState();
-        const chat = ctx?.chat || [];
-        const lastMsg = chat[chat.length - 1];
-        const userMsg = lastMsg?.is_user ? (lastMsg.mes || '') : '';
-        const aiMsg = !lastMsg?.is_user ? (lastMsg?.mes || '') : '';
-        // 读取轮数：手动/时间模式 → min(自上次推演经过轮数, 上限X)；按轮模式 → a（≤X）。start 做负数保护。
-        const st = window.WORLD_ENGINE_API ? window.WORLD_ENGINE_API.getSettings(true) : {};
-        let rounds;
-        if (st.evolveMode === 'manual' || st.evolveMode === 'time') {
-          const Xmax = Math.max(1, parseInt(st.evolveTimeMaxRounds) || 10);
-          const cpp = core.restoreCheckpoint();
-          const L = core.getChatLayer();
-          let anchorL = (cpp && cpp.chatLayer != null) ? Number(cpp.chatLayer)
-                      : (s && s.chatLayer != null ? Number(s.chatLayer) : L);
-          if (!Number.isFinite(anchorL)) anchorL = L;
-          const since = Math.floor(Math.max(0, L - anchorL) / 2);
-          rounds = Math.max(1, Math.min(since, Xmax));
-        } else {
-          const everyX = Math.max(1, parseInt(st.evolveEveryX) || 1);
-          rounds = Math.min(everyX, Math.max(1, parseInt(st.evolveReadRounds) || 1));
-        }
-        const start = Math.max(0, chat.length - rounds * 2);
-        const dialogueText = chat.slice(start)
-          .map(m => (m.is_user ? '用户' : 'AI') + '：' + core.filterDialogue((m.mes || '').trim(), st))
-          .filter(line => line.length > 3)
-          .join('\n');
-        const ok = await evolution.evolve(s, userMsg, aiMsg, { mode, dialogueText });
-        if (ok && window.WORLD_ENGINE_LEDGER) window.WORLD_ENGINE_LEDGER.recordChanges(s);
-        if (ok && window.WORLD_ENGINE?.applyInjection) window.WORLD_ENGINE.applyInjection();
-        if (window.__WE_SetExternalStatus) window.__WE_SetExternalStatus(ok ? '推演完成' : '推演失败', !ok);
-        if (ok) showToast('推演完成');
-      } catch(e) {
-        if (window.__WE_SetExternalStatus) window.__WE_SetExternalStatus('推演失败: ' + e.message, true);
-        showToast('' + e.message, true);
-      }
-      isEvolving = false;
-      setEvolvingUI(false);
-      refresh();
-    }
-
-    const redoBtn = document.getElementById('we-btn-redo');
-    const forwardBtn = document.getElementById('we-btn-forward');
-    if (redoBtn) redoBtn.onclick = () => runManualEvolve('redo', 'checkpoint');
-    if (forwardBtn) forwardBtn.onclick = () => runManualEvolve('forward', 'state');
-
-    const abortBtn = document.getElementById('we-btn-abort');
-    if (abortBtn) {
-      abortBtn.onclick = () => {
-        evolution.abort();
-        showToast('已发送停止信号');
-      };
-    }
-    if (redoBtn || forwardBtn) {
-      setEvolvingUI(isEvolving || Boolean(evolution.isRunning?.()));
-    }
-
     const refreshBtn = document.getElementById('we-btn-refresh');
     if (refreshBtn) refreshBtn.onclick = () => refresh();
 
@@ -2854,12 +2776,13 @@ window.WORLD_ENGINE_UI = (function() {
     // 显示哪份由 getActiveInjected 守卫 + _evolvingScope 负责，刷新由调用方在外面做。
     _evolving = !!active;
     if (active && scope) _evolvingScope = scope;
-    const abortBtn = document.getElementById('we-btn-abort');
-    if (abortBtn) abortBtn.disabled = !active;
-    ['we-btn-redo', 'we-btn-forward'].forEach(id => {
-      const b = document.getElementById(id);
-      if (b) b.disabled = active;
-    });
+    // 悬浮球卫星按钮：推演中禁用 前进/重新、启用 停止；空闲反之
+    const fwd = document.getElementById('we-sat-forward');
+    const redo = document.getElementById('we-sat-redo');
+    const ab = document.getElementById('we-sat-abort');
+    if (fwd) fwd.classList.toggle('we-sat-off', !!active);
+    if (redo) redo.classList.toggle('we-sat-off', !!active);
+    if (ab) ab.classList.toggle('we-sat-off', !active);
     const ball = document.getElementById('we-input-btn');
     if (ball && active) {
       ball.classList.add('we-ball-evolving');
@@ -2871,6 +2794,62 @@ window.WORLD_ENGINE_UI = (function() {
 
   function setInjectedScope(scope) {
     _injectedScope = scope === 'checkpoint' ? 'checkpoint' : 'state';
+  }
+
+  // 手动推演（供悬浮球卫星按钮调用）：显式指定基底，不看 isNewRound。
+  //   重新推进 → 喂存档点 B（mode 'redo'），面板显示存档点；
+  //   向前推进 → 喂当前状态 A（mode 'forward'），面板显示当前状态。
+  async function runManualEvolve(mode, scope) {
+    if (isEvolving) return;
+    if (evolution.isRunning?.()) {
+      if (window.__WE_SetExternalStatus) window.__WE_SetExternalStatus('已有推演进行中...');
+      showToast('已有推演进行中，请稍候');
+      return;
+    }
+    isEvolving = true;
+    setEvolvingUI(true, scope);
+    refresh(true);
+    if (window.__WE_SetExternalStatus) window.__WE_SetExternalStatus('推演中...');
+    try {
+      const ctx = SillyTavern.getContext();
+      const s = core.loadState();
+      const chat = ctx?.chat || [];
+      const lastMsg = chat[chat.length - 1];
+      const userMsg = lastMsg?.is_user ? (lastMsg.mes || '') : '';
+      const aiMsg = !lastMsg?.is_user ? (lastMsg?.mes || '') : '';
+      // 读取轮数：手动/时间模式 → min(自上次推演经过轮数, 上限X)；按轮模式 → a（≤X）。start 做负数保护。
+      const st = window.WORLD_ENGINE_API ? window.WORLD_ENGINE_API.getSettings(true) : {};
+      let rounds;
+      if (st.evolveMode === 'manual' || st.evolveMode === 'time') {
+        const Xmax = Math.max(1, parseInt(st.evolveTimeMaxRounds) || 10);
+        const cpp = core.restoreCheckpoint();
+        const L = core.getChatLayer();
+        let anchorL = (cpp && cpp.chatLayer != null) ? Number(cpp.chatLayer)
+                    : (s && s.chatLayer != null ? Number(s.chatLayer) : L);
+        if (!Number.isFinite(anchorL)) anchorL = L;
+        const since = Math.floor(Math.max(0, L - anchorL) / 2);
+        rounds = Math.max(1, Math.min(since, Xmax));
+      } else {
+        const everyX = Math.max(1, parseInt(st.evolveEveryX) || 1);
+        rounds = Math.min(everyX, Math.max(1, parseInt(st.evolveReadRounds) || 1));
+      }
+      const start = Math.max(0, chat.length - rounds * 2);
+      const dialogueText = chat.slice(start)
+        .map(m => (m.is_user ? '用户' : 'AI') + '：' + core.filterDialogue((m.mes || '').trim(), st))
+        .filter(line => line.length > 3)
+        .join('\n');
+      const ok = await evolution.evolve(s, userMsg, aiMsg, { mode, dialogueText });
+      if (ok && window.WORLD_ENGINE_LEDGER) window.WORLD_ENGINE_LEDGER.recordChanges(s);
+      if (ok && window.WORLD_ENGINE?.applyInjection) window.WORLD_ENGINE.applyInjection();
+      if (window.__WE_SetExternalStatus) window.__WE_SetExternalStatus(ok ? '推演完成' : '推演失败', !ok);
+      if (ok) showToast('推演完成');
+    } catch(e) {
+      if (window.__WE_SetExternalStatus) window.__WE_SetExternalStatus('推演失败: ' + e.message, true);
+      showToast('' + e.message, true);
+    }
+    isEvolving = false;
+    setEvolvingUI(false);
+    refresh();
   }
 
   // ========== 世界引擎悬浮球 ==========
@@ -2925,7 +2904,7 @@ window.WORLD_ENGINE_UI = (function() {
     const vw = window.innerWidth, vh = window.innerHeight;
     const size = ball.offsetWidth || 52;
     let pos = loadBallPos();
-    if (!pos) pos = { left: vw - size - 18, top: vh - size - 90 };
+    if (!pos) pos = { left: vw - size - 44, top: vh - size - 90 };
     // 钳制进可视区域，避免拖出屏幕后找不到
     pos.left = Math.max(4, Math.min(pos.left, vw - size - 4));
     pos.top = Math.max(4, Math.min(pos.top, vh - size - 4));
@@ -3081,6 +3060,25 @@ window.WORLD_ENGINE_UI = (function() {
     _topStatusTimer = setTimeout(() => { el.classList.remove('show'); }, 5000);
   }
 
+  // 给悬浮球的三颗卫星按钮绑事件；阻止冒泡，避免触发拖拽 / 打开面板
+  function wireSatellites(ball) {
+    const wire = (id, fn) => {
+      const el = ball.querySelector('#' + id);
+      if (!el) return;
+      const stop = e => e.stopPropagation();
+      el.addEventListener('mousedown', stop);
+      el.addEventListener('touchstart', stop, { passive: true });
+      el.addEventListener('click', (e) => {
+        e.stopPropagation(); e.preventDefault();
+        if (el.classList.contains('we-sat-off')) return;
+        fn();
+      });
+    };
+    wire('we-sat-forward', () => runManualEvolve('forward', 'state'));
+    wire('we-sat-redo', () => runManualEvolve('redo', 'checkpoint'));
+    wire('we-sat-abort', () => { evolution.abort(); showToast('已发送停止信号'); });
+  }
+
   function buildInputButton() {
     if (!document.body) return;
 
@@ -3093,16 +3091,22 @@ window.WORLD_ENGINE_UI = (function() {
       btn.setAttribute('aria-label', '世界引擎');
       btn.className = 'we-ball';
       btn.innerHTML =
+        '<span class="we-ball-orbit"></span>' +
         '<span class="we-ball-ring"></span>' +
         '<span class="we-ball-globe"></span>' +
         '<span class="we-ball-count"></span>' +
         '<span class="we-ball-badge"></span>' +
-        '<span class="we-ball-tip"></span>';
+        '<span class="we-ball-tip"></span>' +
+        '<span class="we-sat we-sat-up" id="we-sat-forward" role="button" title="向前推进"><i class="fa-solid fa-forward"></i></span>' +
+        '<span class="we-sat we-sat-right we-sat-off" id="we-sat-abort" role="button" title="停止推演"><i class="fa-solid fa-stop"></i></span>' +
+        '<span class="we-sat we-sat-down" id="we-sat-redo" role="button" title="重新推进"><i class="fa-solid fa-rotate-right"></i></span>';
       btn.onclick = () => togglePanel();
       document.body.appendChild(btn);
+      wireSatellites(btn);
       applyBallPos(btn);
       makeBallDraggable(btn);
       window.addEventListener('resize', () => applyBallPos(btn));
+      setEvolvingUI(isEvolving || Boolean(evolution.isRunning?.()));
     } else if (btn.parentElement !== document.body) {
       document.body.appendChild(btn);
       applyBallPos(btn);
