@@ -1337,8 +1337,17 @@ window.WORLD_ENGINE_UI = (function() {
         <button class="we-btn" id="we-import-data">导入 JSON</button>
         <input type="file" id="we-import-file" accept=".json" style="display:none;">
       </div>`;
+    const toneBody = `
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="we-btn" id="we-tone-import">导入</button>
+        <button class="we-btn" id="we-tone-export">导出</button>
+        <button class="we-btn" id="we-tone-clear">清除</button>
+        <input type="file" id="we-tone-file" accept=".txt" style="display:none;">
+      </div>
+      <div class="we-hint" id="we-tone-status" style="margin-top:6px;"></div>`;
     return sec('set-worldbook', '后台推演世界书', worldbookBody)
-      + sec('set-data', '数据导入/导出', dataBody);
+      + sec('set-data', '数据导入/导出', dataBody)
+      + sec('set-tone', '附加提示词', toneBody);
   }
 
   function bindEvents(state) {
@@ -2346,6 +2355,70 @@ window.WORLD_ENGINE_UI = (function() {
         };
         reader.readAsText(file);
         importFile.value = '';
+      };
+    }
+
+    // ===== 附加提示词 导入 / 导出 / 清除 =====
+    function getTonePrompt() {
+      return (window.WORLD_ENGINE_API?.getSettings(true)?.tonePrompt || '');
+    }
+    function saveTonePrompt(text) {
+      const wapi = window.WORLD_ENGINE_API;
+      const cur = wapi && wapi.getSettings ? wapi.getSettings(true) : {};
+      window.WORLD_ENGINE_STORE.setItem('world_engine_settings', JSON.stringify({ ...cur, tonePrompt: text }));
+      if (wapi && wapi.getSettings) wapi.getSettings(true);
+    }
+    function updateToneStatus() {
+      const el = document.getElementById('we-tone-status');
+      if (!el) return;
+      const t = getTonePrompt().trim();
+      el.textContent = t ? `当前已设置附加提示词（${t.length} 字）` : '当前未设置附加提示词';
+    }
+    updateToneStatus();
+
+    const toneImportBtn = document.getElementById('we-tone-import');
+    const toneFile = document.getElementById('we-tone-file');
+    if (toneImportBtn && toneFile) {
+      toneImportBtn.onclick = () => toneFile.click();
+      toneFile.onchange = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          const text = String(ev.target.result || '').trim();
+          if (!text) { showToast('文件为空', true); return; }
+          saveTonePrompt(text);
+          updateToneStatus();
+          showToast('附加提示词已导入');
+        };
+        reader.readAsText(file);
+        toneFile.value = '';
+      };
+    }
+
+    const toneExportBtn = document.getElementById('we-tone-export');
+    if (toneExportBtn) {
+      toneExportBtn.onclick = () => {
+        const t = getTonePrompt();
+        if (!t.trim()) { showToast('当前无附加提示词可导出', true); return; }
+        const blob = new Blob([t], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'world-engine-tone-' + Date.now() + '.txt';
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast('附加提示词已导出');
+      };
+    }
+
+    const toneClearBtn = document.getElementById('we-tone-clear');
+    if (toneClearBtn) {
+      toneClearBtn.onclick = () => {
+        if (!getTonePrompt().trim()) { showToast('当前无附加提示词', true); return; }
+        saveTonePrompt('');
+        updateToneStatus();
+        showToast('附加提示词已清除');
       };
     }
 

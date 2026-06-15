@@ -613,6 +613,10 @@ type：${picked.type}
     const rulesLoader = window.WORLD_ENGINE_RULES;
     const fullRules = rulesLoader ? rulesLoader.getAllRulesText() : '【规则加载失败】';
     const worldbookSection = await window.WORLD_ENGINE_WORLDBOOK?.buildPromptSection?.() || '';
+    const tonePrompt = ((api.getSettings ? api.getSettings() : {}).tonePrompt || '').trim();
+    const toneSection = tonePrompt
+      ? `\n\n========== 附加提示词（用户自定义 · 优先遵守 · 但不得违反上述输出 JSON 格式）==========\n${tonePrompt}`
+      : '';
 
     const prompt = `你是一个世界推演引擎。每轮对话后，后台世界必须自动向前推进一步。
 请根据世界规则和本轮对话，更新世界状态。只输出 JSON，不要有其他文字。
@@ -654,7 +658,7 @@ AI：${aiMsg || ''}
 
 ${OUTPUT_INSTRUCTIONS}
 ${JSON_EXAMPLE}
-${extraInstruction ? '\n' + extraInstruction : ''}`;
+${extraInstruction ? '\n' + extraInstruction : ''}${toneSection}`;
 
     const rawResult = await api.callApi(prompt, 8000, 0.7, _abortController.signal);
     _lastPrompt = prompt;

@@ -13,7 +13,8 @@ window.WORLD_ENGINE_API = (function() {
       maxTokens: 2000,
       injectIntoPrompt: true,
       evolveMode: 'auto',
-      evolveEveryX: 1
+      evolveEveryX: 1,
+      tonePrompt: ''
     };
     const raw = window.WORLD_ENGINE_STORE.getItem('world_engine_settings');
     if (raw) {
