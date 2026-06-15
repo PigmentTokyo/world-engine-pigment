@@ -275,8 +275,10 @@
             return;
           }
           core.setLastStoryDay(currentDay);
-          const isNew = core.isNewRound();
-          const base = isNew ? Number(st.time) : Number(cp.time);   // 重 roll → 比存档点
+          // 按层数判断新轮/重roll：当前层 < 当前状态层 → 重roll 比存档点；否则新轮 比当前状态
+          const Lc = core.getChatLayer();
+          const sLayer = Number.isFinite(Number(st.chatLayer)) ? Number(st.chatLayer) : Lc;
+          const base = (Lc < sLayer && cp.time != null) ? Number(cp.time) : Number(st.time);
           const threshold = Math.max(1, parseInt(settings.evolveTimeThreshold) || 1);
           const delta = currentDay - base;
           if (delta < threshold) {
@@ -390,8 +392,12 @@
           return;
         }
         core.setLastStoryDay(currentDay);
-        const isNew = core.isNewRound();
-        const base = isNew ? Number(st.time) : Number(cp.time);
+        // 按层数判断新轮/重roll（不用 isNewRound，它看指纹，手动保存时会误判）：
+        //   当前层 < 当前状态层 → 重roll，比存档点；否则新轮，比当前状态。
+        const L = core.getChatLayer();
+        const stateLayer = Number.isFinite(Number(st.chatLayer)) ? Number(st.chatLayer) : L;
+        const isReroll = (L < stateLayer && cp.time != null);
+        const base = isReroll ? Number(cp.time) : Number(st.time);
         const threshold = Math.max(1, parseInt(settings.evolveTimeThreshold) || 1);
         const delta = Number(currentDay) - base;
         if (delta < threshold) {
