@@ -71,6 +71,23 @@ window.WORLD_ENGINE_EVOLUTION = (function() {
     storm: '风暴雪灾：台风、暴雪、沙暴、寒潮、海风毁船、大风摧毁棚屋。'
   };
 
+  // ========== Preset-aware config helper ==========
+
+  function getRegionalConfig() {
+    const preset = (window.WORLD_ENGINE_PRESETS && window.WORLD_ENGINE_PRESETS.getActivePreset)
+      ? window.WORLD_ENGINE_PRESETS.getActivePreset()
+      : null;
+    if (preset && preset.regionalIncidents) {
+      return {
+        chance: preset.regionalIncidents.chance || 0.03,
+        durationRounds: preset.regionalIncidents.durationRounds || 5,
+        cooldownRounds: preset.regionalIncidents.cooldownRounds || 5,
+        typeWeights: preset.regionalIncidents.types || REGIONAL_INCIDENT_CONFIG.typeWeights
+      };
+    }
+    return REGIONAL_INCIDENT_CONFIG;
+  }
+
   function ensureRegionalIncident(state) {
     if (!state.regionalIncident) {
       state.regionalIncident = {
@@ -88,7 +105,8 @@ window.WORLD_ENGINE_EVOLUTION = (function() {
   }
 
   function getIncidentTypeLabel(type) {
-    const found = REGIONAL_INCIDENT_CONFIG.typeWeights.find(t => t.type === type);
+    const config = getRegionalConfig();
+    const found = config.typeWeights.find(t => t.type === type);
     return found ? found.label : type;
   }
 
@@ -114,7 +132,9 @@ window.WORLD_ENGINE_EVOLUTION = (function() {
   }
 
   function buildRegionalIncidentPrompt(picked) {
-    const guide = INCIDENT_TYPE_GUIDE[picked.type] || '';
+    const config = getRegionalConfig();
+    const typeInfo = config.typeWeights.find(t => t.type === picked.type);
+    const guide = (typeInfo && typeInfo.guide) || INCIDENT_TYPE_GUIDE[picked.type] || '';
     return `
 【本地骰子强制指令：本轮必须生成区域突发事件】
 本地骰子已判定：本轮触发区域突发事件。
@@ -172,6 +192,7 @@ type：${picked.type}
   function rollRegionalIncident(state, randomFn = Math.random) {
     ensureRegionalIncident(state);
     const incident = state.regionalIncident;
+    const config = getRegionalConfig();
 
     // 事件持续中：每轮倒计时，归零后消散并进入冷却
     if (incident.active) {
@@ -185,7 +206,7 @@ type：${picked.type}
         incident.scope = '';
         incident.impact = '';
         incident.duration = 0;
-        incident.cooldown = REGIONAL_INCIDENT_CONFIG.cooldownRounds;
+        incident.cooldown = config.cooldownRounds;
         incident._retry = false;
         incident._retryType = '';
         console.log('[世界引擎] 区域突发事件已消散（持续期满）:', title);
@@ -207,7 +228,7 @@ type：${picked.type}
     }
 
     const dice = randomFn();
-    const chance = REGIONAL_INCIDENT_CONFIG.chance;
+    const chance = config.chance;
 
     // 确定是否需要触发
     let triggerNow = false;
@@ -219,7 +240,7 @@ type：${picked.type}
       triggerNow = true;
       incident._retry = false;
       incident._retryType = '';
-      const found = REGIONAL_INCIDENT_CONFIG.typeWeights.find(t => t.type === triggerType);
+      const found = config.typeWeights.find(t => t.type === triggerType);
       if (found) triggerLabel = found.label;
     }
 
@@ -236,14 +257,14 @@ type：${picked.type}
     // 触发（首轮）
     let picked;
     if (!triggerNow) {
-      picked = weightedPick(REGIONAL_INCIDENT_CONFIG.typeWeights, randomFn);
+      picked = weightedPick(config.typeWeights, randomFn);
       triggerType = picked.type;
       triggerLabel = picked.label;
     }
 
     incident.active = true;
     incident.type = triggerType;
-    incident.duration = REGIONAL_INCIDENT_CONFIG.durationRounds; // 持续轮数，冷却在消散后才开始
+    incident.duration = config.durationRounds; // 持续轮数，冷却在消散后才开始
     incident.cooldown = 0;
 
     return {
@@ -261,6 +282,7 @@ type：${picked.type}
   function mergeRegionalIncident(state, update) {
     ensureRegionalIncident(state);
     const incident = state.regionalIncident;
+    const config = getRegionalConfig();
 
     // 本轮没有本地骰子触发，不接受 API 自发生成
     if (!incident.active) {
@@ -280,7 +302,7 @@ type：${picked.type}
     }
 
     // 新触发首轮（尚无标题）：合并 API 返回的事件内容
-    const duration = incident.duration || REGIONAL_INCIDENT_CONFIG.durationRounds;
+    const duration = incident.duration || config.durationRounds;
     if (update.regionalIncident && update.regionalIncident.active) {
       state.regionalIncident = {
         active: true,
@@ -510,7 +532,7 @@ type：${picked.type}
 ### 风声联动要求
 - 每轮检查已有 winds，但只有出现合法传播节点时才能扩大 level 或 scope；不得自动升级。
 - 风声只有传播到相关对象所在范围或圈层后，才允许改变 factions、reputation、economy、enemies 或 events。
-- 风声导致跨系统变化时，必须同步写入 influenceChain，明确“哪条风声 → 谁获知 → 采取何种行动/形成何种判断”。
+- 风声导致跨系统变化时，必须同步写入 influenceChain，明确"哪条风声 → 谁获知 → 采取何种行动/形成何种判断"。
 - 公告只证明发布者公开说过这件事，不保证内容为真；流言也可能恰好为真。不要使用可信度字段。
 - 私信、密令等仅有明确接收者的信息不属于风声；泄露并开始传播后才创建风声。
 - 没有产生实际外溢影响的风声可以只更新 winds，不得硬造其他系统变化。
@@ -618,7 +640,7 @@ type：${picked.type}
       ? `\n\n========== 附加提示词（用户自定义 · 优先遵守 · 但不得违反上述输出 JSON 格式）==========\n${tonePrompt}`
       : '';
 
-    const prompt = `你是一个世界推演引擎。每轮对话后，后台世界必须自动向前推进一步。
+    let prompt = `你是一个世界推演引擎。每轮对话后，后台世界必须自动向前推进一步。
 请根据世界规则和本轮对话，更新世界状态。只输出 JSON，不要有其他文字。
 
 推演时按以下因果顺序检查：
@@ -658,6 +680,11 @@ ${dialogueText ? dialogueText : `用户：${userMsg || ''}\nAI：${aiMsg || ''}`
 ${OUTPUT_INSTRUCTIONS}
 ${JSON_EXAMPLE}
 ${extraInstruction ? '\n' + extraInstruction : ''}${toneSection}`;
+
+    // Apply preset term replacements to the entire prompt
+    if (window.WORLD_ENGINE_PRESETS && window.WORLD_ENGINE_PRESETS.applyTermMap) {
+      prompt = window.WORLD_ENGINE_PRESETS.applyTermMap(prompt);
+    }
 
     const rawResult = await api.callApi(prompt, 8000, 0.7, _abortController.signal);
     _lastPrompt = prompt;

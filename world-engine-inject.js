@@ -3,7 +3,7 @@ window.WORLD_ENGINE_INJECT = (function() {
   const core = window.WORLD_ENGINE_CORE;
   const ledger = window.WORLD_ENGINE_LEDGER;
 
-  // 声誉判词：把等级翻译成给正文模型看的人话，避免注入光秃秃的等级标签
+  // 声誉判词（默认/回退值）：把等级翻译成给正文模型看的人话，避免注入光秃秃的等级标签
   const REP_DIM_NAME = { authority: '朝堂之上', common: '市井之间', shadow: '草莽之中', circuit: '同道之间' };
   const REP_VERDICT = {
     authority: { // 朝堂之上 —— 守法/顺从 ↔ 挑衅/危险
@@ -38,7 +38,7 @@ window.WORLD_ENGINE_INJECT = (function() {
   // 旧存档兼容：六级时期的"小有名气"归入"受人尊敬"
   const REP_LEGACY = { 小有名气: '受人尊敬' };
 
-  // 势力运势判词：把运势词翻译成「这势力眼下什么处境、内部团不团结」
+  // 势力运势判词（默认/回退值）：把运势词翻译成「这势力眼下什么处境、内部团不团结」
   const STATUS_VERDICT = {
     鼎盛: '钱粮充裕、人手鼎盛，内部上下一心、铁板一块，行事带着不容置疑的底气与排场',
     稳固: '运转如常、根基稳健，无明显内忧外患，按部就班地推进既定事务',
@@ -48,7 +48,7 @@ window.WORLD_ENGINE_INJECT = (function() {
     瓦解: '名存实亡、只剩空架子，号令难出、众叛亲离，随时可能彻底散伙',
   };
 
-  // 势力关系判词：把关系词翻译成「这势力对{{user}}的行为倾向」
+  // 势力关系判词（默认/回退值）：把关系词翻译成「这势力对{{user}}的行为倾向」
   const RELATION_VERDICT = {
     血盟: '与{{user}}生死与共、绝对信任，会不惜代价相助，视其安危如自身存亡',
     盟友: '与{{user}}地位平等、互为奥援，在共同利益上主动支援、共享情报，但各有底线',
@@ -59,7 +59,7 @@ window.WORLD_ENGINE_INJECT = (function() {
     世仇: '与{{user}}不死不休，必欲除之而后快，会不择手段、持续寻隙下死手',
   };
 
-  // 经济气候判词：把单个气候词翻译成给正文模型看的市面描述
+  // 经济气候判词（默认/回退值）：把单个气候词翻译成给正文模型看的市面描述
   const CLIMATE_VERDICT = {
     繁荣: '市面繁盛，商路通畅、百业兴旺，钱货流转顺畅，物价稳中偏高',
     平稳: '市面如常，物价随时节自然起落，没有大的波动',
@@ -70,6 +70,20 @@ window.WORLD_ENGINE_INJECT = (function() {
   function buildContext(worldState, tags) {
     const rulesLoader = window.WORLD_ENGINE_RULES;
     const rulesSummary = rulesLoader ? rulesLoader.getCoreRulesSummary() : '';
+
+    // Load active preset for dynamic verdict tables
+    const preset = (window.WORLD_ENGINE_PRESETS && window.WORLD_ENGINE_PRESETS.getActivePreset)
+      ? window.WORLD_ENGINE_PRESETS.getActivePreset()
+      : null;
+
+    // Use preset verdicts if available, fallback to hardcoded defaults
+    const repDimName = preset
+      ? { authority: preset.reputation.dimensions.authority.name, common: preset.reputation.dimensions.common.name, shadow: preset.reputation.dimensions.shadow.name, circuit: preset.reputation.dimensions.circuit.name }
+      : REP_DIM_NAME;
+    const repVerdict = preset ? preset.reputation.verdicts : REP_VERDICT;
+    const statusVerdict = preset ? preset.factions.statusVerdicts : STATUS_VERDICT;
+    const relationVerdict = preset ? preset.factions.relationVerdicts : RELATION_VERDICT;
+    const climateVerdict = preset ? preset.economy.climateVerdicts : CLIMATE_VERDICT;
 
     // 事件链：Lv3/4 全注入，Lv1/2 仅已爆发/已完成终局注入
     const visibleEvents = (worldState.events || []).filter(e => {
@@ -90,9 +104,9 @@ window.WORLD_ENGINE_INJECT = (function() {
     const allFactions = worldState.factions || [];
     const factionsText = allFactions.length
       ? '\n' + allFactions.map(f => {
-          const statusDesc = STATUS_VERDICT[f.status] || (f.status ? `处于「${f.status}」之中` : '处境不明');
+          const statusDesc = statusVerdict[f.status] || (f.status ? `处于「${f.status}」之中` : '处境不明');
           const relation = f.relation || '中立';
-          const relationDesc = RELATION_VERDICT[relation] || `对{{user}}的态度为「${relation}」`;
+          const relationDesc = relationVerdict[relation] || `对{{user}}的态度为「${relation}」`;
           let s = `- ${f.name}眼下${statusDesc}；它对{{user}}的态度是${relation}——${relationDesc}。`;
           if (f.scope) s += `其势力范围覆盖${f.scope}。`;
           if (f.currentGoal) s += `当前正致力于${f.currentGoal}。`;
@@ -120,9 +134,9 @@ window.WORLD_ENGINE_INJECT = (function() {
     const rep = worldState.reputation || {};
     const repText = ['authority', 'common', 'shadow', 'circuit'].map(k => {
       const lv = REP_LEGACY[rep[k]] || rep[k];
-      const verdict = REP_VERDICT[k] && REP_VERDICT[k][lv];
+      const verdict = repVerdict[k] && repVerdict[k][lv];
       if (!verdict) return '';
-      return `在${REP_DIM_NAME[k]}${lv}，${verdict}`;
+      return `在${repDimName[k]}${lv}，${verdict}`;
     }).filter(Boolean).join('。') + '。';
     const repChange = rep.lastChange ? `（${rep.lastChange}）` : '';
 
@@ -130,7 +144,7 @@ window.WORLD_ENGINE_INJECT = (function() {
     const econ = worldState.economy || {};
     const signalsText = (econ.signals || []).map(s => `${s.summary}（${s.scope}）`).join('；');
     const climate = econ.climate || '平稳';
-    const climateText = `市面${climate}，${CLIMATE_VERDICT[climate] || CLIMATE_VERDICT['平稳']}`;
+    const climateText = `市面${climate}，${climateVerdict[climate] || climateVerdict['平稳']}`;
     const econText = `${climateText}${signalsText ? '。信号:' + signalsText : ''}`;
 
     // 仇敌录
@@ -167,7 +181,7 @@ window.WORLD_ENGINE_INJECT = (function() {
     }
     const blackboxText = boxParts.length ? boxParts.join(' | ') : '无暗面信息';
 
-    const context = `
+    let context = `
 【世界状态】
 轮次：${worldState.round}
 摘要：${worldState.worldDigest}
@@ -183,6 +197,11 @@ window.WORLD_ENGINE_INJECT = (function() {
 
 ${rulesSummary}
     `.trim();
+
+    // Apply preset term replacements to the final context
+    if (window.WORLD_ENGINE_PRESETS && window.WORLD_ENGINE_PRESETS.applyTermMap) {
+      context = window.WORLD_ENGINE_PRESETS.applyTermMap(context);
+    }
 
     return context.substring(0, 5000);
   }

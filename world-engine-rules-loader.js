@@ -413,7 +413,7 @@ climate 表示当前区域的经济温度，用四词描述：
 - 繁荣：贸易旺盛、商路安全、物价稳定偏高
 - 平稳：日常运作、物价按季节自然波动
 - 衰退：需求萎缩、商号倒闭、少数刚需品反而暴涨
-- 动荡：战乱/灾荒/封锁导致经济秩序崩溃，以物易物回潮
+- 动荡：战乱/灾荒/封锁导致经济秩序崩坏，以物易物回潮
 
 climate 的 scope 是{{user}}当前所在区域及其直接关联的经济圈。远处的经济冷暖通过 signals 补充。
 
@@ -620,7 +620,22 @@ cooldown 由本地维护，API 不得输出或修改此字段。
     console.log('[getAllRulesText] RULES:', RULES.length);
     if (RULES.length === 0) return '【世界规则加载失败，所有规则不可用】';
     const orderedRules = RULES.map(r => `========== ${r.comment} ==========\n${r.content}`);
-    return `## 世界推演规则（原文，共${RULES.length}条）\n\n${orderedRules.join('\n\n')}`;
+    let text = `## 世界推演规则（原文，共${RULES.length}条）\n\n${orderedRules.join('\n\n')}`;
+
+    // Apply preset term replacements
+    if (window.WORLD_ENGINE_PRESETS && window.WORLD_ENGINE_PRESETS.applyTermMap) {
+      text = window.WORLD_ENGINE_PRESETS.applyTermMap(text);
+    }
+
+    // Append user custom rules
+    if (window.WORLD_ENGINE_PRESETS && window.WORLD_ENGINE_PRESETS.getActivePreset) {
+      const preset = window.WORLD_ENGINE_PRESETS.getActivePreset();
+      if (preset && preset.customRules && preset.customRules.trim()) {
+        text += '\n\n========== 用户自定义规则 ==========\n' + preset.customRules.trim();
+      }
+    }
+
+    return text;
   }
 
   function getCoreRulesSummary() {
@@ -707,6 +722,11 @@ cooldown 由本地维护，API 不得输出或修改此字段。
 - [资产]＝{{user}}暗中攥着的牌（暗桩、密信、毒药、把柄、藏匿物资等），该用就用、可调用可使坏可翻盘——这是他的底牌，别让它吃灰。
 - 暴露% 是悬顶之剑：越高越接近败露，逼近高位或状态转「暴露」时，可安排盘查、有人起疑、线索浮头来制造紧张；状态为「过期／失效」的资产已不顶用，别再让它发挥作用。
     `.trim();
+
+    // Apply preset term replacements
+    if (window.WORLD_ENGINE_PRESETS && window.WORLD_ENGINE_PRESETS.applyTermMap) {
+      return window.WORLD_ENGINE_PRESETS.applyTermMap(summary);
+    }
 
     return summary;
   }
