@@ -779,6 +779,145 @@
     builtinMap[p.id] = p;
   });
 
+  // Canonical backend labels stay stable. Presets may change display wording through
+  // termMap and editor metadata, but the evolution JSON schema keeps these values.
+  const INTERNAL_SCHEMA = {
+    reputationLevels: ['天怒人怨', '声名狼藉', '默默无闻', '受人尊敬', '万众敬仰'],
+    factionStatuses: ['鼎盛', '稳固', '倾轧', '困顿', '衰落', '瓦解'],
+    factionRelations: ['血盟', '盟友', '友好', '中立', '冷淡', '敌对', '世仇'],
+    economyClimates: ['繁荣', '平稳', '衰退', '动荡']
+  };
+
+  function isPlainObject(value) {
+    return value && typeof value === 'object' && !Array.isArray(value);
+  }
+
+  function normalizeText(value, fallback) {
+    var text = value == null ? '' : String(value).trim();
+    return text || fallback || '';
+  }
+
+  function normalizeStringArray(value, fallback) {
+    var arr = Array.isArray(value)
+      ? value.map(function (item) { return normalizeText(item, ''); }).filter(Boolean)
+      : [];
+    return arr.length ? arr : deepClone(fallback || []);
+  }
+
+  function normalizeStringMap(value, fallback) {
+    var result = {};
+    var source = isPlainObject(value) ? value : null;
+    if (source) {
+      Object.keys(source).forEach(function (key) {
+        var safeKey = normalizeText(key, '');
+        if (!safeKey) return;
+        result[safeKey] = normalizeText(source[key], '');
+      });
+    }
+    if (Object.keys(result).length) return result;
+    return deepClone(fallback || {});
+  }
+
+  function normalizeVerdicts(value, fallback) {
+    return isPlainObject(value) ? deepClone(value) : deepClone(fallback || {});
+  }
+
+  function normalizeKeyedVerdicts(value, keys, fallback, termMap) {
+    var result = {};
+    var source = isPlainObject(value) ? value : {};
+    keys.forEach(function (key) {
+      var displayKey = termMap && termMap[key];
+      var text = source[key];
+      if ((text == null || text === '') && displayKey) text = source[displayKey];
+      result[key] = normalizeText(text, fallback && fallback[key] || '');
+    });
+    return result;
+  }
+
+  function normalizeReputationVerdicts(value, fallback, termMap) {
+    var result = {};
+    var source = isPlainObject(value) ? value : {};
+    ['authority', 'common', 'shadow', 'circuit'].forEach(function (dim) {
+      result[dim] = normalizeKeyedVerdicts(
+        source[dim],
+        INTERNAL_SCHEMA.reputationLevels,
+        fallback && fallback[dim],
+        termMap
+      );
+    });
+    return result;
+  }
+
+  function normalizeDimensions(value, fallback) {
+    var result = {};
+    var source = isPlainObject(value) ? value : {};
+    Object.keys(fallback || {}).forEach(function (key) {
+      var raw = isPlainObject(source[key]) ? source[key] : {};
+      var fb = fallback[key] || {};
+      result[key] = {
+        name: normalizeText(raw.name, fb.name || key),
+        description: normalizeText(raw.description, fb.description || '')
+      };
+    });
+    return result;
+  }
+
+  function normalizeIncidentTypes(value, fallback) {
+    var source = Array.isArray(value) ? value : [];
+    var result = source.map(function (item) {
+      if (!isPlainObject(item)) return null;
+      var type = normalizeText(item.type, '');
+      var label = normalizeText(item.label, type);
+      var weight = Number(item.weight);
+      if (!type || !Number.isFinite(weight) || weight <= 0) return null;
+      return {
+        type: type,
+        label: label,
+        weight: weight,
+        guide: normalizeText(item.guide, '')
+      };
+    }).filter(Boolean);
+    return result.length ? result : deepClone(fallback || []);
+  }
+
+  function normalizePreset(raw, options) {
+    options = options || {};
+    var source = isPlainObject(raw) ? raw : {};
+    var base = ANCIENT_CHINESE;
+    var id = normalizeText(source.id, options.fallbackId || ('custom_' + Date.now()));
+    var termMap = normalizeStringMap(source.termMap, {});
+    var preset = {
+      id: id,
+      name: normalizeText(source.name, '自定义预设'),
+      description: normalizeText(source.description, base.description),
+      builtin: options.builtin === true ? true : source.builtin === true,
+      reputation: {
+        dimensions: normalizeDimensions(source.reputation && source.reputation.dimensions, base.reputation.dimensions),
+        levels: INTERNAL_SCHEMA.reputationLevels.slice(),
+        verdicts: normalizeReputationVerdicts(source.reputation && source.reputation.verdicts, base.reputation.verdicts, termMap)
+      },
+      factions: {
+        statuses: INTERNAL_SCHEMA.factionStatuses.slice(),
+        statusVerdicts: normalizeKeyedVerdicts(source.factions && source.factions.statusVerdicts, INTERNAL_SCHEMA.factionStatuses, base.factions.statusVerdicts, termMap),
+        relations: INTERNAL_SCHEMA.factionRelations.slice(),
+        relationVerdicts: normalizeKeyedVerdicts(source.factions && source.factions.relationVerdicts, INTERNAL_SCHEMA.factionRelations, base.factions.relationVerdicts, termMap)
+      },
+      economy: {
+        climates: INTERNAL_SCHEMA.economyClimates.slice(),
+        climateVerdicts: normalizeKeyedVerdicts(source.economy && source.economy.climateVerdicts, INTERNAL_SCHEMA.economyClimates, base.economy.climateVerdicts, termMap)
+      },
+      regionalIncidents: {
+        chance: Number.isFinite(Number(source.regionalIncidents && source.regionalIncidents.chance)) ? Number(source.regionalIncidents.chance) : base.regionalIncidents.chance,
+        durationRounds: Number.isFinite(Number(source.regionalIncidents && source.regionalIncidents.durationRounds)) ? Number(source.regionalIncidents.durationRounds) : base.regionalIncidents.durationRounds,
+        cooldownRounds: Number.isFinite(Number(source.regionalIncidents && source.regionalIncidents.cooldownRounds)) ? Number(source.regionalIncidents.cooldownRounds) : base.regionalIncidents.cooldownRounds,
+        types: normalizeIncidentTypes(source.regionalIncidents && source.regionalIncidents.types, base.regionalIncidents.types)
+      },
+      termMap: termMap,
+      customRules: normalizeText(source.customRules, '')
+    };
+    return preset;
+  }
+
   // ═════════════════════════════════════════════
   //  STORAGE HELPERS
   // ═════════════════════════════════════════════
@@ -811,7 +950,10 @@
     if (!raw) return [];
     try {
       var arr = typeof raw === 'string' ? JSON.parse(raw) : raw;
-      return Array.isArray(arr) ? arr : [];
+      if (!Array.isArray(arr)) return [];
+      return arr
+        .filter(function (p) { return p && p.id && p.name; })
+        .map(function (p) { return normalizePreset(p, { builtin: false }); });
     } catch (e) {
       console.error('[WorldEngine Presets] Failed to parse custom presets:', e);
       return [];
@@ -833,7 +975,9 @@
    */
   function getAllPresets() {
     var custom = loadCustomPresets();
-    return deepClone(BUILTIN_PRESETS.concat(custom));
+    return deepClone(BUILTIN_PRESETS.map(function (p) {
+      return normalizePreset(p, { builtin: true });
+    }).concat(custom));
   }
 
   /**
@@ -841,7 +985,9 @@
    * @returns {Array}
    */
   function getBuiltinPresets() {
-    return deepClone(BUILTIN_PRESETS);
+    return deepClone(BUILTIN_PRESETS.map(function (p) {
+      return normalizePreset(p, { builtin: true });
+    }));
   }
 
   /**
@@ -858,10 +1004,10 @@
    * @returns {Object|null}
    */
   function findPresetById(id) {
-    if (builtinMap[id]) return deepClone(builtinMap[id]);
+    if (builtinMap[id]) return normalizePreset(builtinMap[id], { builtin: true });
     var custom = loadCustomPresets();
     for (var i = 0; i < custom.length; i++) {
-      if (custom[i].id === id) return deepClone(custom[i]);
+      if (custom[i].id === id) return normalizePreset(custom[i], { builtin: false });
     }
     return null;
   }
@@ -921,18 +1067,18 @@
       console.error('[WorldEngine Presets] Cannot overwrite built-in preset: ' + preset.id);
       return false;
     }
-    preset.builtin = false;
+    preset = normalizePreset(preset, { builtin: false });
     var custom = loadCustomPresets();
     var found = false;
     for (var i = 0; i < custom.length; i++) {
       if (custom[i].id === preset.id) {
-        custom[i] = deepClone(preset);
+        custom[i] = preset;
         found = true;
         break;
       }
     }
     if (!found) {
-      custom.push(deepClone(preset));
+      custom.push(preset);
     }
     saveCustomPresetsArray(custom);
     console.log('[WorldEngine Presets] Saved custom preset: ' + preset.name + ' (' + preset.id + ')');
@@ -1004,6 +1150,10 @@
     return result;
   }
 
+  function applyDisplayTerms(text) {
+    return applyTermMap(text);
+  }
+
   // ═════════════════════════════════════════════
   //  EXPORT / IMPORT
   // ═════════════════════════════════════════════
@@ -1042,6 +1192,7 @@
         preset.id = preset.id + '_imported_' + Date.now();
         console.warn('[WorldEngine Presets] ID conflicted with built-in preset, new ID: ' + preset.id);
       }
+      preset = normalizePreset(preset, { builtin: false });
       saveCustomPreset(preset);
       return deepClone(preset);
     } catch (e) {
@@ -1259,6 +1410,9 @@
     saveCustomPreset:   saveCustomPreset,
     deleteCustomPreset: deleteCustomPreset,
     applyTermMap:       applyTermMap,
+    applyDisplayTerms:  applyDisplayTerms,
+    normalizePreset:    normalizePreset,
+    getInternalSchema:  function () { return deepClone(INTERNAL_SCHEMA); },
     generateFromWorldbook: generateFromWorldbook,
     exportPreset:       exportPreset,
     importPreset:       importPreset

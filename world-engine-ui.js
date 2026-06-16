@@ -416,11 +416,15 @@ window.WORLD_ENGINE_UI = (function() {
     const cpContent = checkpoint
       ? renderCheckpointSections(checkpoint, cpLayer)
       : '<div class="we-empty">暂无存档点</div>';
+    const presetSettings = window.WORLD_ENGINE_PRESET_UI?.renderSettingsSection
+      ? window.WORLD_ENGINE_PRESET_UI.renderSettingsSection()
+      : '';
     return '<div class="we-sub-topbar">'
       + '<button class="we-icon-btn" id="we-btn-back" title="返回"><i class="fa-solid fa-arrow-left"></i></button>'
       + '<span class="we-sub-title">设置</span>'
       + '</div>'
       + renderSettingsForm()
+      + presetSettings
       + '<div class="we-section" style="margin-top:16px;"><div class="we-section-title">' + sectionHeader(checkpointTitle(checkpoint, cpLayer), 'checkpoint-section') + '</div>' + sectionBody('checkpoint-section', cpContent) + '</div>'
       + '<div class="we-settings-save-actions">'
       + '<button class="we-btn" id="we-save-settings">保存设置</button>'

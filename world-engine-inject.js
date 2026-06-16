@@ -198,9 +198,10 @@ window.WORLD_ENGINE_INJECT = (function() {
 ${rulesSummary}
     `.trim();
 
-    // Apply preset term replacements to the final context
-    if (window.WORLD_ENGINE_PRESETS && window.WORLD_ENGINE_PRESETS.applyTermMap) {
-      context = window.WORLD_ENGINE_PRESETS.applyTermMap(context);
+    // Apply display-only preset terminology to the final context shown to the
+    // writing model. Backend state and evolution JSON keep canonical labels.
+    if (window.WORLD_ENGINE_PRESETS && window.WORLD_ENGINE_PRESETS.applyDisplayTerms) {
+      context = window.WORLD_ENGINE_PRESETS.applyDisplayTerms(context);
     }
 
     return context.substring(0, 5000);

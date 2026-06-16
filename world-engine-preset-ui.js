@@ -835,8 +835,13 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
       _injected = false;
       return;
     }
-    if (_injected) return;
-    _injected = true;
+
+    var existing = document.getElementById('we-preset-section');
+    if (existing && existing.isConnected) {
+      _injected = true;
+      return;
+    }
+    _injected = false;
 
     // Find the parent container of save/reset buttons
     var actionsDiv = saveBtn.closest('.we-settings-save-actions');
@@ -855,6 +860,7 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
     presetSection.id = 'we-preset-section';
     presetSection.innerHTML = buildPresetHTML();
     actionsDiv.parentNode.insertBefore(presetSection, actionsDiv);
+    _injected = true;
   }
 
   // ─────────────────────────────────────────────
@@ -1539,6 +1545,11 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
   // Public API
   // ─────────────────────────────────────────────
   return {
-    init: init
+    init: init,
+    renderSettingsSection: function () {
+      injectStyles();
+      return '<div id="we-preset-section">' + buildPresetHTML() + '</div>';
+    },
+    refresh: refreshPresetSection
   };
 })();

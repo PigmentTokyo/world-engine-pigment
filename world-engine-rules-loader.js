@@ -622,11 +622,6 @@ cooldown 由本地维护，API 不得输出或修改此字段。
     const orderedRules = RULES.map(r => `========== ${r.comment} ==========\n${r.content}`);
     let text = `## 世界推演规则（原文，共${RULES.length}条）\n\n${orderedRules.join('\n\n')}`;
 
-    // Apply preset term replacements
-    if (window.WORLD_ENGINE_PRESETS && window.WORLD_ENGINE_PRESETS.applyTermMap) {
-      text = window.WORLD_ENGINE_PRESETS.applyTermMap(text);
-    }
-
     // Append user custom rules
     if (window.WORLD_ENGINE_PRESETS && window.WORLD_ENGINE_PRESETS.getActivePreset) {
       const preset = window.WORLD_ENGINE_PRESETS.getActivePreset();
@@ -723,9 +718,10 @@ cooldown 由本地维护，API 不得输出或修改此字段。
 - 暴露% 是悬顶之剑：越高越接近败露，逼近高位或状态转「暴露」时，可安排盘查、有人起疑、线索浮头来制造紧张；状态为「过期／失效」的资产已不顶用，别再让它发挥作用。
     `.trim();
 
-    // Apply preset term replacements
-    if (window.WORLD_ENGINE_PRESETS && window.WORLD_ENGINE_PRESETS.applyTermMap) {
-      return window.WORLD_ENGINE_PRESETS.applyTermMap(summary);
+    // Display-only terminology replacement. The backend evolution prompt keeps
+    // canonical enum labels, but injected writing guidance can use preset terms.
+    if (window.WORLD_ENGINE_PRESETS && window.WORLD_ENGINE_PRESETS.applyDisplayTerms) {
+      return window.WORLD_ENGINE_PRESETS.applyDisplayTerms(summary);
     }
 
     return summary;
