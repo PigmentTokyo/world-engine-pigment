@@ -146,7 +146,7 @@
 /* ===== 小行星卫星按钮（环绕悬浮球） ===== */
 /* 轨道弧线：穿过三颗卫星中心的虚线圆 */
 #we-input-btn.we-ball > .we-ball-orbit {
-  inset: -24px;
+  inset: -11px;
   border-radius: 50%;
   border: 1px dashed rgba(120,170,180,0.38);
   pointer-events: none;
@@ -181,10 +181,11 @@
   background: radial-gradient(circle at 35% 30%, #3a6675, #1b3640);
   box-shadow: 0 0 9px rgba(120,180,190,0.65);
 }
-/* 三颗卫星中心距球心 46px，正落在轨道线上 */
-.we-sat-up    { top: -35px;    left: 50%;  transform: translateX(-50%); }
-.we-sat-down  { bottom: -35px; left: 50%;  transform: translateX(-50%); }
-.we-sat-right { right: -35px;  top: 50%;   transform: translateY(-50%); }
+/* 三颗卫星中心距球心 33px（贴合球缘），正落在轨道线上。
+   用 id 提高优先级，盖过 > .we-sat 的 inset:auto */
+#we-input-btn.we-ball > .we-sat-up    { top: -22px;    left: 50%;  transform: translateX(-50%); }
+#we-input-btn.we-ball > .we-sat-down  { bottom: -22px; left: 50%;  transform: translateX(-50%); }
+#we-input-btn.we-ball > .we-sat-right { right: -22px;  top: 50%;   transform: translateY(-50%); }
 /* 停止键红调 */
 #we-input-btn.we-ball > .we-sat-right { color: #ffb3b3; border-color: rgba(217,90,90,0.55); }
 /* 禁用态：变暗、不可点 */
