@@ -335,16 +335,29 @@ window.WORLD_ENGINE_CORE = (function() {
     if (/^-?\d+$/.test(s)) return parseInt(s, 10);
     const D = { 零:0, 〇:0, 一:1, 二:2, 两:2, 三:3, 四:4, 五:5, 六:6, 七:7, 八:8, 九:9 };
     s = s.replace(/^初/, '');               // 初九 → 九
-    if (s.includes('廿')) return 20 + (D[s.replace('廿', '')] || 0);  // 廿三 → 23
-    if (s.includes('卅')) return 30 + (D[s.replace('卅', '')] || 0);
-    if (s.includes('十')) {                  // 十/十一/二十/二十七
-      const parts = s.split('十');
-      const a = parts[0], b = parts[1];
-      return (a ? (D[a] || 0) : 1) * 10 + (b ? (D[b] || 0) : 0);
+    // 含「万」：拆高低两段递归（万前空按 1 算，即「万」=10000）
+    if (s.includes('万')) {
+      const idx = s.indexOf('万');
+      return cnToNum(s.slice(0, idx) || '一') * 10000 + cnToNum(s.slice(idx + 1));
     }
-    if (D[s] != null) return D[s];
-    const n = parseInt(s, 10);
-    return Number.isFinite(n) ? n : 0;
+    // 廿/卅 简写：廿=20、廿三=23、廿十=20（后接非个位忽略）
+    if (s.includes('廿')) return 20 + (D[s.replace('廿', '')] || 0);
+    if (s.includes('卅')) return 30 + (D[s.replace('卅', '')] || 0);
+    // 千/百/十 位值 + 个位（零作占位跳过）：一千二百=1200、二十七=27、十一=11
+    let total = 0, num = 0;
+    const UNIT = { 十:10, 百:100, 千:1000 };
+    for (const ch of s) {
+      if (ch === '零' || ch === '〇') continue;
+      if (D[ch] != null) num = D[ch];
+      else if (UNIT[ch] != null) { total += (num === 0 ? 1 : num) * UNIT[ch]; num = 0; }
+    }
+    total += num;
+    // 整段没解析出任何中文数字 → 阿拉伯兜底
+    if (total === 0 && !/[零〇一二两三四五六七八九十百千]/.test(s)) {
+      const n = parseInt(s, 10);
+      return Number.isFinite(n) ? n : 0;
+    }
+    return total;
   }
 
   // 模块级：最近一次从正文解析到的故事天数（供 UI「本轮对话时间」回显）
