@@ -78,11 +78,16 @@ window.WORLD_ENGINE_EVOLUTION = (function() {
       ? window.WORLD_ENGINE_PRESETS.getActivePreset()
       : null;
     if (preset && preset.regionalIncidents) {
+      const presetTypes = Array.isArray(preset.regionalIncidents.types)
+        ? preset.regionalIncidents.types
+            .filter(t => t && t.type && Number(t.weight) > 0)
+            .map(t => ({ ...t, weight: Number(t.weight) }))
+        : [];
       return {
-        chance: preset.regionalIncidents.chance || 0.03,
-        durationRounds: preset.regionalIncidents.durationRounds || 5,
-        cooldownRounds: preset.regionalIncidents.cooldownRounds || 5,
-        typeWeights: preset.regionalIncidents.types || REGIONAL_INCIDENT_CONFIG.typeWeights
+        chance: Number.isFinite(Number(preset.regionalIncidents.chance)) ? Number(preset.regionalIncidents.chance) : 0.03,
+        durationRounds: Number.isFinite(Number(preset.regionalIncidents.durationRounds)) ? Number(preset.regionalIncidents.durationRounds) : 5,
+        cooldownRounds: Number.isFinite(Number(preset.regionalIncidents.cooldownRounds)) ? Number(preset.regionalIncidents.cooldownRounds) : 5,
+        typeWeights: presetTypes.length ? presetTypes : REGIONAL_INCIDENT_CONFIG.typeWeights
       };
     }
     return REGIONAL_INCIDENT_CONFIG;
@@ -680,11 +685,6 @@ ${dialogueText ? dialogueText : `用户：${userMsg || ''}\nAI：${aiMsg || ''}`
 ${OUTPUT_INSTRUCTIONS}
 ${JSON_EXAMPLE}
 ${extraInstruction ? '\n' + extraInstruction : ''}${toneSection}`;
-
-    // Apply preset term replacements to the entire prompt
-    if (window.WORLD_ENGINE_PRESETS && window.WORLD_ENGINE_PRESETS.applyTermMap) {
-      prompt = window.WORLD_ENGINE_PRESETS.applyTermMap(prompt);
-    }
 
     const rawResult = await api.callApi(prompt, 8000, 0.7, _abortController.signal);
     _lastPrompt = prompt;

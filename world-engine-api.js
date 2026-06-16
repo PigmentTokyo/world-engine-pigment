@@ -42,6 +42,60 @@ window.WORLD_ENGINE_API = (function() {
     return u + '/v1/chat/completions';
   }
 
+  function isMixedContent(url) {
+    try {
+      const target = new URL(url, window.location.href);
+      return window.location.protocol === 'https:' && target.protocol === 'http:';
+    } catch(e) {
+      return false;
+    }
+  }
+
+  function buildNetworkErrorMessage(error, url) {
+    const message = error && error.message ? error.message : String(error || '');
+    if (error && error.name === 'AbortError') {
+      return 'API 请求已取消';
+    }
+    if (isMixedContent(url)) {
+      return 'API 请求被浏览器拦截：当前页面是 HTTPS，但 API URL 是 HTTP。请改用 HTTPS 地址，或使用同源/后端代理。';
+    }
+    if (/Failed to fetch|NetworkError|Load failed|Network request failed/i.test(message)) {
+      return [
+        'API 请求没有成功发出或没有拿到响应。',
+        '常见原因：API 服务未启动、地址/端口填错、浏览器 CORS 拦截、证书异常、本地代理拦截，或目标接口不允许网页直接调用。',
+        '当前请求地址：' + url,
+        '建议：优先把 API URL 换成允许浏览器跨域的 OpenAI 兼容代理；如果使用官方或中转接口，通常需要后端代理转发。'
+      ].join('\n');
+    }
+    return message || 'API 网络请求失败';
+  }
+
+  async function fetchJson(url, options) {
+    let resp;
+    try {
+      resp = await fetch(url, options);
+    } catch(e) {
+      throw new Error(buildNetworkErrorMessage(e, url));
+    }
+
+    if (!resp.ok) {
+      let detail = '';
+      try {
+        const err = await resp.json();
+        detail = err.error?.message || err.message || JSON.stringify(err);
+      } catch(e) {
+        try { detail = await resp.text(); } catch(e2) {}
+      }
+      throw new Error(`HTTP ${resp.status}: ${detail || resp.statusText || '请求失败'}`);
+    }
+
+    try {
+      return await resp.json();
+    } catch(e) {
+      throw new Error('API 返回不是有效 JSON: ' + (e.message || e));
+    }
+  }
+
   /**
    * 调用独立 API（非酒馆自带），OpenAI 兼容格式
    */
@@ -68,20 +122,12 @@ window.WORLD_ENGINE_API = (function() {
 
     console.log('[世界引擎] 调用 API:', url, body.model);
 
-    const resp = await fetch(url, {
+    const data = await fetchJson(url, {
       method: 'POST',
       headers: headers,
       body: JSON.stringify(body),
       signal: signal || null
     });
-
-    if (!resp.ok) {
-      let detail = '';
-      try { const err = await resp.json(); detail = err.error?.message || JSON.stringify(err); } catch(e) {}
-      throw new Error(`HTTP ${resp.status}: ${detail}`);
-    }
-
-    const data = await resp.json();
     const choice = data.choices?.[0];
     if (!choice) throw new Error('API 返回缺少 choices[0]');
     if (choice.finish_reason === 'length') {
@@ -183,9 +229,7 @@ window.WORLD_ENGINE_API = (function() {
     const headers = { 'Content-Type': 'application/json' };
     if (settings.apiKey) headers['Authorization'] = 'Bearer ' + settings.apiKey;
 
-    const resp = await fetch(url, { headers });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const data = await resp.json();
+    const data = await fetchJson(url, { headers });
     if (data.data && Array.isArray(data.data)) {
       return data.data.map(m => m.id);
     }
