@@ -431,6 +431,7 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
           '<button class="we-btn" id="we-preset-generate"' + (_generating ? ' disabled' : '') + '>从世界书生成</button>' +
           '<button class="we-btn" id="we-preset-import">导入预设</button>' +
           '<button class="we-btn" id="we-preset-export">导出当前预设</button>' +
+          (activePreset.builtin ? '' : '<button class="we-btn we-btn-danger" id="we-preset-delete">删除当前预设</button>') +
         '</div>' +
         (_generating
           ? '<div class="we-preset-generating"><div class="we-spinner"></div>正在从世界书生成预设，请稍候...</div>'
@@ -905,6 +906,12 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
     // ── Export preset ──
     if (target.id === 'we-preset-export' || target.closest('#we-preset-export')) {
       handleExport();
+      return;
+    }
+
+    // ── Delete current preset ──
+    if (target.id === 'we-preset-delete' || target.closest('#we-preset-delete')) {
+      handleDeletePreset();
       return;
     }
 
