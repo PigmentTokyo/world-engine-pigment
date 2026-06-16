@@ -50,11 +50,13 @@ window.WORLD_ENGINE_API = (function() {
     const url = normalizeUrl(settings.apiUrl);
     if (!url) throw new Error('未配置 API URL，请在设置中填写');
 
+    const resolvedMaxTokens = Number(maxTokens ?? settings.maxTokens ?? 2000);
+    const resolvedTemperature = Number(temperature ?? settings.temperature ?? 0.7);
     const body = {
       model: settings.model || 'gpt-3.5-turbo',
       messages: [{ role: 'user', content: prompt }],
-      temperature: temperature ?? settings.temperature ?? 0.7,
-      max_tokens: maxTokens ?? settings.maxTokens ?? 2000
+      temperature: Number.isFinite(resolvedTemperature) ? resolvedTemperature : 0.7,
+      max_tokens: Number.isFinite(resolvedMaxTokens) ? resolvedMaxTokens : 2000
     };
 
     const headers = {

@@ -1185,7 +1185,7 @@
       throw new Error('[WorldEngine Presets] window.WORLD_ENGINE_API.callApi is not available');
     }
 
-    var response = await window.WORLD_ENGINE_API.callApi(systemPrompt, userPrompt);
+    var response = await window.WORLD_ENGINE_API.callApi(systemPrompt + '\n\n' + userPrompt, 8000, 0.7);
     if (!response) {
       throw new Error('[WorldEngine Presets] API returned empty response');
     }
