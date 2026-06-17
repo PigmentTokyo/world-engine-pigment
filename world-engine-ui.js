@@ -69,10 +69,10 @@ window.WORLD_ENGINE_UI = (function() {
 
   function sectionHeader(title, sectionId) {
     const collapsed = sectionCollapsed[sectionId] || false;
-    const motto = SECTION_MOTTOS[sectionId.replace(/^cp-/, '')];
+    const motto = UMOTTO(sectionId.replace(/^cp-/, ''));
     const mottoHtml = motto ? `<span class="we-section-motto">— ${motto}</span>` : '';
     return `<span class="we-section-toggle" data-section="${sectionId}">
-      <span class="we-section-arrow" id="we-section-arrow-${sectionId}">${collapsed ? '▶' : '▼'}</span>${title}${mottoHtml}
+      <span class="we-section-arrow" id="we-section-arrow-${sectionId}">${collapsed ? '▶' : '▼'}</span>${UL(title)}${mottoHtml}
     </span>`;
   }
 
@@ -297,6 +297,16 @@ window.WORLD_ENGINE_UI = (function() {
     };
   }
 
+  // ── world-view chrome label accessors (delegate to active preset) ──
+  function _PRE() { return window.WORLD_ENGINE_PRESETS; }
+  function UL(x) { var P = _PRE(); return (P && P.uiLabel) ? P.uiLabel(x) : x; }
+  function ULsub(sub) { return String(sub).split(' \u00b7 ').map(function (x) { return UL(x.trim()); }).join(' \u00b7 '); }
+  function UMOOD(tier, fb) { var P = _PRE(); return (P && P.uiMood) ? (P.uiMood(tier) || fb || '') : (fb || ''); }
+  function UPOEM(view, fb) { var P = _PRE(); return (P && P.uiPoem) ? P.uiPoem(view) : (fb != null ? fb : ''); }
+  function UMOTTO(id) { var P = _PRE(); return (P && P.uiMotto) ? P.uiMotto(id) : (SECTION_MOTTOS[id] || ''); }
+  function USUM() { var P = _PRE(); return (P && P.uiSummaryEmpty) ? P.uiSummaryEmpty() : '\u4e16\u754c\u6b63\u5728\u82cf\u9192\uff0c\u4e00\u5207\u5c1a\u672a\u53ef\u77e5\u3002'; }
+  function digestHtml(s) { var d = s && s.worldDigest; if (!d || d === '\u4e16\u754c\u6b63\u5728\u82cf\u9192\uff0c\u4e00\u5207\u5c1a\u672a\u53ef\u77e5\u3002') return USUM(); return u(d); }
+
   const STABILITY_TIER_COLOR = {
     天下太平: '#69b68e', 暗流浮动: '#58b8a9', 局势紧张: '#d0aa58',
     动荡失序: '#d98a3d', 崩坏边缘: '#ff0000'
@@ -319,7 +329,7 @@ window.WORLD_ENGINE_UI = (function() {
     if (moodEl) {
       const stab = computeWorldStability(state || {});
       const color = STABILITY_TIER_COLOR[stab.tier] || '#58b8a9';
-      const text = STABILITY_TIER_MOOD[stab.tier] || '';
+      const text = UMOOD(stab.tier, STABILITY_TIER_MOOD[stab.tier] || '');
       const dot = moodEl.querySelector('.we-header-dot');
       const txt = moodEl.querySelector('.we-header-mood-text');
       if (dot) { dot.style.background = color; dot.style.boxShadow = '0 0 6px ' + color; }
@@ -350,23 +360,25 @@ window.WORLD_ENGINE_UI = (function() {
       const topLine = i === 0 ? '<div class="we-nav-line we-nav-line-hidden"></div>' : '<div class="we-nav-line"></div>';
       const botLine = i === rows.length - 1 ? '<div class="we-nav-line we-nav-line-hidden"></div>' : '<div class="we-nav-line"></div>';
       const sel = _selectedNavView === r.view ? ' we-nav-row--selected' : '';
+      const navPoem = UPOEM(r.view, r.poem);
+      const poemHtml = navPoem ? '<span class="we-nav-poem">' + navPoem + '</span>' : '';
       return '<div class="we-nav-row' + sel + '" data-view="' + r.view + '">'
-        + '<div class="we-nav-label">' + r.label + '</div>'
+        + '<div class="we-nav-label">' + UL(r.label) + '</div>'
         + '<div class="we-nav-track">' + topLine + '<div class="we-nav-dot"></div>' + botLine + '</div>'
-        + '<div class="we-nav-content"><span class="we-nav-sub">' + r.sub + '</span><span class="we-nav-poem">' + r.poem + '</span></div>'
+        + '<div class="we-nav-content"><span class="we-nav-sub">' + ULsub(r.sub) + '</span>' + poemHtml + '</div>'
         + '<i class="fa-solid fa-chevron-right we-nav-arrow"></i>'
         + '</div>';
     }).join('');
 
     return renderWorldCore(s)
       + '<div class="we-nav-list" style="--we-tier-color:' + tierColor + ';">' + navRows + '</div>'
-      + '<div class="we-section" id="we-sec-digest"><div class="we-section-title">世界摘要</div><div class="we-digest">' + u(s.worldDigest) + '</div></div>';
+      + '<div class="we-section" id="we-sec-digest"><div class="we-section-title">' + UL('世界摘要') + '</div><div class="we-digest">' + digestHtml(s) + '</div></div>';
   }
 
   /** 展开模式主页：世界核心 + 世界摘要 + 所有 section 平铺（如存档点） */
   function renderHomeViewExpanded(s, layer, scope) {
     return renderWorldCore(s)
-      + '<div class="we-section" id="we-sec-digest"><div class="we-section-title">世界摘要</div><div class="we-digest">' + u(s.worldDigest) + '</div></div>'
+      + '<div class="we-section" id="we-sec-digest"><div class="we-section-title">' + UL('世界摘要') + '</div><div class="we-digest">' + digestHtml(s) + '</div></div>'
       + renderSection('天下大势', 'trends', renderWorldTrends(s.worldTrends, scope))
       + renderSection('区域事件', 'regional', renderRegionalIncident(s.regionalIncident, scope))
       + renderSection('事件链', 'events', renderEventList(s.events, scope))
@@ -400,7 +412,7 @@ window.WORLD_ENGINE_UI = (function() {
     }
     return '<div class="we-sub-topbar">'
       + '<button class="we-icon-btn" id="we-btn-back" title="返回"><i class="fa-solid fa-arrow-left"></i></button>'
-      + '<span class="we-sub-title">' + (VIEW_TITLES[viewKey] || viewKey) + '</span>'
+      + '<span class="we-sub-title">' + UL(VIEW_TITLES[viewKey] || viewKey) + '</span>'
       + '</div>' + content;
   }
 
@@ -509,7 +521,7 @@ window.WORLD_ENGINE_UI = (function() {
       ['势力', (s.factions || []).length],
       ['风声', (s.winds || []).length],
       ['大势', (s.worldTrends || []).length],
-    ].map(([k, v]) => `<div class="we-core-stat"><div class="we-core-stat-k">${k}</div><div class="we-core-stat-v">${v}</div></div>`).join('');
+    ].map(([k, v]) => `<div class="we-core-stat"><div class="we-core-stat-k">${UL(k)}</div><div class="we-core-stat-v">${v}</div></div>`).join('');
 
     return `
       <div class="we-section we-core-section">
@@ -536,10 +548,10 @@ window.WORLD_ENGINE_UI = (function() {
               <circle class="we-core-dot-core" cx="${dotX}" cy="${dotY}" r="2.5" fill="#ffffff" opacity="0.95"/>
             </svg>
             <div class="we-core-center">
-              <div class="we-core-title">世界核心</div>
-              <div class="we-core-sub">稳定度</div>
+              <div class="we-core-title">${UL('世界核心')}</div>
+              <div class="we-core-sub">${UL('稳定度')}</div>
               <div class="we-core-pct" style="color:${tierColor};">${stab.stability.toFixed(1)}<span>%</span></div>
-              <div class="we-core-tier" style="color:${tierColor};">${stab.tier}</div>
+              <div class="we-core-tier" style="color:${tierColor};">${UL(stab.tier)}</div>
             </div>
           </div>
           <div class="we-core-stats">${stats}</div>

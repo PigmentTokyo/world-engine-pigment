@@ -913,6 +913,7 @@
         types: normalizeIncidentTypes(source.regionalIncidents && source.regionalIncidents.types, base.regionalIncidents.types)
       },
       termMap: termMap,
+      ui: normalizeUI(source.ui),
       customRules: normalizeText(source.customRules, '')
     };
     return preset;
@@ -1329,6 +1330,16 @@
       + '    "繁荣": "...", "平稳": "...", "衰退": "...", "动荡": "...",\n'
       + '    "朝廷": "...", "官府": "...", "百姓": "...", "江湖": "...", "武林": "...", "门派": "...",\n'
       + '    "帮派": "...", "银两": "...", "粮草": "...", "兵马": "...", "城池": "...", "村镇": "...", "山寨": "..."\n'
+      + '  },\n'
+      + '  "ui": {\n'
+      + '    "labels": {\n'
+      + '      "世界核心": "...", "稳定度": "...", "事件": "...", "势力": "...", "风声": "...", "大势": "...",\n'
+      + '      "局势": "...", "关系": "...", "资源": "...", "天下大势": "...", "区域事件": "...", "账本": "...",\n'
+      + '      "事件链": "...", "影响链": "...", "声誉": "...", "仇敌录": "...", "经济": "...", "秘密": "...", "世界摘要": "...",\n'
+      + '      "天下太平": "...", "暗流浮动": "...", "局势紧张": "...", "动荡失序": "...", "崩坏边缘": "..."\n'
+      + '    },\n'
+      + '    "moods": { "天下太平": "...", "暗流浮动": "...", "局势紧张": "...", "动荡失序": "...", "崩坏边缘": "..." },\n'
+      + '    "summaryEmpty": "世界尚未开始时显示的一句话"\n'
       + '  }\n'
       + '}\n'
       + '```\n\n'
@@ -1339,6 +1350,8 @@
       + '- verdicts 的“描述文字”才用目标世界观的风格来写，要生动具体、贴合世界观。\n'
       + '- termMap 负责把上述固定枚举词与古风/武侠名词翻译成目标世界观的“显示说法”：key 是原始术语，value 是新术语；只用于界面显示与文风注入，不影响引擎枚举。\n'
       + '- regionalIncidents.types 需要约12种，weight 总和约为100。\n'
+      + '- ui.labels 把界面上的词替换成本世界观的说法：key 必须原样使用上面给出的中文词，value 是新叫法（例如赛博朋克可把“世界核心”改为“系统核心”、“账本”改为“事件日志”）。\n'
+      + '- ui.moods 的 key 必须用固定的五档（天下太平/暗流浮动/局势紧张/动荡失序/崩坏边缘），value 是该世界观下对应稳定度档位的一句氛围短语（替换古风诗句）。\n'
       + '- 只返回JSON，不要有额外文字';
 
     // 4. Call the API
@@ -1385,6 +1398,7 @@
       economy: parsed.economy || ANCIENT_CHINESE.economy,
       regionalIncidents: parsed.regionalIncidents || ANCIENT_CHINESE.regionalIncidents,
       termMap: parsed.termMap || {},
+      ui: parsed.ui || {},
       customRules: ''
     };
 
@@ -1411,6 +1425,154 @@
   }
 
   // ═════════════════════════════════════════════
+  //  UI CHROME LABELS (per world-view)
+  //  Canonical Chinese chrome words -> display wording. Stability tier KEYS
+  //  stay canonical (logic unchanged); only the displayed text is swapped.
+  // ═════════════════════════════════════════════
+  var ANCIENT_UI = {
+    labels: {},  // identity: canonical wording IS the ancient wording
+    moods: {
+      '天下太平': '海静不扬波', '暗流浮动': '暗水带花流', '局势紧张': '云急风更恶',
+      '动荡失序': '乾坤含疮痍', '崩坏边缘': '坤轴欹将折'
+    },
+    poems: {
+      situation: '天下云集响应', events: '事至而应',
+      relations: '同声相应，同气相求', resources: '地藏无尽藏'
+    },
+    mottos: {
+      trends: '天下之势，以渐而成', regional: '一方有警，四面皆惊', ledger: '毫厘皆有来历',
+      events: '牵一发而全身动', winds: '风起于青萍之末', influence: '牵枝而动叶',
+      reputation: '人之有誉，如影随形', factions: '大树之下，草不沾霜', enemies: '仇者快，亲者痛',
+      economy: '食者民之本，货者民用之资', blackbox: '墙有耳，伏寇在侧'
+    },
+    summaryEmpty: '世界正在苏醒，一切尚未可知。'
+  };
+
+  var PRESET_UI_OVERRIDES = {
+    modern: {
+      labels: {
+        '世界核心': '社会全局', '风声': '舆情', '大势': '大趋势', '天下大势': '宏观趋势',
+        '账本': '大事记', '事件账本': '大事记', '仇敌录': '宿敌录', '秘密': '隐私',
+        '世界摘要': '全局摘要', '天下太平': '社会安定', '暗流浮动': '暗流涌动',
+        '局势紧张': '局势紧张', '动荡失序': '秩序动摇', '崩坏边缘': '濒临失控'
+      },
+      moods: {
+        '天下太平': '风平浪静', '暗流浮动': '暗流涌动', '局势紧张': '气氛渐紧',
+        '动荡失序': '秩序松动', '崩坏边缘': '濒临失控'
+      },
+      poems: {},
+      summaryEmpty: '世界正在运转，一切照常。'
+    },
+    cyberpunk: {
+      labels: {
+        '世界核心': '系统核心', '稳定度': '秩序指数', '势力': '阵营', '风声': '情报',
+        '大势': '趋势', '局势': '态势', '天下大势': '宏观趋势', '账本': '事件日志',
+        '事件账本': '事件日志', '声誉': '声望', '仇敌录': '威胁名单', '秘密': '隐秘数据',
+        '世界摘要': '系统摘要', '天下太平': '秩序井然', '暗流浮动': '暗流涌动',
+        '局势紧张': '警报上升', '动荡失序': '系统失序', '崩坏边缘': '濒临熔毁'
+      },
+      moods: {
+        '天下太平': '霓虹如常运转', '暗流浮动': '数据暗流低鸣', '局势紧张': '警报频率上升',
+        '动荡失序': '防火墙正在崩解', '崩坏边缘': '核心即将熔毁'
+      },
+      poems: {},
+      summaryEmpty: '系统正在启动，数据尚未同步。'
+    },
+    western_fantasy: {
+      labels: {
+        '世界核心': '世界之核', '风声': '传闻', '大势': '时局', '天下大势': '时代洪流',
+        '账本': '编年史', '事件账本': '编年史', '仇敌录': '宿敌录', '秘密': '秘辛',
+        '世界摘要': '世界纪要', '天下太平': '四海升平', '暗流浮动': '暗潮涌动',
+        '局势紧张': '山雨欲来', '动荡失序': '烽烟四起', '崩坏边缘': '末日将临'
+      },
+      moods: {
+        '天下太平': '风和日丽，万物安宁', '暗流浮动': '暗影悄然滋长', '局势紧张': '山雨欲来风满楼',
+        '动荡失序': '战火席卷大地', '崩坏边缘': '诸神黄昏将至'
+      },
+      poems: {},
+      summaryEmpty: '世界尚在沉睡，传说未启。'
+    },
+    post_apocalyptic: {
+      labels: {
+        '世界核心': '废土核心', '稳定度': '秩序残值', '势力': '派系', '风声': '流言',
+        '大势': '局势', '天下大势': '废土大局', '账本': '残存记录', '事件账本': '残存记录',
+        '声誉': '名声', '仇敌录': '死敌录', '秘密': '藏匿', '世界摘要': '废土纪要',
+        '天下太平': '勉强维生', '暗流浮动': '暗流涌动', '局势紧张': '危机四伏',
+        '动荡失序': '秩序崩坏', '崩坏边缘': '濒临灭绝'
+      },
+      moods: {
+        '天下太平': '废土难得的平静', '暗流浮动': '危险悄然逼近', '局势紧张': '空气中弥漫血腥',
+        '动荡失序': '秩序彻底瓦解', '崩坏边缘': '末日近在眼前'
+      },
+      poems: {},
+      summaryEmpty: '废土沉寂，幸存者尚未现身。'
+    }
+  };
+
+  function normalizeUI(raw) {
+    var src = isPlainObject(raw) ? raw : {};
+    return {
+      labels: normalizeStringMap(src.labels, {}),
+      moods: normalizeStringMap(src.moods, {}),
+      poems: normalizeStringMap(src.poems, {}),
+      mottos: normalizeStringMap(src.mottos, {}),
+      summaryEmpty: normalizeText(src.summaryEmpty, '')
+    };
+  }
+
+  // poems & mottos do NOT inherit ancient defaults once a genre override exists,
+  // so non-ancient worlds simply hide the 古风 flavor lines unless they define
+  // their own. labels & moods do inherit (missing keys fall back to canonical).
+  function mergeUI(base, ov) {
+    base = base || ANCIENT_UI;
+    var hasOv = !!ov;
+    ov = ov || {};
+    return {
+      labels: Object.assign({}, base.labels, ov.labels || {}),
+      moods: Object.assign({}, base.moods, ov.moods || {}),
+      poems: hasOv ? Object.assign({}, ov.poems || {}) : Object.assign({}, base.poems),
+      mottos: hasOv ? Object.assign({}, ov.mottos || {}) : Object.assign({}, base.mottos),
+      summaryEmpty: ov.summaryEmpty || base.summaryEmpty
+    };
+  }
+
+  function getActiveUI() {
+    var p = getActivePreset();
+    var ov = null;
+    if (p && p.ui && (
+        (p.ui.labels && Object.keys(p.ui.labels).length) ||
+        (p.ui.moods && Object.keys(p.ui.moods).length) ||
+        p.ui.summaryEmpty)) {
+      ov = p.ui;
+    } else if (p && PRESET_UI_OVERRIDES[p.id]) {
+      ov = PRESET_UI_OVERRIDES[p.id];
+    }
+    return mergeUI(ANCIENT_UI, ov);
+  }
+
+  function uiLabel(key) {
+    if (!key) return key;
+    var u = getActiveUI();
+    return (u.labels && u.labels[key]) || key;
+  }
+  function uiMood(tier) {            // '' => caller keeps its own default
+    var u = getActiveUI();
+    return (u.moods && u.moods[tier]) || '';
+  }
+  function uiPoem(view) {            // '' => caller hides the poem line
+    var u = getActiveUI();
+    return (u.poems && u.poems[view] != null) ? u.poems[view] : '';
+  }
+  function uiMotto(sectionId) {      // '' => caller hides the motto line
+    var u = getActiveUI();
+    return (u.mottos && u.mottos[sectionId] != null) ? u.mottos[sectionId] : '';
+  }
+  function uiSummaryEmpty() {
+    var u = getActiveUI();
+    return u.summaryEmpty || ANCIENT_UI.summaryEmpty;
+  }
+
+  // ═════════════════════════════════════════════
   //  PUBLIC API — expose on window
   // ═════════════════════════════════════════════
   window.WORLD_ENGINE_PRESETS = {
@@ -1425,6 +1587,11 @@
     applyTermMap:       applyTermMap,
     applyDisplayTerms:  applyDisplayTerms,
     applyPromptTerms:   applyPromptTerms,
+    uiLabel:            uiLabel,
+    uiMood:             uiMood,
+    uiPoem:             uiPoem,
+    uiMotto:            uiMotto,
+    uiSummaryEmpty:     uiSummaryEmpty,
     normalizePreset:    normalizePreset,
     getInternalSchema:  function () { return deepClone(INTERNAL_SCHEMA); },
     generateFromWorldbook: generateFromWorldbook,
