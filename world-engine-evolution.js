@@ -729,6 +729,7 @@ ${extraInstruction ? '\n' + extraInstruction : ''}${toneSection}`;
       _lastError = '已有推演正在进行';
       return false;
     }
+    _lastError = '';
 
     delete state._terminalEventsThisRound;
     const hadStoredState = core.hasState();
