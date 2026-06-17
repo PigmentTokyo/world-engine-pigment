@@ -2841,7 +2841,8 @@ window.WORLD_ENGINE_UI = (function() {
       const ok = await evolution.evolve(s, userMsg, aiMsg, { mode, dialogueText });
       if (ok && window.WORLD_ENGINE_LEDGER) window.WORLD_ENGINE_LEDGER.recordChanges(s);
       if (ok && window.WORLD_ENGINE?.applyInjection) window.WORLD_ENGINE.applyInjection();
-      if (window.__WE_SetExternalStatus) window.__WE_SetExternalStatus(ok ? '推演完成' : '推演失败', !ok);
+      const reason = !ok && evolution.getLastError ? evolution.getLastError() : '';
+      if (window.__WE_SetExternalStatus) window.__WE_SetExternalStatus(ok ? '推演完成' : (reason ? '推演失败：' + reason : '推演失败'), !ok);
       if (ok) showToast('推演完成');
     } catch(e) {
       if (window.__WE_SetExternalStatus) window.__WE_SetExternalStatus('推演失败: ' + e.message, true);
