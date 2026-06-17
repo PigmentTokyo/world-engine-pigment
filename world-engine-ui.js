@@ -960,9 +960,9 @@ window.WORLD_ENGINE_UI = (function() {
         return `<span class="we-rep-dot${active}" style="background:${dotColor};" data-rep-scope="${scope || 'state'}" data-dim="${key}" data-level="${l}" title="${l}"></span>`;
       }).join('');
       return `<div class="we-rep-row">
-        <span class="we-rep-dim">${cn}</span>
+        <span class="we-rep-dim">${u(cn)}</span>
         <div class="we-rep-dots">${dotsHtml}</div>
-        <span class="we-rep-quote" style="color:${color}">${quote}</span>
+        <span class="we-rep-quote" style="color:${color}">${u(quote)}</span>
       </div>`;
     }).join('') + '</div>';
   }
