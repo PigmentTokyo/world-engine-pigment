@@ -11,6 +11,7 @@ window.WORLD_ENGINE_API = (function() {
       model: 'gpt-3.5-turbo',
       temperature: 0.7,
       maxTokens: 2000,
+      useStProxy: true,
       injectIntoPrompt: true,
       evolveMode: 'auto',
       evolveEveryX: 1,
@@ -40,6 +41,38 @@ window.WORLD_ENGINE_API = (function() {
     if (u.endsWith('/chat/completions')) return u;
     if (u.endsWith('/v1')) return u + '/chat/completions';
     return u + '/v1/chat/completions';
+  }
+
+  // API 基址（去掉末尾 /chat/completions），例如 https://host/v1
+  function getApiBase(settings) {
+    const u = normalizeUrl(settings.apiUrl);
+    if (!u) return '';
+    return u.replace(/\/chat\/completions$/, '');
+  }
+
+  // 是否可走 SillyTavern 后端转发（服务器对服务器，无浏览器 CORS）
+  // 需同时满足：用户开关开启（默认开） + 处于酒馆环境
+  function canUseStProxy() {
+    try {
+      if (getSettings().useStProxy === false) return false;
+      return typeof SillyTavern !== 'undefined'
+        && typeof SillyTavern.getContext === 'function'
+        && typeof SillyTavern.getContext().getRequestHeaders === 'function';
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // 取 ST 的请求头（含 CSRF token）
+  function getContextHeaders() {
+    try {
+      const ctx = SillyTavern.getContext();
+      const h = ctx.getRequestHeaders();
+      if (h && !h['Content-Type']) h['Content-Type'] = 'application/json';
+      return h;
+    } catch (e) {
+      return { 'Content-Type': 'application/json' };
+    }
   }
 
   function isMixedContent(url) {
@@ -106,28 +139,47 @@ window.WORLD_ENGINE_API = (function() {
 
     const resolvedMaxTokens = Number(maxTokens ?? settings.maxTokens ?? 2000);
     const resolvedTemperature = Number(temperature ?? settings.temperature ?? 0.7);
-    const body = {
-      model: settings.model || 'gpt-3.5-turbo',
-      messages: [{ role: 'user', content: prompt }],
-      temperature: Number.isFinite(resolvedTemperature) ? resolvedTemperature : 0.7,
-      max_tokens: Number.isFinite(resolvedMaxTokens) ? resolvedMaxTokens : 2000
-    };
+    const model = settings.model || 'gpt-3.5-turbo';
+    const messages = [{ role: 'user', content: prompt }];
+    const temp = Number.isFinite(resolvedTemperature) ? resolvedTemperature : 0.7;
+    const maxTok = Number.isFinite(resolvedMaxTokens) ? resolvedMaxTokens : 2000;
 
-    const headers = {
-      'Content-Type': 'application/json'
-    };
-    if (settings.apiKey) {
-      headers['Authorization'] = 'Bearer ' + settings.apiKey;
+    let data;
+    if (canUseStProxy()) {
+      // 经由 SillyTavern 后端转发（服务器对服务器，无浏览器 CORS）
+      const base = getApiBase(settings);
+      console.log('[世界引擎] 调用 API（经 ST 后端转发）:', base, model);
+      data = await fetchJson('/api/backends/chat-completions/generate', {
+        method: 'POST',
+        headers: getContextHeaders(),
+        body: JSON.stringify({
+          chat_completion_source: 'openai',
+          reverse_proxy: base,
+          proxy_password: settings.apiKey || '',
+          model: model,
+          messages: messages,
+          temperature: temp,
+          max_tokens: maxTok,
+          stream: false
+        }),
+        signal: signal || null
+      });
+      if (data && data.error) {
+        throw new Error('SillyTavern 后端转发失败：' + (data.message || '无法连接到目标 API，请检查 API URL、密钥或中转是否可用'));
+      }
+    } else {
+      // 回退：浏览器直连（非酒馆环境/独立运行，会受 CORS 限制）
+      const headers = { 'Content-Type': 'application/json' };
+      if (settings.apiKey) headers['Authorization'] = 'Bearer ' + settings.apiKey;
+      console.log('[世界引擎] 调用 API（浏览器直连）:', url, model);
+      data = await fetchJson(url, {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify({ model: model, messages: messages, temperature: temp, max_tokens: maxTok }),
+        signal: signal || null
+      });
     }
 
-    console.log('[世界引擎] 调用 API:', url, body.model);
-
-    const data = await fetchJson(url, {
-      method: 'POST',
-      headers: headers,
-      body: JSON.stringify(body),
-      signal: signal || null
-    });
     const choice = data.choices?.[0];
     if (!choice) throw new Error('API 返回缺少 choices[0]');
     if (choice.finish_reason === 'length') {
@@ -224,8 +276,31 @@ window.WORLD_ENGINE_API = (function() {
    */
   async function fetchModelList() {
     const settings = getSettings();
-    const baseUrl = normalizeUrl(settings.apiUrl).replace(/\/chat\/completions$/, '');
-    const url = baseUrl + '/models';
+    const base = getApiBase(settings);
+    if (!base) throw new Error('未配置 API URL，请在设置中填写');
+
+    if (canUseStProxy()) {
+      // 经由 SillyTavern 后端拉取模型列表（无浏览器 CORS）
+      const data = await fetchJson('/api/backends/chat-completions/status', {
+        method: 'POST',
+        headers: getContextHeaders(),
+        body: JSON.stringify({
+          chat_completion_source: 'openai',
+          reverse_proxy: base,
+          proxy_password: settings.apiKey || ''
+        })
+      });
+      if (data && data.error) {
+        throw new Error('SillyTavern 后端无法获取模型列表，请检查 API URL、密钥或中转是否可用');
+      }
+      if (data && Array.isArray(data.data)) {
+        return data.data.map(m => (typeof m === 'string' ? m : m && m.id)).filter(Boolean);
+      }
+      throw new Error('无法解析模型列表');
+    }
+
+    // 回退：浏览器直连（会受 CORS 限制）
+    const url = base + '/models';
     const headers = { 'Content-Type': 'application/json' };
     if (settings.apiKey) headers['Authorization'] = 'Bearer ' + settings.apiKey;
 

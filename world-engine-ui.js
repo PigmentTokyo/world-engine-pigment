@@ -1329,6 +1329,13 @@ window.WORLD_ENGINE_UI = (function() {
         <select id="we-model-list" style="display:none;width:100%;margin-top:4px;">
           <option value="">-- 选择模型 --</option>
         </select>
+      </div>
+      <div class="we-input-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="we-use-st-proxy" ${settings.useStProxy !== false ? 'checked' : ''}>
+          经酒馆后端转发（绕过浏览器跨域/CORS）
+        </label>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">开启后请求经 SillyTavern 后端转发到目标 API，可解决"拉不到模型/请求被拦截"。关闭则浏览器直连（需目标接口允许跨域）。非酒馆环境下自动直连。</div>
       </div>`;
 
     const evolveBody = `
@@ -2083,6 +2090,7 @@ window.WORLD_ENGINE_UI = (function() {
           apiUrl: document.getElementById('we-api-url')?.value || '',
           apiKey: document.getElementById('we-api-key')?.value || '',
           model: document.getElementById('we-model')?.value || 'gpt-3.5-turbo',
+          useStProxy: document.getElementById('we-use-st-proxy')?.checked !== false,
           injectIntoPrompt: document.getElementById('we-inject-into-prompt')?.checked !== false,
           evolveMode: (_modeRaw === 'manual' || _modeRaw === 'time') ? _modeRaw : 'auto',
           evolveEveryX: Math.max(1, parseInt(document.getElementById('we-evolve-everyx')?.value) || 1),
@@ -2359,6 +2367,7 @@ window.WORLD_ENGINE_UI = (function() {
           apiUrl: document.getElementById('we-api-url')?.value || '',
           apiKey: document.getElementById('we-api-key')?.value || '',
           model: document.getElementById('we-model')?.value || '',
+          useStProxy: document.getElementById('we-use-st-proxy')?.checked !== false,
           injectIntoPrompt: document.getElementById('we-inject-into-prompt')?.checked !== false
         }));
         if (api.getSettings) api.getSettings(true);
