@@ -630,6 +630,12 @@ cooldown 由本地维护，API 不得输出或修改此字段。
       }
     }
 
+    // Genericize ancient-style flavor vocabulary for the active world-view while
+    // preserving canonical enum values that the evolution LLM must echo back.
+    if (window.WORLD_ENGINE_PRESETS && window.WORLD_ENGINE_PRESETS.applyPromptTerms) {
+      return window.WORLD_ENGINE_PRESETS.applyPromptTerms(text);
+    }
+
     return text;
   }
 

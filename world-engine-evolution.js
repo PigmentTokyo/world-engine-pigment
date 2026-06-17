@@ -721,10 +721,12 @@ ${extraInstruction ? '\n' + extraInstruction : ''}${toneSection}`;
 
   let _abortController = null;
   let _isRunning = false;
+  let _lastError = '';
 
   async function evolve(state, userMsg, aiMsg, opts) {
     if (_isRunning) {
       console.warn('[世界引擎] ⚠️ 已有推演正在进行，跳过重复请求');
+      _lastError = '已有推演正在进行';
       return false;
     }
 
@@ -759,6 +761,7 @@ ${extraInstruction ? '\n' + extraInstruction : ''}${toneSection}`;
     }
 
     _isRunning = true;
+    _lastError = '';
     _abortController = new AbortController();
 
     try {
@@ -956,8 +959,10 @@ ${extraInstruction ? '\n' + extraInstruction : ''}${toneSection}`;
     } catch(e) {
       if (e.name === 'AbortError') {
         console.log('[世界引擎] 🛑 推演已中止');
+        _lastError = '已中止';
       } else {
         console.error('[世界引擎] 推演失败', e);
+        _lastError = e && e.message ? e.message : '未知错误';
       }
       Object.assign(state, backup);
       core.saveState(state);
@@ -978,6 +983,10 @@ ${extraInstruction ? '\n' + extraInstruction : ''}${toneSection}`;
     return _isRunning;
   }
 
+  function getLastError() {
+    return _lastError;
+  }
+
   window.WORLD_ENGINE_DEBUG = {
     evolve,
     callEvolutionAPI,
@@ -986,5 +995,5 @@ ${extraInstruction ? '\n' + extraInstruction : ''}${toneSection}`;
     state: () => core.loadState()
   };
 
-  return { evolve, getLastDebug, abort, isRunning };
+  return { evolve, getLastDebug, abort, isRunning, getLastError };
 })();

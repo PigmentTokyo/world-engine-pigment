@@ -364,7 +364,8 @@
           } else {
             console.warn('[世界引擎] ⚠️ 推演失败或已中止');
           }
-          setStatus(success ? '推演完成' : '推演失败或已中止', !success);
+          const reason = !success && evolution.getLastError ? evolution.getLastError() : '';
+          setStatus(success ? '推演完成' : (reason ? '推演失败：' + reason : '推演失败或已中止'), !success);
           return success;
         } catch(e) {
           console.error('[世界引擎] 处理失败', e);

@@ -1123,35 +1123,80 @@
    * @param {string} text
    * @returns {string} — the text with all terms replaced
    */
-  function applyTermMap(text) {
-    if (!text || typeof text !== 'string') return text;
-    var preset = getActivePreset();
-    var map = preset.termMap;
-    if (!map || typeof map !== 'object') return text;
+  // Canonical enum VALUES that the evolution LLM must echo back verbatim.
+  // They must NEVER be substituted inside the backend evolution prompt,
+  // otherwise the returned JSON can no longer be parsed against the schema.
+  var ENUM_VALUE_SET = (function () {
+    var s = {};
+    [].concat(
+      INTERNAL_SCHEMA.reputationLevels,
+      INTERNAL_SCHEMA.factionStatuses,
+      INTERNAL_SCHEMA.factionRelations,
+      INTERNAL_SCHEMA.economyClimates
+    ).forEach(function (v) { s[v] = true; });
+    return s;
+  })();
 
+  // Low-level: replace every key of `map` in `text` (longest key first).
+  function replaceWithMap(text, map) {
+    if (!text || typeof text !== 'string') return text;
+    if (!map || typeof map !== 'object') return text;
     var keys = Object.keys(map);
     if (keys.length === 0) return text;
-
-    // Sort by length descending so longer terms are replaced first
     keys.sort(function (a, b) { return b.length - a.length; });
-
     var result = text;
     for (var i = 0; i < keys.length; i++) {
       var oldTerm = keys[i];
       var newTerm = map[oldTerm];
-      // Only replace if old and new differ
-      if (oldTerm !== newTerm && newTerm !== undefined) {
-        // Escape regex special characters in the key
-        var escaped = oldTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        var regex = new RegExp(escaped, 'g');
-        result = result.replace(regex, newTerm);
-      }
+      // Skip no-op / empty replacements to avoid accidental deletions.
+      if (!oldTerm || newTerm == null || newTerm === '' || oldTerm === newTerm) continue;
+      var escaped = oldTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      result = result.replace(new RegExp(escaped, 'g'), newTerm);
     }
     return result;
   }
 
+  /**
+   * Display-side replacement: applies the FULL termMap (including enum-value
+   * wording) to text that is only shown to the user / injected as narrative
+   * guidance — never parsed back as JSON.
+   */
+  function applyTermMap(text) {
+    var preset = getActivePreset();
+    return replaceWithMap(text, preset && preset.termMap);
+  }
+
   function applyDisplayTerms(text) {
     return applyTermMap(text);
+  }
+
+  /**
+   * Build the prompt-safe subset of the active preset's termMap:
+   *  - excludes canonical enum VALUES (must stay verbatim for JSON parsing);
+   *  - derives bare 2-char dimension words (朝堂之上→朝堂) so flavor prose in
+   *    the rules is also genericized.
+   */
+  function buildPromptTermMap(preset) {
+    var map = (preset && preset.termMap) || {};
+    var out = {};
+    Object.keys(map).forEach(function (k) {
+      var v = map[k];
+      if (!k || v == null || v === '' || v === k) return;
+      if (ENUM_VALUE_SET[k]) return;              // never touch enum values
+      out[k] = v;
+      var m = k.match(/^(.{2})(之上|之间|之中)$/);   // 朝堂之上→朝堂 …
+      if (m && !map[m[1]] && !ENUM_VALUE_SET[m[1]]) out[m[1]] = v;
+    });
+    return out;
+  }
+
+  /**
+   * Prompt-side replacement: safe to apply to text sent to the evolution LLM,
+   * because canonical enum values are preserved.
+   */
+  function applyPromptTerms(text) {
+    var preset = getActivePreset();
+    return replaceWithMap(text, buildPromptTermMap(preset));
   }
 
   // ═════════════════════════════════════════════
@@ -1254,81 +1299,46 @@
       + '      "shadow": { "name": "暗面维度名称", "description": "描述" },\n'
       + '      "circuit": { "name": "同行维度名称", "description": "描述" }\n'
       + '    },\n'
-      + '    "levels": ["最低级别", "较低级别", "中间级别", "较高级别", "最高级别"],\n'
       + '    "verdicts": {\n'
-      + '      "authority": { "最低级别": "该级别在权力维度的描述（一两句话）", ... },\n'
-      + '      "common": { ... },\n'
-      + '      "shadow": { ... },\n'
-      + '      "circuit": { ... }\n'
+      + '      "authority": { "天怒人怨": "...", "声名狼藉": "...", "默默无闻": "...", "受人尊敬": "...", "万众敬仰": "..." },\n'
+      + '      "common":    { "天怒人怨": "...", "声名狼藉": "...", "默默无闻": "...", "受人尊敬": "...", "万众敬仰": "..." },\n'
+      + '      "shadow":    { "天怒人怨": "...", "声名狼藉": "...", "默默无闻": "...", "受人尊敬": "...", "万众敬仰": "..." },\n'
+      + '      "circuit":   { "天怒人怨": "...", "声名狼藉": "...", "默默无闻": "...", "受人尊敬": "...", "万众敬仰": "..." }\n'
       + '    }\n'
       + '  },\n'
       + '  "factions": {\n'
-      + '    "statuses": ["最强状态", "稳定状态", "内部问题", "困难状态", "衰退状态", "崩溃状态"],\n'
-      + '    "statusVerdicts": { "最强状态": "描述", ... },\n'
-      + '    "relations": ["最亲密", "盟友", "友好", "中立", "冷淡", "敌对", "最敌对"],\n'
-      + '    "relationVerdicts": { "最亲密": "描述（用{{user}}指代玩家）", ... }\n'
+      + '    "statusVerdicts":   { "鼎盛": "...", "稳固": "...", "倾轧": "...", "困顿": "...", "衰落": "...", "瓦解": "..." },\n'
+      + '    "relationVerdicts": { "血盟": "...（用{{user}}指代玩家）", "盟友": "...", "友好": "...", "中立": "...", "冷淡": "...", "敌对": "...", "世仇": "..." }\n'
       + '  },\n'
       + '  "economy": {\n'
-      + '    "climates": ["繁荣", "平稳", "衰退", "动荡"],\n'
-      + '    "climateVerdicts": { "繁荣": "描述", ... }\n'
+      + '    "climateVerdicts": { "繁荣": "...", "平稳": "...", "衰退": "...", "动荡": "..." }\n'
       + '  },\n'
       + '  "regionalIncidents": {\n'
       + '    "chance": 0.03,\n'
       + '    "durationRounds": 5,\n'
       + '    "cooldownRounds": 5,\n'
       + '    "types": [\n'
-      + '      { "type": "英文标识", "label": "中文名称", "weight": 10, "guide": "该事件的详细示例场景描述" },\n'
-      + '      ...\n'
+      + '      { "type": "英文标识", "label": "中文名称", "weight": 10, "guide": "该事件的详细示例场景描述" }\n'
       + '    ]\n'
       + '  },\n'
       + '  "termMap": {\n'
-      + '    "朝堂之上": "对应的新术语",\n'
-      + '    "市井之间": "...",\n'
-      + '    "草莽之中": "...",\n'
-      + '    "同道之间": "...",\n'
-      + '    "天怒人怨": "...",\n'
-      + '    "声名狼藉": "...",\n'
-      + '    "默默无闻": "...",\n'
-      + '    "受人尊敬": "...",\n'
-      + '    "万众敬仰": "...",\n'
-      + '    "鼎盛": "...",\n'
-      + '    "稳固": "...",\n'
-      + '    "倾轧": "...",\n'
-      + '    "困顿": "...",\n'
-      + '    "衰落": "...",\n'
-      + '    "瓦解": "...",\n'
-      + '    "血盟": "...",\n'
-      + '    "盟友": "...",\n'
-      + '    "友好": "...",\n'
-      + '    "中立": "...",\n'
-      + '    "冷淡": "...",\n'
-      + '    "敌对": "...",\n'
-      + '    "世仇": "...",\n'
-      + '    "繁荣": "...",\n'
-      + '    "平稳": "...",\n'
-      + '    "衰退": "...",\n'
-      + '    "动荡": "...",\n'
-      + '    "朝廷": "...",\n'
-      + '    "官府": "...",\n'
-      + '    "百姓": "...",\n'
-      + '    "江湖": "...",\n'
-      + '    "武林": "...",\n'
-      + '    "门派": "...",\n'
-      + '    "帮派": "...",\n'
-      + '    "银两": "...",\n'
-      + '    "粮草": "...",\n'
-      + '    "兵马": "...",\n'
-      + '    "城池": "...",\n'
-      + '    "村镇": "...",\n'
-      + '    "山寨": "..."\n'
+      + '    "朝堂之上": "对应的新术语", "市井之间": "...", "草莽之中": "...", "同道之间": "...",\n'
+      + '    "天怒人怨": "...", "声名狼藉": "...", "默默无闻": "...", "受人尊敬": "...", "万众敬仰": "...",\n'
+      + '    "鼎盛": "...", "稳固": "...", "倾轧": "...", "困顿": "...", "衰落": "...", "瓦解": "...",\n'
+      + '    "血盟": "...", "盟友": "...", "友好": "...", "中立": "...", "冷淡": "...", "敌对": "...", "世仇": "...",\n'
+      + '    "繁荣": "...", "平稳": "...", "衰退": "...", "动荡": "...",\n'
+      + '    "朝廷": "...", "官府": "...", "百姓": "...", "江湖": "...", "武林": "...", "门派": "...",\n'
+      + '    "帮派": "...", "银两": "...", "粮草": "...", "兵马": "...", "城池": "...", "村镇": "...", "山寨": "..."\n'
       + '  }\n'
       + '}\n'
       + '```\n\n'
       + '注意事项：\n'
-      + '- 所有文本使用中文\n'
-      + '- 事件类型需要12种，权重总和约为100\n'
-      + '- verdicts描述要生动具体，符合世界观风格\n'
-      + '- termMap中的key是古风/武侠预设中的原始术语，value是你分析出的世界观对应的新术语\n'
+      + '- 所有文本使用中文。\n'
+      + '- 【关键】verdicts / statusVerdicts / relationVerdicts / climateVerdicts 的 key 必须原样使用上面给出的固定中文枚举（天怒人怨/声名狼藉/默默无闻/受人尊敬/万众敬仰；鼎盛/稳固/倾轧/困顿/衰落/瓦解；血盟/盟友/友好/中立/冷淡/敌对/世仇；繁荣/平稳/衰退/动荡），不要翻译、不要改写、不要增减——这些是世界引擎的内部固定枚举。\n'
+      + '- 不要返回 levels / statuses / relations / climates 这些数组，它们由引擎固定，无需生成。\n'
+      + '- verdicts 的“描述文字”才用目标世界观的风格来写，要生动具体、贴合世界观。\n'
+      + '- termMap 负责把上述固定枚举词与古风/武侠名词翻译成目标世界观的“显示说法”：key 是原始术语，value 是新术语；只用于界面显示与文风注入，不影响引擎枚举。\n'
+      + '- regionalIncidents.types 需要约12种，weight 总和约为100。\n'
       + '- 只返回JSON，不要有额外文字';
 
     // 4. Call the API
@@ -1390,11 +1400,14 @@
     if (!preset.economy.climateVerdicts) preset.economy.climateVerdicts = ANCIENT_CHINESE.economy.climateVerdicts;
     if (!preset.regionalIncidents.types) preset.regionalIncidents.types = ANCIENT_CHINESE.regionalIncidents.types;
 
-    // Auto-save the generated preset
+    // Auto-save the generated preset (saveCustomPreset normalizes it)
     saveCustomPreset(preset);
     console.log('[WorldEngine Presets] Generated and saved preset from worldbook: ' + preset.name + ' (' + preset.id + ')');
 
-    return deepClone(preset);
+    // Return the normalized stored version so callers get the same shape the
+    // engine will actually use (canonical enums, filled defaults).
+    var stored = findPresetById(preset.id);
+    return stored || deepClone(preset);
   }
 
   // ═════════════════════════════════════════════
@@ -1411,6 +1424,7 @@
     deleteCustomPreset: deleteCustomPreset,
     applyTermMap:       applyTermMap,
     applyDisplayTerms:  applyDisplayTerms,
+    applyPromptTerms:   applyPromptTerms,
     normalizePreset:    normalizePreset,
     getInternalSchema:  function () { return deepClone(INTERNAL_SCHEMA); },
     generateFromWorldbook: generateFromWorldbook,
