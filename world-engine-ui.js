@@ -937,12 +937,23 @@ window.WORLD_ENGINE_UI = (function() {
       shadow:    { '天怒人怨':'绿林亦不肯纳', '声名狼藉':'豪杰闻而鄙之', '默默无闻':'混迹渔樵无人问', '受人尊敬':'江湖豪杰多归之', '万众敬仰':'四海之内皆称其侠' },
       circuit:   { '天怒人怨':'同辈羞与为伍', '声名狼藉':'友朋面斥其非', '默默无闻':'独行无人与语', '受人尊敬':'同门推为领袖', '万众敬仰':'吾辈望之如泰山' }
     };
+    // 维度名与判词改读当前世界观预设；古风预设保留原有短标签与古文短句，
+    // 其它世界观（含世界书生成）用预设里的维度名与判词。
+    const _P = window.WORLD_ENGINE_PRESETS;
+    const _preset = (_P && _P.getActivePreset) ? _P.getActivePreset() : null;
+    const _isAncient = !_preset || _preset.id === 'ancient_chinese';
+    const _dims = (_preset && _preset.reputation && _preset.reputation.dimensions) || {};
+    const _verdicts = (_preset && _preset.reputation && _preset.reputation.verdicts) || {};
     return '<div class="we-rep-grid">' + Object.entries(rep).filter(([k]) => k !== 'lastChange').map(([key, rawVal]) => {
       const val = legacyMap[rawVal] || rawVal;
-      const cn = dimLabels[key] || key;
+      const cn = _isAncient
+        ? (dimLabels[key] || key)
+        : ((_dims[key] && _dims[key].name) || dimLabels[key] || key);
       const idx = levels.indexOf(val);
       const color = levelColors[val] || '#888';
-      const quote = (quotes[key] && quotes[key][val]) || '';
+      const quote = _isAncient
+        ? ((quotes[key] && quotes[key][val]) || '')
+        : ((_verdicts[key] && _verdicts[key][val]) || (quotes[key] && quotes[key][val]) || '');
       const dotsHtml = levels.map((l, i) => {
         const active = i <= idx ? ' we-rep-dot-active' : '';
         const dotColor = i <= idx ? color : '#444';
