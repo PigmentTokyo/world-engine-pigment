@@ -1833,6 +1833,39 @@
   border-color: var(--we-accent);
 }
 
+.we-api-profile-box {
+  margin-bottom: 10px;
+  padding: 8px;
+  border: 1px solid var(--we-border);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.025);
+}
+
+.we-api-profile-row,
+.we-api-profile-actions {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.we-api-profile-row {
+  margin-bottom: 6px;
+}
+
+.we-api-profile-row .we-input-group {
+  margin-bottom: 0;
+}
+
+.we-api-profile-select,
+.we-api-profile-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.we-api-profile-actions {
+  flex-wrap: wrap;
+}
+
 /* ===== Toast 提示 ===== */
 .we-toast {
   position: fixed;

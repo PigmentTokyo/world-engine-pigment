@@ -462,6 +462,90 @@ window.WORLD_ENGINE_UI = (function() {
       + renderSection('事件账本', 'cp-ledger', renderLedger(s.memories));
   }
 
+  const API_PROFILE_STORE_KEY = 'world_engine_api_profiles';
+
+  function normalizeApiProfile(profile, index) {
+    if (!profile || typeof profile !== 'object') return null;
+    const name = String(profile.name || '').trim();
+    const apiUrl = String(profile.apiUrl || '').trim();
+    const apiKey = String(profile.apiKey || '');
+    if (!name && !apiUrl && !apiKey) return null;
+    return {
+      id: String(profile.id || ('api_profile_' + Date.now() + '_' + index)),
+      name: name || ('配置 ' + (index + 1)),
+      apiUrl,
+      apiKey,
+      updatedAt: Number(profile.updatedAt) || 0
+    };
+  }
+
+  function getApiProfiles() {
+    const raw = window.WORLD_ENGINE_STORE.getItem(API_PROFILE_STORE_KEY);
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw);
+      const list = Array.isArray(parsed) ? parsed : (Array.isArray(parsed.profiles) ? parsed.profiles : []);
+      return list.map(normalizeApiProfile).filter(Boolean);
+    } catch(e) {
+      return [];
+    }
+  }
+
+  function saveApiProfiles(profiles) {
+    const clean = (profiles || []).map(normalizeApiProfile).filter(Boolean);
+    window.WORLD_ENGINE_STORE.setItem(API_PROFILE_STORE_KEY, JSON.stringify(clean));
+    return clean;
+  }
+
+  function findMatchingApiProfile(apiUrl, apiKey, preferredId) {
+    apiUrl = String(apiUrl || '').trim();
+    apiKey = String(apiKey || '');
+    const profiles = getApiProfiles();
+    const preferred = profiles.find(p => p.id === preferredId && p.apiUrl === apiUrl && p.apiKey === apiKey);
+    if (preferred) return preferred.id;
+    const matched = profiles.find(p => p.apiUrl === apiUrl && p.apiKey === apiKey);
+    return matched ? matched.id : '';
+  }
+
+  function defaultApiProfileName(apiUrl) {
+    try {
+      const host = new URL(apiUrl).host;
+      if (host) return host;
+    } catch(e) {}
+    return '默认接口';
+  }
+
+  function renderApiProfileControls(settings) {
+    const profiles = getApiProfiles();
+    const activeId = findMatchingApiProfile(settings.apiUrl || '', settings.apiKey || '', settings.apiProfileActiveId || '');
+    const options = profiles.length
+      ? profiles.map(profile => '<option value="' + u(profile.id) + '" ' + (profile.id === activeId ? 'selected' : '') + '>' + u(profile.name) + '</option>').join('')
+      : '<option value="">暂无配置档</option>';
+    const activeProfile = profiles.find(profile => profile.id === activeId);
+    const nameValue = activeProfile ? activeProfile.name : '';
+    return `
+      <div class="we-api-profile-box">
+        <div class="we-api-profile-row">
+          <div class="we-input-group we-api-profile-select">
+            <label>接口配置档</label>
+            <select id="we-api-profile-select">${profiles.length ? '<option value="">-- 选择配置档 --</option>' + options : options}</select>
+          </div>
+          <button class="we-btn" id="we-api-profile-apply" type="button" ${profiles.length ? '' : 'disabled'}>切换</button>
+        </div>
+        <div class="we-api-profile-row">
+          <div class="we-input-group we-api-profile-name">
+            <label>配置名称</label>
+            <input type="text" id="we-api-profile-name" value="${u(nameValue)}" placeholder="例如：主号 / 备用 / 本地代理">
+          </div>
+        </div>
+        <div class="we-api-profile-actions">
+          <button class="we-btn we-btn-primary" id="we-api-profile-save" type="button">保存为配置档</button>
+          <button class="we-btn" id="we-api-profile-update" type="button" ${activeId ? '' : 'disabled'}>更新所选</button>
+          <button class="we-btn we-btn-danger" id="we-api-profile-delete" type="button" ${activeId ? '' : 'disabled'}>删除所选</button>
+        </div>
+      </div>`;
+  }
+
   /** 世界核心：环形稳定度仪表 + 四格关键计数 */
   function renderWorldCore(s) {
     const stab = computeWorldStability(s);
@@ -1321,6 +1405,7 @@ window.WORLD_ENGINE_UI = (function() {
       sectionBody(id, body) + '</div>';
 
     const apiBody = `
+      ${renderApiProfileControls(settings)}
       <div class="we-input-group">
         <label>API URL（OpenAI 兼容）</label>
         <input type="text" id="we-api-url" value="${u(settings.apiUrl||'')}" placeholder="https://api.openai.com/v1">
@@ -1485,6 +1570,127 @@ window.WORLD_ENGINE_UI = (function() {
   }
 
   function bindEvents(state) {
+    function readApiFields() {
+      return {
+        apiUrl: (document.getElementById('we-api-url')?.value || '').trim(),
+        apiKey: document.getElementById('we-api-key')?.value || ''
+      };
+    }
+
+    function persistApiFields(activeId) {
+      const api = window.WORLD_ENGINE_API;
+      const current = api && api.getSettings ? api.getSettings(true) : {};
+      const fields = readApiFields();
+      const nextActiveId = activeId !== undefined
+        ? activeId
+        : findMatchingApiProfile(fields.apiUrl, fields.apiKey, current.apiProfileActiveId || '');
+      window.WORLD_ENGINE_STORE.setItem('world_engine_settings', JSON.stringify({
+        ...current,
+        ...fields,
+        apiProfileActiveId: nextActiveId || ''
+      }));
+      if (api && api.getSettings) api.getSettings(true);
+    }
+
+    function applyApiProfile(profile) {
+      if (!profile) return;
+      const urlInput = document.getElementById('we-api-url');
+      const keyInput = document.getElementById('we-api-key');
+      const nameInput = document.getElementById('we-api-profile-name');
+      const select = document.getElementById('we-api-profile-select');
+      if (urlInput) urlInput.value = profile.apiUrl || '';
+      if (keyInput) keyInput.value = profile.apiKey || '';
+      if (nameInput) nameInput.value = profile.name || '';
+      if (select) select.value = profile.id;
+      persistApiFields(profile.id);
+      showToast('已切换到配置档：' + profile.name);
+    }
+
+    const apiProfileSelect = document.getElementById('we-api-profile-select');
+    const apiProfileApply = document.getElementById('we-api-profile-apply');
+    const apiProfileSave = document.getElementById('we-api-profile-save');
+    const apiProfileUpdate = document.getElementById('we-api-profile-update');
+    const apiProfileDelete = document.getElementById('we-api-profile-delete');
+
+    function getSelectedApiProfile() {
+      const id = apiProfileSelect?.value || '';
+      return getApiProfiles().find(profile => profile.id === id) || null;
+    }
+
+    if (apiProfileSelect) {
+      apiProfileSelect.onchange = () => {
+        const selected = getSelectedApiProfile();
+        if (selected) applyApiProfile(selected);
+      };
+    }
+
+    if (apiProfileApply) {
+      apiProfileApply.onclick = () => {
+        const selected = getSelectedApiProfile();
+        if (!selected) { showToast('请先选择配置档', true); return; }
+        applyApiProfile(selected);
+      };
+    }
+
+    if (apiProfileSave) {
+      apiProfileSave.onclick = () => {
+        const fields = readApiFields();
+        if (!fields.apiUrl && !fields.apiKey) { showToast('请先填写 API URL 或 API Key', true); return; }
+        const nameInput = document.getElementById('we-api-profile-name');
+        const name = (nameInput?.value || '').trim() || defaultApiProfileName(fields.apiUrl);
+        const profiles = getApiProfiles();
+        const now = Date.now();
+        let savedId = '';
+        const sameName = profiles.find(profile => profile.name === name);
+        if (sameName) {
+          sameName.apiUrl = fields.apiUrl;
+          sameName.apiKey = fields.apiKey;
+          sameName.updatedAt = now;
+          savedId = sameName.id;
+        } else {
+          savedId = 'api_profile_' + now + '_' + Math.random().toString(36).slice(2, 8);
+          profiles.push({ id: savedId, name, apiUrl: fields.apiUrl, apiKey: fields.apiKey, updatedAt: now });
+        }
+        saveApiProfiles(profiles);
+        persistApiFields(savedId);
+        showToast('配置档已保存：' + name);
+        refresh();
+      };
+    }
+
+    if (apiProfileUpdate) {
+      apiProfileUpdate.onclick = () => {
+        const selected = getSelectedApiProfile();
+        if (!selected) { showToast('请先选择配置档', true); return; }
+        const fields = readApiFields();
+        const name = (document.getElementById('we-api-profile-name')?.value || '').trim() || selected.name;
+        const profiles = getApiProfiles();
+        const target = profiles.find(profile => profile.id === selected.id);
+        if (!target) { showToast('配置档不存在', true); return; }
+        target.name = name;
+        target.apiUrl = fields.apiUrl;
+        target.apiKey = fields.apiKey;
+        target.updatedAt = Date.now();
+        saveApiProfiles(profiles);
+        persistApiFields(target.id);
+        showToast('配置档已更新：' + name);
+        refresh();
+      };
+    }
+
+    if (apiProfileDelete) {
+      apiProfileDelete.onclick = () => {
+        const selected = getSelectedApiProfile();
+        if (!selected) { showToast('请先选择配置档', true); return; }
+        if (!confirm('删除配置档 "' + selected.name + '"？')) return;
+        const profiles = getApiProfiles().filter(profile => profile.id !== selected.id);
+        saveApiProfiles(profiles);
+        persistApiFields('');
+        showToast('配置档已删除：' + selected.name);
+        refresh();
+      };
+    }
+
     document.querySelectorAll('.we-event-delete').forEach(button => {
       button.onclick = () => {
         const scope = button.dataset.eventScope;
@@ -2100,6 +2306,11 @@ window.WORLD_ENGINE_UI = (function() {
           ...(window.WORLD_ENGINE_API ? window.WORLD_ENGINE_API.getSettings(true) : {}),
           apiUrl: document.getElementById('we-api-url')?.value || '',
           apiKey: document.getElementById('we-api-key')?.value || '',
+          apiProfileActiveId: findMatchingApiProfile(
+            document.getElementById('we-api-url')?.value || '',
+            document.getElementById('we-api-key')?.value || '',
+            window.WORLD_ENGINE_API?.getSettings(true)?.apiProfileActiveId || ''
+          ),
           model: document.getElementById('we-model')?.value || 'gpt-3.5-turbo',
           useStProxy: document.getElementById('we-use-st-proxy')?.checked !== false,
           injectIntoPrompt: document.getElementById('we-inject-into-prompt')?.checked !== false,
