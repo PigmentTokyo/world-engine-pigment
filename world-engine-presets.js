@@ -823,34 +823,82 @@
     return deepClone(fallback || {});
   }
 
+  const VERDICT_CONFIGS = {
+    reputation: {
+      axes: ['authority', 'common', 'shadow', 'circuit'],
+      levels: INTERNAL_SCHEMA.reputationLevels
+    },
+    factionStatus: {
+      axes: ['status'],
+      levels: INTERNAL_SCHEMA.factionStatuses
+    },
+    factionRelation: {
+      axes: ['relation'],
+      levels: INTERNAL_SCHEMA.factionRelations
+    },
+    economyClimate: {
+      axes: ['climate'],
+      levels: INTERNAL_SCHEMA.economyClimates
+    }
+  };
+
+  const VerdictEngine = {
+    getLevels(config, axis) {
+      if (Array.isArray(config.levels)) return config.levels;
+      return (config.levels && config.levels[axis]) || [];
+    },
+
+    normalizeAxis(config, axis, value, fallback, termMap) {
+      var result = {};
+      var source = isPlainObject(value) ? value : {};
+      var levels = VerdictEngine.getLevels(config, axis);
+      levels.forEach(function (level) {
+        var displayKey = termMap && termMap[level];
+        var text = source[level];
+        if ((text == null || text === '') && displayKey) text = source[displayKey];
+        result[level] = normalizeText(text, fallback && fallback[level] || '');
+      });
+      return result;
+    },
+
+    normalizeAxes(config, value, fallback, termMap) {
+      var result = {};
+      var source = isPlainObject(value) ? value : {};
+      (config.axes || []).forEach(function (axis) {
+        result[axis] = VerdictEngine.normalizeAxis(
+          config,
+          axis,
+          source[axis],
+          fallback && fallback[axis],
+          termMap
+        );
+      });
+      return result;
+    },
+
+    normalizeSingleAxis(config, value, fallback, termMap) {
+      var axis = (config.axes && config.axes[0]) || 'value';
+      return VerdictEngine.normalizeAxis(config, axis, value, fallback, termMap);
+    },
+
+    getText(config, verdicts, axis, level, fallback) {
+      var levels = VerdictEngine.getLevels(config, axis);
+      if (levels.indexOf(level) === -1) return fallback || '';
+      var scoped = verdicts && verdicts[axis] ? verdicts[axis] : verdicts;
+      return normalizeText(scoped && scoped[level], fallback || '');
+    }
+  };
+
   function normalizeVerdicts(value, fallback) {
     return isPlainObject(value) ? deepClone(value) : deepClone(fallback || {});
   }
 
   function normalizeKeyedVerdicts(value, keys, fallback, termMap) {
-    var result = {};
-    var source = isPlainObject(value) ? value : {};
-    keys.forEach(function (key) {
-      var displayKey = termMap && termMap[key];
-      var text = source[key];
-      if ((text == null || text === '') && displayKey) text = source[displayKey];
-      result[key] = normalizeText(text, fallback && fallback[key] || '');
-    });
-    return result;
+    return VerdictEngine.normalizeSingleAxis({ axes: ['value'], levels: keys }, value, fallback, termMap);
   }
 
   function normalizeReputationVerdicts(value, fallback, termMap) {
-    var result = {};
-    var source = isPlainObject(value) ? value : {};
-    ['authority', 'common', 'shadow', 'circuit'].forEach(function (dim) {
-      result[dim] = normalizeKeyedVerdicts(
-        source[dim],
-        INTERNAL_SCHEMA.reputationLevels,
-        fallback && fallback[dim],
-        termMap
-      );
-    });
-    return result;
+    return VerdictEngine.normalizeAxes(VERDICT_CONFIGS.reputation, value, fallback, termMap);
   }
 
   function normalizeDimensions(value, fallback) {
@@ -988,13 +1036,13 @@
       },
       factions: {
         statuses: INTERNAL_SCHEMA.factionStatuses.slice(),
-        statusVerdicts: normalizeKeyedVerdicts(source.factions && source.factions.statusVerdicts, INTERNAL_SCHEMA.factionStatuses, base.factions.statusVerdicts, termMap),
+        statusVerdicts: VerdictEngine.normalizeSingleAxis(VERDICT_CONFIGS.factionStatus, source.factions && source.factions.statusVerdicts, base.factions.statusVerdicts, termMap),
         relations: INTERNAL_SCHEMA.factionRelations.slice(),
-        relationVerdicts: normalizeKeyedVerdicts(source.factions && source.factions.relationVerdicts, INTERNAL_SCHEMA.factionRelations, base.factions.relationVerdicts, termMap)
+        relationVerdicts: VerdictEngine.normalizeSingleAxis(VERDICT_CONFIGS.factionRelation, source.factions && source.factions.relationVerdicts, base.factions.relationVerdicts, termMap)
       },
       economy: {
         climates: INTERNAL_SCHEMA.economyClimates.slice(),
-        climateVerdicts: normalizeKeyedVerdicts(source.economy && source.economy.climateVerdicts, INTERNAL_SCHEMA.economyClimates, base.economy.climateVerdicts, termMap)
+        climateVerdicts: VerdictEngine.normalizeSingleAxis(VERDICT_CONFIGS.economyClimate, source.economy && source.economy.climateVerdicts, base.economy.climateVerdicts, termMap)
       },
       regionalIncidents: {
         chance: Number.isFinite(Number(source.regionalIncidents && source.regionalIncidents.chance)) ? Number(source.regionalIncidents.chance) : base.regionalIncidents.chance,
@@ -1404,12 +1452,17 @@
 
     var entries = await window.WORLD_ENGINE_WORLDBOOK.loadCurrentEntries();
     entries = Array.isArray(entries) ? entries : [];
-    var selectedIds = (typeof window.WORLD_ENGINE_WORLDBOOK.getSelectedIds === 'function')
+    var explicitIds = Array.isArray(options.worldbookEntryIds)
+      ? options.worldbookEntryIds.filter(function (id) { return typeof id === 'string' && id; })
+      : null;
+    var selectedIds = explicitIds || ((typeof window.WORLD_ENGINE_WORLDBOOK.getSelectedIds === 'function')
       ? window.WORLD_ENGINE_WORLDBOOK.getSelectedIds()
-      : [];
-    var hasSelection = (typeof window.WORLD_ENGINE_WORLDBOOK.hasSelection === 'function')
-      ? window.WORLD_ENGINE_WORLDBOOK.hasSelection()
-      : false;
+      : []);
+    var hasSelection = explicitIds !== null
+      ? true
+      : ((typeof window.WORLD_ENGINE_WORLDBOOK.hasSelection === 'function')
+        ? window.WORLD_ENGINE_WORLDBOOK.hasSelection()
+        : false);
     var selectedSet = new Set(Array.isArray(selectedIds) ? selectedIds : []);
     entries = entries.filter(function (entry) {
       if (!entry || entry.disabled === true) return false;
@@ -1471,7 +1524,8 @@
 
     var source = await buildGenerationSource({
       includeCharacterDescription: includeCharacterDescription,
-      includeUserPersona: options.includeUserPersona !== false
+      includeUserPersona: options.includeUserPersona !== false,
+      worldbookEntryIds: Array.isArray(options.worldbookEntryIds) ? options.worldbookEntryIds : null
     });
     var worldbookText = source.worldbookText;
     var characterSection = source.characterText
@@ -1866,6 +1920,8 @@
     uiSummaryEmpty:     uiSummaryEmpty,
     normalizePreset:    normalizePreset,
     getInternalSchema:  function () { return deepClone(INTERNAL_SCHEMA); },
+    _VERDICT_ENGINE: VerdictEngine,
+    _VERDICT_CONFIGS: VERDICT_CONFIGS,
     generateFromWorldbook: generateFromWorldbook,
     _buildGenerationSource: buildGenerationSource,
     generateTonePrompt: generateTonePrompt,

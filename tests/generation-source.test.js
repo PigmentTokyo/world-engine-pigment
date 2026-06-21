@@ -23,7 +23,9 @@ globalThis.window = {
     loadCurrentEntries: async () => [
       { id: 'modern::1', title: '现代都市校园', content: '学生会、社团、考试周与城市生活。', disabled: false },
       { id: 'xianxia::2', title: '古风仙侠', content: '仙人魔妖共存，宗门林立。', disabled: false },
-      { id: 'disabled::3', title: '关闭条目', content: '这个关闭条目不应出现。', disabled: true }
+      { id: 'disabled::3', title: '关闭条目', content: '这个关闭条目不应出现。', disabled: true },
+      { id: 'modern_ascii::4', title: 'Modern Campus', content: 'student council clubs city daily life', disabled: false },
+      { id: 'xianxia_ascii::5', title: 'Xianxia Realm', content: 'immortals and demons coexist in sects', disabled: false }
     ],
     loadCurrentCharacterProfile: () => ''
   }
@@ -46,6 +48,16 @@ async function main() {
   assert(!source.worldbookText.includes('仙人魔妖共存'));
   assert(!source.worldbookText.includes('关闭条目'));
 
+  selectedIdsValue = ['xianxia_ascii::5'];
+  source = await P._buildGenerationSource({
+    includeUserPersona: false,
+    worldbookEntryIds: ['modern_ascii::4']
+  });
+  assert(source.worldbookText.includes('Modern Campus'));
+  assert(source.worldbookText.includes('student council clubs'));
+  assert(!source.worldbookText.includes('Xianxia Realm'));
+  assert(!source.worldbookText.includes('immortals and demons'));
+
   hasSelectionValue = false;
   selectedIdsValue = [];
   source = await P._buildGenerationSource({ includeUserPersona: false });
@@ -60,7 +72,7 @@ async function main() {
     /No worldbook entries/
   );
 
-  console.log('Generation source selection tests: 3 passed');
+  console.log('Generation source selection tests: 4 passed');
 }
 
 main().catch((error) => {

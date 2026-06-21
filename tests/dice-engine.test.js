@@ -111,4 +111,84 @@ function seq(values) {
   assert.strictEqual(randomFn.calls(), 1);
 }
 
-console.log('DiceEngine trigger tests: 6 passed');
+
+const thresholdConfig = {
+  typeField: 'type',
+  defaultType: 'conflict',
+  levelField: 'level',
+  progressField: 'stageRound',
+  progressMax: 9,
+  base: {
+    conflict: { '萌芽': 95 },
+    progress: { '筹备': 75 }
+  },
+  defaultBase: 85,
+  setbackRatio: 0.4,
+  levelAdjust: (item, level, type) => type === 'progress' ? (level - 1) * 10 : -((level - 1) * 10)
+};
+
+{
+  const randomFn = seq([0.99]);
+  const roll = DiceEngine.rollThreshold(thresholdConfig, { type: 'conflict', stage: '萌芽', stageRound: 4, level: 4 }, randomFn);
+  assert.strictEqual(roll.kind, 'success');
+  assert.strictEqual(roll.dice, 100);
+  assert.strictEqual(roll.threshold, 16);
+  assert.strictEqual(randomFn.calls(), 1);
+}
+
+{
+  const randomFn = seq([0.01]);
+  const roll = DiceEngine.rollThreshold(thresholdConfig, { type: 'progress', stage: '筹备', stageRound: 1, level: 2 }, randomFn);
+  assert.strictEqual(roll.kind, 'setback');
+  assert.strictEqual(roll.dice, 2);
+  assert.strictEqual(roll.threshold, 65);
+}
+
+{
+  const randomFn = seq([0.5]);
+  const roll = DiceEngine.rollThreshold(thresholdConfig, { type: 'progress', stage: '筹备', stageRound: 1, level: 2 }, randomFn);
+  assert.strictEqual(roll.kind, 'hold');
+  assert.strictEqual(roll.dice, 51);
+  assert.strictEqual(roll.threshold, 65);
+}
+
+const decayConfig = {
+  byTypeField: 'type',
+  defaultType: 'rumor',
+  levelField: 'level',
+  quietField: 'quietRounds',
+  table: {
+    rumor: { base: 25, grace: 1, linear: 5, quadratic: 3 }
+  }
+};
+
+{
+  const wind = { type: 'rumor', level: 1, quietRounds: 0 };
+  const randomFn = seq([]);
+  const roll = DiceEngine.rollDecay(decayConfig, wind, randomFn);
+  assert.strictEqual(roll.kind, 'grace');
+  assert.strictEqual(roll.decayed, false);
+  assert.strictEqual(wind.quietRounds, 1);
+  assert.strictEqual(randomFn.calls(), 0);
+}
+
+{
+  const wind = { type: 'rumor', level: 1, quietRounds: 1 };
+  const randomFn = seq([0.1]);
+  const roll = DiceEngine.rollDecay(decayConfig, wind, randomFn);
+  assert.strictEqual(roll.kind, 'decay');
+  assert.strictEqual(roll.decayed, true);
+  assert.strictEqual(roll.chance, 25);
+  assert.strictEqual(roll.dice, 11);
+}
+
+{
+  const wind = { type: 'unknown', level: 4, quietRounds: 1 };
+  const randomFn = seq([0.8]);
+  const roll = DiceEngine.rollDecay(decayConfig, wind, randomFn);
+  assert.strictEqual(roll.kind, 'survive');
+  assert.strictEqual(roll.decayed, false);
+  assert.strictEqual(roll.chance, 5);
+  assert.strictEqual(roll.dice, 81);
+}
+console.log('DiceEngine tests: 12 passed');

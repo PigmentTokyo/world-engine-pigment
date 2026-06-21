@@ -17,6 +17,11 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
   var _injected = false;
   var _generating = false;
   var _observer = null;
+  var _generateMenuOpen = false;
+  var _generateEntries = [];
+  var _generateEntriesLoading = false;
+  var _generateEntriesError = '';
+  var _generateSelectedIds = null;
   var GENERATE_WITH_CHARACTER_KEY = 'world_engine_generate_with_character_profile';
 
   function getGenerateWithCharacter() {
@@ -111,6 +116,92 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
       '  border-top-color: var(--we-accent, #6c5ce7);',
       '  border-radius: 50%;',
       '  animation: we-spin 0.8s linear infinite;',
+      '}',
+      '.we-generate-config {',
+      '  margin-top: 8px;',
+      '  padding: 8px;',
+      '  border: 1px solid var(--we-border, #333);',
+      '  border-radius: 6px;',
+      '  background: var(--we-bg, #171722);',
+      '}',
+      '.we-generate-config-head {',
+      '  display: flex;',
+      '  justify-content: space-between;',
+      '  align-items: center;',
+      '  gap: 8px;',
+      '  margin-bottom: 6px;',
+      '}',
+      '.we-generate-config-title {',
+      '  font-size: 12px;',
+      '  font-weight: 700;',
+      '  color: var(--we-text1, #eee);',
+      '}',
+      '.we-generate-config-summary {',
+      '  font-size: 10px;',
+      '  color: var(--we-text3, #777);',
+      '}',
+      '.we-generate-toolbar {',
+      '  display: flex;',
+      '  flex-wrap: wrap;',
+      '  gap: 5px;',
+      '  margin: 6px 0;',
+      '}',
+      '.we-generate-toolbar .we-btn {',
+      '  padding: 3px 7px;',
+      '  font-size: 11px;',
+      '}',
+      '.we-generate-entry-list {',
+      '  max-height: 260px;',
+      '  overflow-y: auto;',
+      '  border: 1px solid var(--we-border, #333);',
+      '  border-radius: 6px;',
+      '  background: var(--we-bg2, #1e1e2e);',
+      '}',
+      '.we-generate-entry-group + .we-generate-entry-group {',
+      '  border-top: 1px solid var(--we-border, #333);',
+      '}',
+      '.we-generate-entry-group-title {',
+      '  padding: 6px 8px;',
+      '  background: var(--we-surface, #25253a);',
+      '  color: var(--we-text2, #aaa);',
+      '  font-size: 11px;',
+      '  font-weight: 700;',
+      '}',
+      '.we-generate-entry {',
+      '  display: flex;',
+      '  gap: 7px;',
+      '  align-items: flex-start;',
+      '  padding: 6px 8px;',
+      '  cursor: pointer;',
+      '}',
+      '.we-generate-entry:hover {',
+      '  background: var(--we-surface, #25253a);',
+      '}',
+      '.we-generate-entry input {',
+      '  margin-top: 2px;',
+      '}',
+      '.we-generate-entry strong, .we-generate-entry small {',
+      '  display: block;',
+      '  overflow-wrap: anywhere;',
+      '}',
+      '.we-generate-entry strong {',
+      '  color: var(--we-text2, #aaa);',
+      '  font-size: 11px;',
+      '}',
+      '.we-generate-entry small {',
+      '  margin-top: 2px;',
+      '  color: var(--we-text3, #777);',
+      '  font-size: 9px;',
+      '}',
+      '.we-generate-entry.is-disabled {',
+      '  opacity: 0.58;',
+      '}',
+      '.we-generate-footer {',
+      '  display: flex;',
+      '  justify-content: space-between;',
+      '  align-items: center;',
+      '  gap: 8px;',
+      '  margin-top: 8px;',
       '}',
       '@keyframes we-spin {',
       '  to { transform: rotate(360deg); }',
@@ -358,6 +449,79 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
     }
   }
 
+  function groupEntriesByWorld(entries) {
+    var groups = {};
+    (entries || []).forEach(function (entry) {
+      var world = entry.world || '未知世界书';
+      if (!groups[world]) groups[world] = [];
+      groups[world].push(entry);
+    });
+    return groups;
+  }
+
+  function getBackendWorldbookSelectedIds() {
+    var WB = window.WORLD_ENGINE_WORLDBOOK;
+    if (!WB || typeof WB.getSelectedIds !== 'function') return [];
+    var ids = WB.getSelectedIds();
+    return Array.isArray(ids) ? ids : [];
+  }
+
+  function hasBackendWorldbookSelection() {
+    var WB = window.WORLD_ENGINE_WORLDBOOK;
+    return !!(WB && typeof WB.hasSelection === 'function' && WB.hasSelection());
+  }
+
+  function getEnabledGenerateEntryIds() {
+    return (_generateEntries || []).filter(function (entry) { return !entry.disabled; }).map(function (entry) { return entry.id; });
+  }
+
+  function getGenerateSelectedSet() {
+    if (!_generateSelectedIds) {
+      var backendIds = getBackendWorldbookSelectedIds();
+      _generateSelectedIds = hasBackendWorldbookSelection() ? backendIds.slice() : getEnabledGenerateEntryIds();
+    }
+    return new Set(_generateSelectedIds || []);
+  }
+
+  function readGenerateSelectedIdsFromDOM() {
+    var boxes = document.querySelectorAll('.we-generate-entry-cb');
+    var ids = [];
+    for (var i = 0; i < boxes.length; i++) {
+      if (boxes[i].checked && !boxes[i].disabled) ids.push(boxes[i].getAttribute('data-entry-id'));
+    }
+    _generateSelectedIds = ids;
+    return ids;
+  }
+
+  async function loadGenerateEntries(syncBackend) {
+    var WB = window.WORLD_ENGINE_WORLDBOOK;
+    if (!WB || typeof WB.loadCurrentEntries !== 'function') {
+      _generateEntries = [];
+      _generateEntriesError = '世界书读取接口不可用';
+      return;
+    }
+    _generateEntriesLoading = true;
+    _generateEntriesError = '';
+    refreshPresetSection();
+    try {
+      var entries = await WB.loadCurrentEntries();
+      _generateEntries = Array.isArray(entries) ? entries : [];
+      if (syncBackend || !_generateSelectedIds) {
+        var backendIds = getBackendWorldbookSelectedIds();
+        _generateSelectedIds = hasBackendWorldbookSelection() ? backendIds.slice() : getEnabledGenerateEntryIds();
+      } else {
+        var available = new Set(_generateEntries.map(function (entry) { return entry.id; }));
+        _generateSelectedIds = (_generateSelectedIds || []).filter(function (id) { return available.has(id); });
+      }
+    } catch (err) {
+      _generateEntries = [];
+      _generateEntriesError = err && err.message ? err.message : String(err || '读取失败');
+    } finally {
+      _generateEntriesLoading = false;
+      refreshPresetSection();
+    }
+  }
+
   /**
    * Show a confirmation dialog. Returns a promise that resolves true/false.
    */
@@ -405,6 +569,69 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
     return 'custom_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
   }
 
+  function buildGenerateConfigHTML(includeCharacter) {
+    if (!_generateMenuOpen) return '';
+
+    var selectedSet = getGenerateSelectedSet();
+    var enabledEntries = (_generateEntries || []).filter(function (entry) { return !entry.disabled; });
+    var selectedCount = enabledEntries.filter(function (entry) { return selectedSet.has(entry.id); }).length;
+    var summary = _generateEntriesLoading
+      ? '读取世界书条目中'
+      : ('已选 ' + selectedCount + ' / ' + enabledEntries.length + ' 个可用条目');
+
+    var listHtml = '';
+    if (_generateEntriesLoading) {
+      listHtml = '<div class="we-preset-generating"><div class="we-spinner"></div>正在读取世界书条目...</div>';
+    } else if (_generateEntriesError) {
+      listHtml = '<div class="we-empty">' + esc(_generateEntriesError) + '</div>';
+    } else if (!_generateEntries.length) {
+      listHtml = '<div class="we-empty">未读取到世界书条目</div>';
+    } else {
+      var groups = groupEntriesByWorld(_generateEntries);
+      Object.keys(groups).sort().forEach(function (world) {
+        var entries = groups[world];
+        listHtml += '<div class="we-generate-entry-group">' +
+          '<div class="we-generate-entry-group-title">' + esc(world) + ' <span>(' + entries.length + ')</span></div>';
+        entries.forEach(function (entry) {
+          var checked = !entry.disabled && selectedSet.has(entry.id) ? ' checked' : '';
+          var disabled = entry.disabled ? ' disabled' : '';
+          var cls = entry.disabled ? ' we-generate-entry is-disabled' : ' we-generate-entry';
+          var preview = String(entry.content || '').replace(/\s+/g, ' ').trim();
+          if (preview.length > 90) preview = preview.substring(0, 90) + '...';
+          listHtml += '<label class="' + cls + '">' +
+            '<input class="we-generate-entry-cb" type="checkbox" data-entry-id="' + esc(entry.id) + '"' + checked + disabled + '>' +
+            '<span><strong>' + esc(entry.title || entry.id) + '</strong>' +
+            '<small>' + esc(entry.disabled ? '已关闭，不会参与生成' : preview) + '</small></span>' +
+          '</label>';
+        });
+        listHtml += '</div>';
+      });
+      listHtml = '<div class="we-generate-entry-list">' + listHtml + '</div>';
+    }
+
+    return '' +
+      '<div class="we-generate-config">' +
+        '<div class="we-generate-config-head">' +
+          '<div>' +
+            '<div class="we-generate-config-title">生成设置</div>' +
+            '<div class="we-generate-config-summary">' + esc(summary) + '</div>' +
+          '</div>' +
+          '<button class="we-btn" id="we-preset-generate-close">收起</button>' +
+        '</div>' +
+        '<div class="we-generate-toolbar">' +
+          '<button class="we-btn" data-we-generate-sync>同步后台选择</button>' +
+          '<button class="we-btn" data-we-generate-select-all>全选可用</button>' +
+          '<button class="we-btn" data-we-generate-clear>清空</button>' +
+          '<button class="we-btn" data-we-generate-refresh>刷新条目</button>' +
+        '</div>' +
+        listHtml +
+        '<div class="we-generate-footer">' +
+          '<label class="we-hint" style="display:flex;align-items:center;gap:6px;margin:0;"><input type="checkbox" id="we-preset-generate-character"' + (includeCharacter ? ' checked' : '') + '> 同时读取当前角色卡描述</label>' +
+          '<button class="we-btn we-btn-primary" id="we-preset-generate-start"' + (_generating || _generateEntriesLoading ? ' disabled' : '') + '>开始生成</button>' +
+        '</div>' +
+      '</div>';
+  }
+
   // ─────────────────────────────────────────────
   // Section 1: 世界观预设 (Preset Selector)
   // ─────────────────────────────────────────────
@@ -444,12 +671,12 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
         '</div>' +
         '<div class="we-preset-actions">' +
           '<button class="we-btn we-btn-primary" id="we-preset-apply">应用</button>' +
-          '<button class="we-btn" id="we-preset-generate"' + (_generating ? ' disabled' : '') + '>从设定生成</button>' +
+          '<button class="we-btn" id="we-preset-generate"' + (_generating ? ' disabled' : '') + '>' + (_generateMenuOpen ? '收起生成设置' : '从设定生成') + '</button>' +
           '<button class="we-btn" id="we-preset-import">导入预设</button>' +
           '<button class="we-btn" id="we-preset-export">导出当前预设</button>' +
           (activePreset.builtin ? '' : '<button class="we-btn we-btn-danger" id="we-preset-delete">删除当前预设</button>') +
         '</div>' +
-        '<label class="we-hint" style="display:flex;align-items:center;gap:6px;margin-top:6px;"><input type="checkbox" id="we-preset-generate-character"' + (includeCharacter ? ' checked' : '') + '> 同时读取当前角色卡描述</label>' +
+        buildGenerateConfigHTML(includeCharacter) +
         (_generating
           ? '<div class="we-preset-generating"><div class="we-spinner"></div>正在从世界书和角色卡生成预设，请稍候...</div>'
           : '') +
@@ -1314,6 +1541,42 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
 
     // ── Generate from worldbook ──
     if (target.id === 'we-preset-generate' || target.closest('#we-preset-generate')) {
+      _generateMenuOpen = !_generateMenuOpen;
+      refreshPresetSection();
+      if (_generateMenuOpen) loadGenerateEntries(true);
+      return;
+    }
+
+    if (target.id === 'we-preset-generate-close' || target.closest('#we-preset-generate-close')) {
+      _generateMenuOpen = false;
+      refreshPresetSection();
+      return;
+    }
+
+    if (target.closest('[data-we-generate-sync]')) {
+      _generateSelectedIds = null;
+      loadGenerateEntries(true);
+      return;
+    }
+
+    if (target.closest('[data-we-generate-select-all]')) {
+      _generateSelectedIds = getEnabledGenerateEntryIds();
+      refreshPresetSection();
+      return;
+    }
+
+    if (target.closest('[data-we-generate-clear]')) {
+      _generateSelectedIds = [];
+      refreshPresetSection();
+      return;
+    }
+
+    if (target.closest('[data-we-generate-refresh]')) {
+      loadGenerateEntries(false);
+      return;
+    }
+
+    if (target.id === 'we-preset-generate-start' || target.closest('#we-preset-generate-start')) {
       handleGenerate();
       return;
     }
@@ -1476,6 +1739,17 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
   function handleChange(e) {
     var target = e.target;
 
+    if (target.classList && target.classList.contains('we-generate-entry-cb')) {
+      readGenerateSelectedIdsFromDOM();
+      refreshPresetSection();
+      return;
+    }
+
+    if (target.id === 'we-preset-generate-character') {
+      saveGenerateWithCharacter(!!target.checked);
+      return;
+    }
+
     // ── File input for import ──
     if (target.id === 'we-preset-file-input') {
       handleFileImport(target);
@@ -1510,6 +1784,13 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
     if (!P) return;
     if (_generating) return;
 
+    var includeCharacterDescription = !!(document.getElementById('we-preset-generate-character') || {}).checked;
+    var selectedWorldbookIds = _generateMenuOpen ? readGenerateSelectedIdsFromDOM() : null;
+    if (_generateMenuOpen && (!selectedWorldbookIds || !selectedWorldbookIds.length) && !includeCharacterDescription) {
+      toastError('请至少选择一个世界书条目，或勾选角色卡描述');
+      return;
+    }
+
     _generating = true;
     var genBtn = document.getElementById('we-preset-generate');
     if (genBtn) genBtn.disabled = true;
@@ -1518,9 +1799,11 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
     refreshPresetSection();
 
     try {
-      var includeCharacterDescription = !!(document.getElementById('we-preset-generate-character') || {}).checked;
       saveGenerateWithCharacter(includeCharacterDescription);
-      var newPreset = await P.generateFromWorldbook({ includeCharacterDescription: includeCharacterDescription });
+      var newPreset = await P.generateFromWorldbook({
+        includeCharacterDescription: includeCharacterDescription,
+        worldbookEntryIds: selectedWorldbookIds
+      });
       if (newPreset) {
         // Switch to the newly generated preset
         P.setActivePreset(newPreset.id);

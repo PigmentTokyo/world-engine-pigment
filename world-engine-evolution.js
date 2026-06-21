@@ -151,6 +151,48 @@ window.WORLD_ENGINE_EVOLUTION = (function() {
       return weightedPick(items, randomFn);
     },
 
+    rollThreshold(config, item, randomFn = Math.random) {
+      const progressField = config.progressField || 'stageRound';
+      const type = item[config.typeField || 'type'] || config.defaultType || 'conflict';
+      const r = Math.min(1, (item[progressField] || 1) / (config.progressMax || 9));
+      const stageBaseTable = (config.base && (config.base[type] || config.base[config.defaultType])) || {};
+      const stageBase = stageBaseTable[item.stage] || config.defaultBase || 85;
+      const level = item[config.levelField || 'level'] || 1;
+      const levelAdjust = typeof config.levelAdjust === 'function'
+        ? config.levelAdjust(item, level, type)
+        : 0;
+      const curve = typeof config.curve === 'function'
+        ? config.curve(r)
+        : 200 * r * (1 - r);
+      const threshold = Math.round(stageBase - curve + levelAdjust);
+      const dice = Math.floor(randomFn() * 100) + 1;
+      const setbackRatio = Number.isFinite(Number(config.setbackRatio)) ? Number(config.setbackRatio) : 0.4;
+      if (dice > threshold) return { kind: 'success', dice, threshold };
+      if (dice < threshold * setbackRatio) return { kind: 'setback', dice, threshold };
+      return { kind: 'hold', dice, threshold };
+    },
+
+    rollDecay(config, item, randomFn = Math.random) {
+      const table = config.table || {};
+      const type = item[config.byTypeField || 'type'];
+      const params = table[type] || table[config.defaultType] || {};
+      const levelField = config.levelField || 'level';
+      const quietField = config.quietField || 'quietRounds';
+      const level = Math.min(4, Math.max(1, parseInt(item[levelField]) || 1));
+      item[quietField] = Math.max(0, parseInt(item[quietField]) || 0) + 1;
+
+      if (item[quietField] <= params.grace) {
+        return { kind: 'grace', decayed: false, quietRounds: item[quietField] };
+      }
+
+      const n = item[quietField] - params.grace - 1;
+      const chance = Math.min(95, Math.max(5,
+        params.base + params.linear * n + params.quadratic * n * n - (level - 1) * 10
+      ));
+      const dice = Math.floor(randomFn() * 100) + 1;
+      return { kind: dice <= chance ? 'decay' : 'survive', decayed: dice <= chance, dice, chance, quietRounds: item[quietField] };
+    },
+
     rollTrigger(config, incident, randomFn = Math.random) {
       const typeWeights = Array.isArray(config.typeWeights) ? config.typeWeights : [];
       const chance = Number.isFinite(Number(config.chance)) ? Number(config.chance) : 0;
@@ -334,6 +376,89 @@ window.WORLD_ENGINE_EVOLUTION = (function() {
       const progressField = config.progressField;
       item[progressField] = Math.max(1, item[progressField] - 1);
       return item;
+    }
+  };
+
+  const LIFECYCLE_CONFIGS = {
+    enemies: { cap: 8, terminalField: 'status', terminalRetain: ['已终结'], retainRounds: 20, sinceField: '_terminalSince', sinceDefault: 'falsy' },
+    influence: { cap: 12, createdField: '_createdRound', expireRounds: 8, roundOffset: 1 },
+    events: {
+      terminalField: 'stage',
+      terminalRemove: ['已消散', '已失败'],
+      terminalRetain: ['已爆发', '已完成'],
+      retainRounds: function (item) { return 2 + (item.level || 1) * 2; },
+      sinceField: '_terminalSince',
+      sinceDefault: 'undefined',
+      clearSinceWhenActive: true
+    },
+    trends: { terminalField: 'status', terminalRemove: ['已结束'] },
+    economySignals: { cap: 8 },
+    blackbox: { totalCap: 12, buckets: ['secretActions', 'secretAssets'] }
+  };
+
+  const Lifecycle = {
+    capList(list, cap) {
+      if (Array.isArray(list) && Number.isFinite(Number(cap)) && list.length > cap) list.length = cap;
+      return list;
+    },
+
+    pruneExpired(list, config, currentRound) {
+      const source = Array.isArray(list) ? list : [];
+      const completedRound = currentRound + (config.roundOffset || 0);
+      const createdField = config.createdField || '_createdRound';
+      const kept = source.filter(item => {
+        if (!item || typeof item !== 'object') return false;
+        if (item[createdField] === undefined) item[createdField] = currentRound;
+        return (completedRound - item[createdField]) < config.expireRounds;
+      });
+      return { items: kept, removed: source.filter(item => !kept.includes(item)) };
+    },
+
+    pruneTerminal(list, config, currentRound) {
+      const source = Array.isArray(list) ? list : [];
+      const terminalField = config.terminalField || 'status';
+      const removeValues = config.terminalRemove || [];
+      const retainValues = config.terminalRetain || [];
+      const sinceField = config.sinceField || '_terminalSince';
+      const kept = source.filter(item => {
+        const value = item && item[terminalField];
+        if (removeValues.includes(value)) return false;
+        if (retainValues.includes(value)) {
+          if (config.sinceDefault === 'falsy') {
+            if (!item[sinceField]) item[sinceField] = currentRound;
+          } else if (item[sinceField] === undefined) {
+            item[sinceField] = currentRound;
+          }
+          const keepRounds = typeof config.retainRounds === 'function'
+            ? config.retainRounds(item)
+            : config.retainRounds;
+          return (currentRound - item[sinceField]) < keepRounds;
+        }
+        if (config.clearSinceWhenActive && item && item[sinceField] !== undefined) delete item[sinceField];
+        return true;
+      });
+      return { items: kept, removed: source.filter(item => !kept.includes(item)) };
+    },
+
+    capBlackbox(box, config) {
+      if (!box) return box;
+      const actionsKey = config.buckets[0];
+      const assetsKey = config.buckets[1];
+      const total = ((box[actionsKey] && box[actionsKey].length) || 0) + ((box[assetsKey] && box[assetsKey].length) || 0);
+      if (total > config.totalCap) {
+        const excess = total - config.totalCap;
+        const actions = box[actionsKey] || [];
+        const assets = box[assetsKey] || [];
+        if (actions.length > excess) {
+          actions.length = Math.max(1, actions.length - excess);
+          box[actionsKey] = actions;
+        } else {
+          box[actionsKey] = [];
+          assets.length = Math.max(1, assets.length - excess + actions.length);
+          box[assetsKey] = assets;
+        }
+      }
+      return box;
     }
   };
 
@@ -523,21 +648,28 @@ type：${picked.type}
       }
 
       // 正常掷骰
-      const r = Math.min(1, (ev.stageRound || 1) / 9);
-      const stageBase = (EVENT_STAGE_BASE[ev.type] || EVENT_STAGE_BASE.conflict)[ev.stage] || 85;
-      const level = ev.level || 1;
-      const levelAdjust = ev.type === 'progress' ? (level - 1) * 10 : -((level - 1) * 10);
-      const threshold = Math.round(stageBase - 200 * r * (1 - r) + levelAdjust);
-      const dice = Math.floor(Math.random() * 100) + 1;
+      const roll = DiceEngine.rollThreshold({
+        typeField: 'type',
+        defaultType: 'conflict',
+        levelField: 'level',
+        progressField: 'stageRound',
+        progressMax: 9,
+        base: EVENT_STAGE_BASE,
+        defaultBase: 85,
+        setbackRatio: 0.4,
+        levelAdjust: function (item, level, type) {
+          return type === 'progress' ? (level - 1) * 10 : -((level - 1) * 10);
+        }
+      }, ev);
 
-      if (dice > threshold) {
+      if (roll.kind === 'success') {
         // 成功：推进
         StageMachine.advance(EVENT_STAGE_MACHINE_CONFIG, ev);
         ev.consecutiveFails = 0;
         ev.evolveResult = '成功';
         anyTriggered = true;
         if (StageMachine.isAtFinalStage(EVENT_STAGE_MACHINE_CONFIG, ev, 'conflict')) logEruption(state, ev);
-      } else if (dice < threshold * 0.4) {
+      } else if (roll.kind === 'setback') {
         // 受挫：倒退
         StageMachine.recede(EVENT_STAGE_MACHINE_CONFIG, ev);
         ev.consecutiveFails++;
@@ -569,22 +701,15 @@ type：${picked.type}
     const decayed = [];
 
     for (const wind of state.winds || []) {
-      const params = WIND_DECAY[wind.type] || WIND_DECAY.rumor;
-      const level = Math.min(4, Math.max(1, parseInt(wind.level) || 1));
-      wind.quietRounds = Math.max(0, parseInt(wind.quietRounds) || 0) + 1;
+      const roll = DiceEngine.rollDecay({
+        byTypeField: 'type',
+        defaultType: 'rumor',
+        levelField: 'level',
+        quietField: 'quietRounds',
+        table: WIND_DECAY
+      }, wind, randomFn);
 
-      if (wind.quietRounds <= params.grace) {
-        survivors.push(wind);
-        continue;
-      }
-
-      const n = wind.quietRounds - params.grace - 1;
-      const chance = Math.min(95, Math.max(5,
-        params.base + params.linear * n + params.quadratic * n * n - (level - 1) * 10
-      ));
-      const dice = Math.floor(randomFn() * 100) + 1;
-
-      if (dice <= chance) decayed.push(wind);
+      if (roll.decayed) decayed.push(wind);
       else survivors.push(wind);
     }
 
@@ -782,31 +907,14 @@ type：${picked.type}
       else state.enemies.unshift(en);
     }
     // 已终结的仇敌保留20轮后清理
-    state.enemies = (state.enemies || []).filter(en => {
-      if (en.status === '已终结') {
-        en._terminalSince = en._terminalSince || state.round;
-        return (state.round - en._terminalSince) < 20;
-      }
-      return true;
-    });
-    if (state.enemies.length > 8) state.enemies.length = 8;
+    state.enemies = Lifecycle.pruneTerminal(state.enemies || [], LIFECYCLE_CONFIGS.enemies, state.round).items;
+    Lifecycle.capList(state.enemies, LIFECYCLE_CONFIGS.enemies.cap);
   }
 
   function mergeBlackbox(state, update) {
     if (!update.blackbox) return;
     state.blackbox = update.blackbox;
-    const totalBlackbox = (state.blackbox.secretActions?.length || 0) + (state.blackbox.secretAssets?.length || 0);
-    if (totalBlackbox > 12) {
-      const excess = totalBlackbox - 12;
-      const actions = state.blackbox.secretActions || [];
-      const assets = state.blackbox.secretAssets || [];
-      if (actions.length > excess) {
-        state.blackbox.secretActions.length = Math.max(1, actions.length - excess);
-      } else {
-        state.blackbox.secretActions = [];
-        state.blackbox.secretAssets.length = Math.max(1, assets.length - excess + actions.length);
-      }
-    }
+    Lifecycle.capBlackbox(state.blackbox, LIFECYCLE_CONFIGS.blackbox);
   }
 
   function mergeEvents(state, update) {
@@ -859,22 +967,16 @@ type：${picked.type}
           state.influenceChain.unshift(influence);
         }
       }
-      if (state.influenceChain.length > 12) state.influenceChain.length = 12;
+      Lifecycle.capList(state.influenceChain, LIFECYCLE_CONFIGS.influence.cap);
     }
     // Influence entries expire after 8 rounds; updates to the same trigger do not renew them.
-    const completedRound = state.round + 1;
-    const cleanedInfluence = (state.influenceChain || []).filter(influence => {
-      if (!influence || typeof influence !== 'object') return false;
-      if (influence._createdRound === undefined) influence._createdRound = state.round;
-      return (completedRound - influence._createdRound) < 8;
-    });
-    if (cleanedInfluence.length !== (state.influenceChain || []).length) {
-      console.log('[World Engine] auto-removed influence entries:', (state.influenceChain || [])
-        .filter(influence => !cleanedInfluence.includes(influence))
+    const cleanedInfluence = Lifecycle.pruneExpired(state.influenceChain || [], LIFECYCLE_CONFIGS.influence, state.round);
+    if (cleanedInfluence.items.length !== (state.influenceChain || []).length) {
+      console.log('[World Engine] auto-removed influence entries:', cleanedInfluence.removed
         .map(influence => influence.trigger)
         .join(', '));
     }
-    state.influenceChain = cleanedInfluence;
+    state.influenceChain = cleanedInfluence.items;
   }
 
   function mergeFactions(state, update) {
@@ -1082,8 +1184,8 @@ ${extraInstruction ? '\n' + extraInstruction : ''}${toneSection}`;
       mergeInfluence(state, update);
 
       // economy signals 上限
-      if (state.economy && state.economy.signals && state.economy.signals.length > 8) {
-        state.economy.signals.length = 8;
+      if (state.economy && state.economy.signals) {
+        Lifecycle.capList(state.economy.signals, LIFECYCLE_CONFIGS.economySignals.cap);
       }
 
       // 区域突发事件合并
@@ -1095,31 +1197,18 @@ ${extraInstruction ? '\n' + extraInstruction : ''}${toneSection}`;
       // - 负面终局（已消散/已失败）：下一轮即删
       // - 正面终局（已爆发/已完成）：进入终局起保留 2+level*2 轮（Lv1=4/Lv2=6/Lv3=8/Lv4=10），
       //   留出余波铺陈时间，到期自动清退
-      const POSITIVE_TERMINALS = ['已爆发', '已完成'];
-      const cleanedEvents = (state.events || []).filter(e => {
-        if (e.stage === '已消散' || e.stage === '已失败') return false;
-        if (POSITIVE_TERMINALS.includes(e.stage)) {
-          if (e._terminalSince === undefined) e._terminalSince = state.round;
-          const keepRounds = 2 + (e.level || 1) * 2;
-          return (state.round - e._terminalSince) < keepRounds;
-        }
-        // 非终局：清掉可能残留的倒计时标记（被 API 改回非终局阶段时）
-        if (e._terminalSince !== undefined) delete e._terminalSince;
-        return true;
-      });
-      if (cleanedEvents.length !== (state.events || []).length) {
-        const removed = (state.events || []).filter(e => !cleanedEvents.includes(e));
-        state._terminalEventsThisRound = removed.map(e => JSON.parse(JSON.stringify(e)));
-        console.log('[世界引擎] 🧹 自动清理事件链:', removed.map(e => e.name).join('、'));
+      const cleanedEvents = Lifecycle.pruneTerminal(state.events || [], LIFECYCLE_CONFIGS.events, state.round);
+      if (cleanedEvents.items.length !== (state.events || []).length) {
+        state._terminalEventsThisRound = cleanedEvents.removed.map(e => JSON.parse(JSON.stringify(e)));
+        console.log('[世界引擎] 🧹 自动清理事件链:', cleanedEvents.removed.map(e => e.name).join('、'));
       }
-      state.events = cleanedEvents;
+      state.events = cleanedEvents.items;
 
-      const cleanedTrends = (state.worldTrends || []).filter(t => t.status !== '已结束');
-      if (cleanedTrends.length !== (state.worldTrends || []).length) {
-        const removed = (state.worldTrends || []).filter(t => !cleanedTrends.includes(t));
-        console.log('[世界引擎] 🧹 自动清理天下大势:', removed.map(t => t.name).join('、'));
+      const cleanedTrends = Lifecycle.pruneTerminal(state.worldTrends || [], LIFECYCLE_CONFIGS.trends, state.round);
+      if (cleanedTrends.items.length !== (state.worldTrends || []).length) {
+        console.log('[世界引擎] 🧹 自动清理天下大势:', cleanedTrends.removed.map(t => t.name).join('、'));
       }
-      state.worldTrends = cleanedTrends;
+      state.worldTrends = cleanedTrends.items;
 
       state.round++;
       state.lastEvolveResult = update;
@@ -1177,5 +1266,5 @@ ${extraInstruction ? '\n' + extraInstruction : ''}${toneSection}`;
     state: () => core.loadState()
   };
 
-  return { evolve, getLastDebug, abort, isRunning, getLastError, getBuiltinMergeIds, _BUILTIN_MERGE: BUILTIN_MERGE, _DICE_ENGINE: DiceEngine, _STAGE_MACHINE: StageMachine, _EVENT_STAGE_MACHINE_CONFIG: EVENT_STAGE_MACHINE_CONFIG };
+  return { evolve, getLastDebug, abort, isRunning, getLastError, getBuiltinMergeIds, _BUILTIN_MERGE: BUILTIN_MERGE, _DICE_ENGINE: DiceEngine, _STAGE_MACHINE: StageMachine, _EVENT_STAGE_MACHINE_CONFIG: EVENT_STAGE_MACHINE_CONFIG, _LIFECYCLE: Lifecycle, _LIFECYCLE_CONFIGS: LIFECYCLE_CONFIGS };
 })();
