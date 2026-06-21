@@ -376,40 +376,45 @@ window.WORLD_ENGINE_UI = (function() {
       + '<div class="we-section" id="we-sec-digest"><div class="we-section-title">' + UL('世界摘要') + '</div><div class="we-digest">' + digestHtml(s) + '</div></div>';
   }
 
+  // 内置模块渲染分发表（moduleId → {title, field, fn}），与 evolution 的 BUILTIN_MERGE 对应。
+  // 视图按 id 查表渲染；为 Phase 3 自由/混合模式的通用渲染分发铺垫。函数声明已 hoist，引用安全。
+  const BUILTIN_RENDER = {
+    trends:     { title: '天下大势', field: 'worldTrends',      fn: renderWorldTrends },
+    regional:   { title: '区域事件', field: 'regionalIncident', fn: renderRegionalIncident },
+    events:     { title: '事件链',   field: 'events',           fn: renderEventList },
+    winds:      { title: '风声',     field: 'winds',            fn: renderWindList },
+    influence:  { title: '影响链',   field: 'influenceChain',   fn: renderInfluenceChain },
+    reputation: { title: '声誉',     field: 'reputation',       fn: renderReputation },
+    factions:   { title: '势力',     field: 'factions',         fn: renderFactionList },
+    enemies:    { title: '仇敌录',   field: 'enemies',          fn: renderEnemies },
+    economy:    { title: '经济',     field: 'economy',          fn: renderEconomy },
+    blackbox:   { title: '秘密',     field: 'blackbox',         fn: renderBlackbox }
+  };
+  const SUBVIEW_MODULES = {
+    situation: ['trends', 'regional'],
+    events:    ['events', 'winds', 'influence'],
+    relations: ['reputation', 'factions', 'enemies'],
+    resources: ['economy', 'blackbox']
+  };
+  function renderModuleSection(moduleId, s, scope, idPrefix) {
+    const def = BUILTIN_RENDER[moduleId];
+    if (!def) return '';
+    return renderSection(def.title, (idPrefix || '') + moduleId, def.fn(s[def.field], scope));
+  }
+
   /** 展开模式主页：世界核心 + 世界摘要 + 所有 section 平铺（如存档点） */
   function renderHomeViewExpanded(s, layer, scope) {
+    const order = ['trends', 'regional', 'events', 'winds', 'influence', 'reputation', 'factions', 'enemies', 'economy', 'blackbox'];
     return renderWorldCore(s)
       + '<div class="we-section" id="we-sec-digest"><div class="we-section-title">' + UL('世界摘要') + '</div><div class="we-digest">' + digestHtml(s) + '</div></div>'
-      + renderSection('天下大势', 'trends', renderWorldTrends(s.worldTrends, scope))
-      + renderSection('区域事件', 'regional', renderRegionalIncident(s.regionalIncident, scope))
-      + renderSection('事件链', 'events', renderEventList(s.events, scope))
-      + renderSection('风声', 'winds', renderWindList(s.winds, scope))
-      + renderSection('影响链', 'influence', renderInfluenceChain(s.influenceChain, scope))
-      + renderSection('声誉', 'reputation', renderReputation(s.reputation, scope))
-      + renderSection('势力', 'factions', renderFactionList(s.factions, scope))
-      + renderSection('仇敌录', 'enemies', renderEnemies(s.enemies, scope))
-      + renderSection('经济', 'economy', renderEconomy(s.economy, scope))
-      + renderSection('秘密', 'blackbox', renderBlackbox(s.blackbox, scope))
+      + order.map(id => renderModuleSection(id, s, scope, '')).join('')
       + renderSection('事件账本', 'ledger', renderLedger(s.memories));
   }
 
   function renderSubView(viewKey, s, layer, scope) {
-    let content = '';
+    let content = (SUBVIEW_MODULES[viewKey] || []).map(id => renderModuleSection(id, s, scope, '')).join('');
     if (viewKey === 'situation') {
-      content = renderSection('天下大势', 'trends', renderWorldTrends(s.worldTrends, scope))
-        + renderSection('区域事件', 'regional', renderRegionalIncident(s.regionalIncident, scope))
-        + renderSection('事件账本', 'ledger', renderLedger(s.memories));
-    } else if (viewKey === 'events') {
-      content = renderSection('事件链', 'events', renderEventList(s.events, scope))
-        + renderSection('风声', 'winds', renderWindList(s.winds, scope))
-        + renderSection('影响链', 'influence', renderInfluenceChain(s.influenceChain, scope));
-    } else if (viewKey === 'relations') {
-      content = renderSection('声誉', 'reputation', renderReputation(s.reputation, scope))
-        + renderSection('势力', 'factions', renderFactionList(s.factions, scope))
-        + renderSection('仇敌录', 'enemies', renderEnemies(s.enemies, scope));
-    } else if (viewKey === 'resources') {
-      content = renderSection('经济', 'economy', renderEconomy(s.economy, scope))
-        + renderSection('秘密', 'blackbox', renderBlackbox(s.blackbox, scope));
+      content += renderSection('事件账本', 'ledger', renderLedger(s.memories));
     }
     return '<div class="we-sub-topbar">'
       + '<button class="we-icon-btn" id="we-btn-back" title="返回"><i class="fa-solid fa-arrow-left"></i></button>'
@@ -450,16 +455,8 @@ window.WORLD_ENGINE_UI = (function() {
   }
 
   function renderCheckpointSections(s, layer) {
-    return renderSection('天下大势', 'cp-trends', renderWorldTrends(s.worldTrends, 'checkpoint'))
-      + renderSection('事件链', 'cp-events', renderEventList(s.events, 'checkpoint'))
-      + renderSection('势力', 'cp-factions', renderFactionList(s.factions, 'checkpoint'))
-      + renderSection('风声', 'cp-winds', renderWindList(s.winds, 'checkpoint'))
-      + renderSection('声誉', 'cp-reputation', renderReputation(s.reputation, 'checkpoint'))
-      + renderSection('经济', 'cp-economy', renderEconomy(s.economy, 'checkpoint'))
-      + renderSection('仇敌录', 'cp-enemies', renderEnemies(s.enemies, 'checkpoint'))
-      + renderSection('影响链', 'cp-influence', renderInfluenceChain(s.influenceChain, 'checkpoint'))
-      + renderSection('区域事件', 'cp-regional', renderRegionalIncident(s.regionalIncident, 'checkpoint'))
-      + renderSection('秘密', 'cp-blackbox', renderBlackbox(s.blackbox, 'checkpoint'))
+    const order = ['trends', 'events', 'factions', 'winds', 'reputation', 'economy', 'enemies', 'influence', 'regional', 'blackbox'];
+    return order.map(id => renderModuleSection(id, s, 'checkpoint', 'cp-')).join('')
       + renderSection('事件账本', 'cp-ledger', renderLedger(s.memories));
   }
 
@@ -3776,5 +3773,14 @@ window.WORLD_ENGINE_UI = (function() {
     observeInputButton();
   }
 
-  return { buildPanel, buildInputButton, showPanel, hidePanel, togglePanel, refresh, setStatus, setEvolvingUI, setInjectedScope };
+  // 测试钩子（纯增量）：暴露内置渲染函数与 pager 重置，供渲染快照 harness 比对。不影响生产路径。
+  const __test = {
+    resetPager: function () { listPagerCounter = 0; Object.keys(listPageState).forEach(function (k) { delete listPageState[k]; }); },
+    renderIds: function () { return Object.keys(BUILTIN_RENDER); },
+    renderWorldCore, renderEventList, renderFactionList, renderWorldTrends, renderWindList,
+    renderReputation, renderEconomy, renderEnemies, renderInfluenceChain, renderRegionalIncident,
+    renderBlackbox, renderHomeViewExpanded, renderSubView, renderCheckpointSections
+  };
+
+  return { buildPanel, buildInputButton, showPanel, hidePanel, togglePanel, refresh, setStatus, setEvolvingUI, setInjectedScope, __test };
 })();

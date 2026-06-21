@@ -675,6 +675,87 @@ type：${picked.type}
     }
   }
 
+  function mergeEvents(state, update) {
+    for (const ev of (update.events || [])) {
+      const existing = state.events.find(e => e.name === ev.name);
+      if (existing) {
+        // 事件类型一旦确定不可由 API 改动
+        ev.type = existing.type || 'conflict';
+
+        const stageOrder = EVENT_STAGE_ORDER[existing.type] || EVENT_STAGE_ORDER.conflict;
+        const finalStage = EVENT_FINAL_STAGE[existing.type] || EVENT_FINAL_STAGE.conflict;
+        const terminalStages = EVENT_TERMINAL_STAGES[existing.type] || EVENT_TERMINAL_STAGES.conflict;
+
+        // 终局事件保护：只允许 API 改 desc
+        if (terminalStages.includes(existing.stage)) {
+          if (ev.desc !== undefined) existing.desc = ev.desc;
+          core.ensureEventFields(existing);
+          continue;
+        }
+
+        // API 改了 stageRound？以 API 为准，但 >=9 时自动晋级
+        if (ev.stageRound !== undefined && ev.stageRound !== existing.stageRound) {
+          existing.stageRound = ev.stageRound;
+          existing.consecutiveFails = 0;
+          if (existing.stageRound >= 9) {
+            const idx = stageOrder.indexOf(existing.stage);
+            if (idx !== -1 && idx < stageOrder.length - 1) {
+              existing.stage = stageOrder[idx + 1];
+              existing.stageRound = existing.stageRound - 9;
+            } else {
+              existing.stage = finalStage;
+              existing.stageRound = 9;
+            }
+          }
+        }
+        // 合并其他字段
+        if (ev.stage !== undefined) existing.stage = ev.stage;
+        if (ev.desc !== undefined) existing.desc = ev.desc;
+        if (ev.level !== undefined) existing.level = ev.level;
+        if (ev.name !== undefined) existing.name = ev.name;
+        if (ev.stall !== undefined) existing.stall = ev.stall;
+        existing.type = ev.type;
+        core.ensureEventFields(existing);
+      } else {
+        if (!ev.type || !EVENT_TYPES.includes(ev.type)) ev.type = 'conflict';
+        core.addEvent(state, ev);
+      }
+    }
+  }
+
+  function mergeInfluence(state, update) {
+    if (update.influenceChain && update.influenceChain.length) {
+      const completedRound = state.round + 1;
+      for (const influence of update.influenceChain) {
+        if (!influence.trigger || !influence.impact) continue;
+        influence.fallout = influence.fallout || '';
+        const idx = (state.influenceChain || []).findIndex(existing => existing.trigger === influence.trigger);
+        if (idx !== -1) {
+          influence._createdRound = state.influenceChain[idx]._createdRound ?? completedRound;
+          state.influenceChain[idx] = influence;
+        } else {
+          influence._createdRound = completedRound;
+          state.influenceChain.unshift(influence);
+        }
+      }
+      if (state.influenceChain.length > 12) state.influenceChain.length = 12;
+    }
+    // Influence entries expire after 8 rounds; updates to the same trigger do not renew them.
+    const completedRound = state.round + 1;
+    const cleanedInfluence = (state.influenceChain || []).filter(influence => {
+      if (!influence || typeof influence !== 'object') return false;
+      if (influence._createdRound === undefined) influence._createdRound = state.round;
+      return (completedRound - influence._createdRound) < 8;
+    });
+    if (cleanedInfluence.length !== (state.influenceChain || []).length) {
+      console.log('[World Engine] auto-removed influence entries:', (state.influenceChain || [])
+        .filter(influence => !cleanedInfluence.includes(influence))
+        .map(influence => influence.trigger)
+        .join(', '));
+    }
+    state.influenceChain = cleanedInfluence;
+  }
+
   function mergeFactions(state, update) {
     for (const fac of (update.factions || [])) core.addFaction(state, fac);
   }
@@ -690,6 +771,22 @@ type：${picked.type}
   function mergeReputation(state, update) {
     if (update.reputation && Object.keys(update.reputation).length) Object.assign(state.reputation, update.reputation);
   }
+
+  // 内置模块合并分发表（moduleId → 处理器）。evolve() 当前仍按固定顺序显式调用以保 classic 零回归；
+  // 此表供 Phase 3 自由/混合模式按描述符查表分发内置处理器之用。
+  const BUILTIN_MERGE = {
+    events: mergeEvents,
+    factions: mergeFactions,
+    trends: mergeWorldTrends,
+    winds: mergeWinds,
+    economy: mergeEconomy,
+    reputation: mergeReputation,
+    enemies: mergeEnemies,
+    influence: mergeInfluence,
+    regional: mergeRegionalIncident,
+    blackbox: mergeBlackbox
+  };
+  function getBuiltinMergeIds() { return Object.keys(BUILTIN_MERGE); }
 
   async function callEvolutionAPI(state, userMsg, aiMsg, extraInstruction = '', dialogueText = '') {
     const rulesLoader = window.WORLD_ENGINE_RULES;
@@ -849,52 +946,7 @@ ${extraInstruction ? '\n' + extraInstruction : ''}${toneSection}`;
       const update = await callEvolutionAPI(state, userMsg, aiMsg, regionalIncidentRoll.injectPrompt, (opts && opts.dialogueText) || '');
 
       // 第5步：合并 API 返回
-      for (const ev of update.events) {
-        const existing = state.events.find(e => e.name === ev.name);
-        if (existing) {
-          // 事件类型一旦确定不可由 API 改动
-          ev.type = existing.type || 'conflict';
-
-          const stageOrder = EVENT_STAGE_ORDER[existing.type] || EVENT_STAGE_ORDER.conflict;
-          const finalStage = EVENT_FINAL_STAGE[existing.type] || EVENT_FINAL_STAGE.conflict;
-          const terminalStages = EVENT_TERMINAL_STAGES[existing.type] || EVENT_TERMINAL_STAGES.conflict;
-
-          // 终局事件保护：只允许 API 改 desc
-          if (terminalStages.includes(existing.stage)) {
-            if (ev.desc !== undefined) existing.desc = ev.desc;
-            core.ensureEventFields(existing);
-            continue;
-          }
-
-          // API 改了 stageRound？以 API 为准，但 >=9 时自动晋级
-          if (ev.stageRound !== undefined && ev.stageRound !== existing.stageRound) {
-            existing.stageRound = ev.stageRound;
-            existing.consecutiveFails = 0;
-            // stageRound >= 9 触发晋级
-            if (existing.stageRound >= 9) {
-              const idx = stageOrder.indexOf(existing.stage);
-              if (idx !== -1 && idx < stageOrder.length - 1) {
-                existing.stage = stageOrder[idx + 1];
-                existing.stageRound = existing.stageRound - 9;
-              } else {
-                existing.stage = finalStage;
-                existing.stageRound = 9;
-              }
-            }
-          }
-          // 合并其他字段
-          if (ev.stage !== undefined) existing.stage = ev.stage;
-          if (ev.desc !== undefined) existing.desc = ev.desc;
-          if (ev.level !== undefined) existing.level = ev.level;
-          if (ev.name !== undefined) existing.name = ev.name;
-          if (ev.stall !== undefined) existing.stall = ev.stall;
-          existing.type = ev.type;
-          core.ensureEventFields(existing);
-        } else {
-          if (!ev.type || !EVENT_TYPES.includes(ev.type)) ev.type = 'conflict';
-          core.addEvent(state, ev);
-        }
-      }
+      mergeEvents(state, update);
       mergeFactions(state, update);
       mergeWorldTrends(state, update);
       mergeWinds(state, update);
@@ -906,37 +958,7 @@ ${extraInstruction ? '\n' + extraInstruction : ''}${toneSection}`;
       mergeEnemies(state, update);
 
       // 影响链
-      if (update.influenceChain.length) {
-        const completedRound = state.round + 1;
-        for (const influence of update.influenceChain) {
-          if (!influence.trigger || !influence.impact) continue;
-          influence.fallout = influence.fallout || '';
-          const idx = (state.influenceChain || []).findIndex(existing => existing.trigger === influence.trigger);
-          if (idx !== -1) {
-            influence._createdRound = state.influenceChain[idx]._createdRound ?? completedRound;
-            state.influenceChain[idx] = influence;
-          } else {
-            influence._createdRound = completedRound;
-            state.influenceChain.unshift(influence);
-          }
-        }
-        if (state.influenceChain.length > 12) state.influenceChain.length = 12;
-      }
-
-      // Influence entries expire after 8 rounds; updates to the same trigger do not renew them.
-      const completedRound = state.round + 1;
-      const cleanedInfluence = (state.influenceChain || []).filter(influence => {
-        if (!influence || typeof influence !== 'object') return false;
-        if (influence._createdRound === undefined) influence._createdRound = state.round;
-        return (completedRound - influence._createdRound) < 8;
-      });
-      if (cleanedInfluence.length !== (state.influenceChain || []).length) {
-        console.log('[World Engine] auto-removed influence entries:', (state.influenceChain || [])
-          .filter(influence => !cleanedInfluence.includes(influence))
-          .map(influence => influence.trigger)
-          .join(', '));
-      }
-      state.influenceChain = cleanedInfluence;
+      mergeInfluence(state, update);
 
       // economy signals 上限
       if (state.economy && state.economy.signals && state.economy.signals.length > 8) {
@@ -1034,5 +1056,5 @@ ${extraInstruction ? '\n' + extraInstruction : ''}${toneSection}`;
     state: () => core.loadState()
   };
 
-  return { evolve, getLastDebug, abort, isRunning, getLastError };
+  return { evolve, getLastDebug, abort, isRunning, getLastError, getBuiltinMergeIds, _BUILTIN_MERGE: BUILTIN_MERGE };
 })();
