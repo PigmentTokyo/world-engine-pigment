@@ -20,6 +20,15 @@ window.WORLD_ENGINE_EVOLUTION = (function() {
     conflict: { '萌芽': 95, '发酵': 85, '逼近': 75 },
     progress: { '筹备': 75, '执行': 85, '关键': 95 }
   };
+  const EVENT_STAGE_MACHINE_CONFIG = {
+    typeField: 'type',
+    defaultType: 'conflict',
+    order: EVENT_STAGE_ORDER,
+    finalStage: EVENT_FINAL_STAGE,
+    terminalStages: EVENT_TERMINAL_STAGES,
+    progressField: 'stageRound',
+    progressMax: 9
+  };
   const WIND_DECAY = {
     announcement: { base: 10, grace: 4, linear: 3, quadratic: 1 },
     report: { base: 20, grace: 2, linear: 4, quadratic: 2 },
@@ -136,6 +145,198 @@ window.WORLD_ENGINE_EVOLUTION = (function() {
     return items[items.length - 1];
   }
 
+
+  const DiceEngine = {
+    rollWeighted(items, randomFn = Math.random) {
+      return weightedPick(items, randomFn);
+    },
+
+    rollTrigger(config, incident, randomFn = Math.random) {
+      const typeWeights = Array.isArray(config.typeWeights) ? config.typeWeights : [];
+      const chance = Number.isFinite(Number(config.chance)) ? Number(config.chance) : 0;
+      const durationRounds = Number.isFinite(Number(config.durationRounds)) ? Number(config.durationRounds) : 0;
+      const cooldownRounds = Number.isFinite(Number(config.cooldownRounds)) ? Number(config.cooldownRounds) : 0;
+
+      if (incident.active) {
+        const remaining = Math.max(0, (incident.duration || 0) - 1);
+        if (remaining <= 0) {
+          return {
+            kind: 'expired',
+            triggered: false,
+            expiredTitle: incident.title,
+            patch: {
+              active: false,
+              title: '',
+              type: '',
+              scope: '',
+              impact: '',
+              duration: 0,
+              cooldown: cooldownRounds,
+              _retry: false,
+              _retryType: ''
+            }
+          };
+        }
+        return {
+          kind: 'ongoing',
+          triggered: true,
+          ongoing: true,
+          patch: { duration: remaining }
+        };
+      }
+
+      if ((incident.cooldown || 0) > 0) {
+        return {
+          kind: 'cooldown',
+          triggered: false,
+          patch: { cooldown: Math.max(0, incident.cooldown - 1) }
+        };
+      }
+
+      const dice = randomFn();
+      let triggerNow = false;
+      let triggerType = incident._retryType || '';
+      let triggerLabel = '';
+      const patch = {};
+
+      if (incident._retry && triggerType) {
+        triggerNow = true;
+        patch._retry = false;
+        patch._retryType = '';
+        const found = typeWeights.find(t => t.type === triggerType);
+        if (found) triggerLabel = found.label;
+      }
+
+      if (!triggerNow && dice >= chance) {
+        return {
+          kind: 'miss',
+          triggered: false,
+          chance,
+          dice,
+          patch: {
+            active: false,
+            title: '',
+            type: '',
+            scope: '',
+            impact: ''
+          }
+        };
+      }
+
+      if (!triggerNow) {
+        const picked = DiceEngine.rollWeighted(typeWeights, randomFn);
+        triggerType = picked.type;
+        triggerLabel = picked.label;
+      }
+
+      return {
+        kind: triggerNow ? 'retry' : 'hit',
+        triggered: true,
+        ongoing: false,
+        incidentType: triggerType,
+        incidentLabel: triggerLabel,
+        chance,
+        dice,
+        patch: {
+          ...patch,
+          active: true,
+          type: triggerType,
+          duration: durationRounds,
+          cooldown: 0
+        }
+      };
+    }
+  };
+
+  const StageMachine = {
+    getType(config, item) {
+      const type = item && item[config.typeField];
+      return (type && config.order[type]) ? type : config.defaultType;
+    },
+
+    normalizeType(config, item) {
+      if (!item[config.typeField] || !config.order[item[config.typeField]]) {
+        item[config.typeField] = config.defaultType;
+      }
+      return item[config.typeField];
+    },
+
+    getOrder(config, type) {
+      return config.order[type] || config.order[config.defaultType] || [];
+    },
+
+    getFinalStage(config, type) {
+      return config.finalStage[type] || config.finalStage[config.defaultType];
+    },
+
+    getTerminalStages(config, type) {
+      return config.terminalStages[type] || config.terminalStages[config.defaultType] || [];
+    },
+
+    normalize(config, item) {
+      const type = StageMachine.normalizeType(config, item);
+      const progressField = config.progressField;
+      if (item[progressField] === undefined) item[progressField] = 1;
+      const order = StageMachine.getOrder(config, type);
+      if (!item.stage || !order.includes(item.stage)) item.stage = order[0];
+      return item;
+    },
+
+    isTerminal(config, item) {
+      const type = StageMachine.getType(config, item);
+      return StageMachine.getTerminalStages(config, type).includes(item.stage);
+    },
+
+    isAtFinalStage(config, item, type) {
+      return item.stage === StageMachine.getFinalStage(config, type);
+    },
+
+    advance(config, item, options = {}) {
+      const type = StageMachine.getType(config, item);
+      const order = StageMachine.getOrder(config, type);
+      const finalStage = StageMachine.getFinalStage(config, type);
+      const progressField = config.progressField;
+      const progressMax = config.progressMax;
+      item[progressField]++;
+      if (item[progressField] >= progressMax) {
+        const idx = order.indexOf(item.stage);
+        if (idx !== -1 && idx < order.length - 1) {
+          item.stage = order[idx + 1];
+          item[progressField] = options.carryOverflow ? item[progressField] - progressMax : 1;
+        } else {
+          item.stage = finalStage;
+          item[progressField] = progressMax;
+        }
+      }
+      return item;
+    },
+
+    resolveProgressOverflow(config, item, options = {}) {
+      const type = StageMachine.getType(config, item);
+      const order = StageMachine.getOrder(config, type);
+      const finalStage = StageMachine.getFinalStage(config, type);
+      const progressField = config.progressField;
+      const progressMax = config.progressMax;
+      if (item[progressField] >= progressMax) {
+        const idx = order.indexOf(item.stage);
+        if (idx !== -1 && idx < order.length - 1) {
+          item.stage = order[idx + 1];
+          item[progressField] = options.carryOverflow ? item[progressField] - progressMax : 1;
+        } else {
+          item.stage = finalStage;
+          item[progressField] = progressMax;
+        }
+      }
+      return item;
+    },
+
+    recede(config, item) {
+      const progressField = config.progressField;
+      item[progressField] = Math.max(1, item[progressField] - 1);
+      return item;
+    }
+  };
+
   function buildRegionalIncidentPrompt(picked) {
     const config = getRegionalConfig();
     const typeInfo = config.typeWeights.find(t => t.type === picked.type);
@@ -198,26 +399,15 @@ type：${picked.type}
     ensureRegionalIncident(state);
     const incident = state.regionalIncident;
     const config = getRegionalConfig();
+    const roll = DiceEngine.rollTrigger(config, incident, randomFn);
+    Object.assign(incident, roll.patch);
 
-    // 事件持续中：每轮倒计时，归零后消散并进入冷却
-    if (incident.active) {
-      const remaining = Math.max(0, (incident.duration || 0) - 1);
-      incident.duration = remaining;
-      if (remaining <= 0) {
-        const title = incident.title;
-        incident.active = false;
-        incident.title = '';
-        incident.type = '';
-        incident.scope = '';
-        incident.impact = '';
-        incident.duration = 0;
-        incident.cooldown = config.cooldownRounds;
-        incident._retry = false;
-        incident._retryType = '';
-        console.log('[世界引擎] 区域突发事件已消散（持续期满）:', title);
-        return { triggered: false, injectPrompt: '', reason: 'expired' };
-      }
-      // 仍在持续，注入"持续中"提示
+    if (roll.kind === 'expired') {
+      console.log('[世界引擎] 区域突发事件已消散（持续期满）:', roll.expiredTitle);
+      return { triggered: false, injectPrompt: '', reason: 'expired' };
+    }
+
+    if (roll.kind === 'ongoing') {
       return {
         triggered: true,
         ongoing: true,
@@ -226,61 +416,26 @@ type：${picked.type}
       };
     }
 
-    // 冷却中
-    if ((incident.cooldown || 0) > 0) {
-      incident.cooldown = Math.max(0, incident.cooldown - 1);
+    if (roll.kind === 'cooldown') {
       return { triggered: false, injectPrompt: '', reason: 'cooldown' };
     }
 
-    const dice = randomFn();
-    const chance = config.chance;
-
-    // 确定是否需要触发
-    let triggerNow = false;
-    let triggerType = incident._retryType || '';
-    let triggerLabel = '';
-
-    if (incident._retry && triggerType) {
-      // 上轮骰子成功但 API 未返回 → 重试，类型不变
-      triggerNow = true;
-      incident._retry = false;
-      incident._retryType = '';
-      const found = config.typeWeights.find(t => t.type === triggerType);
-      if (found) triggerLabel = found.label;
+    if (roll.kind === 'miss') {
+      return { triggered: false, injectPrompt: '', chance: roll.chance, dice: roll.dice, reason: 'miss' };
     }
-
-    if (!triggerNow && dice >= chance) {
-      // 未触发
-      incident.active = false;
-      incident.title = '';
-      incident.type = '';
-      incident.scope = '';
-      incident.impact = '';
-      return { triggered: false, injectPrompt: '', chance, dice, reason: 'miss' };
-    }
-
-    // 触发（首轮）
-    let picked;
-    if (!triggerNow) {
-      picked = weightedPick(config.typeWeights, randomFn);
-      triggerType = picked.type;
-      triggerLabel = picked.label;
-    }
-
-    incident.active = true;
-    incident.type = triggerType;
-    incident.duration = config.durationRounds; // 持续轮数，冷却在消散后才开始
-    incident.cooldown = 0;
 
     return {
       triggered: true,
       ongoing: false,
-      incidentType: triggerType,
-      incidentLabel: triggerLabel,
-      injectPrompt: buildRegionalIncidentPrompt({ type: triggerType, label: triggerLabel || triggerType }),
-      chance,
-      dice,
-      reason: triggerNow ? 'retry' : 'hit'
+      incidentType: roll.incidentType,
+      incidentLabel: roll.incidentLabel,
+      injectPrompt: buildRegionalIncidentPrompt({
+        type: roll.incidentType,
+        label: roll.incidentLabel || roll.incidentType
+      }),
+      chance: roll.chance,
+      dice: roll.dice,
+      reason: roll.kind
     };
   }
 
@@ -350,24 +505,20 @@ type：${picked.type}
       delete ev.evolveResult;
 
       // 初始化字段
-      if (!ev.type || !EVENT_TYPES.includes(ev.type)) ev.type = 'conflict';
-      if (ev.stageRound === undefined) ev.stageRound = 1;
+      StageMachine.normalize(EVENT_STAGE_MACHINE_CONFIG, ev);
       if (ev.consecutiveFails === undefined) ev.consecutiveFails = 0;
-      const stageOrder = EVENT_STAGE_ORDER[ev.type] || EVENT_STAGE_ORDER.conflict;
-      const terminalStages = EVENT_TERMINAL_STAGES[ev.type] || EVENT_TERMINAL_STAGES.conflict;
 
       // 终局事件跳过
-      if (terminalStages.includes(ev.stage)) continue;
-      if (!ev.stage || !stageOrder.includes(ev.stage)) ev.stage = stageOrder[0];
+      if (StageMachine.isTerminal(EVENT_STAGE_MACHINE_CONFIG, ev)) continue;
 
       // 保底：连续非成功达到上限则强制成功
       const maxFails = getMaxFails(ev);
       if (ev.consecutiveFails >= maxFails) {
-        advanceStageRound(ev);
+        StageMachine.advance(EVENT_STAGE_MACHINE_CONFIG, ev);
         ev.consecutiveFails = 0;
         ev.evolveResult = '成功';
         anyTriggered = true;
-        if (ev.stage === EVENT_FINAL_STAGE.conflict) logEruption(state, ev);
+        if (StageMachine.isAtFinalStage(EVENT_STAGE_MACHINE_CONFIG, ev, 'conflict')) logEruption(state, ev);
         continue;
       }
 
@@ -381,14 +532,14 @@ type：${picked.type}
 
       if (dice > threshold) {
         // 成功：推进
-        advanceStageRound(ev);
+        StageMachine.advance(EVENT_STAGE_MACHINE_CONFIG, ev);
         ev.consecutiveFails = 0;
         ev.evolveResult = '成功';
         anyTriggered = true;
-        if (ev.stage === EVENT_FINAL_STAGE.conflict) logEruption(state, ev);
+        if (StageMachine.isAtFinalStage(EVENT_STAGE_MACHINE_CONFIG, ev, 'conflict')) logEruption(state, ev);
       } else if (dice < threshold * 0.4) {
         // 受挫：倒退
-        ev.stageRound = Math.max(1, ev.stageRound - 1);
+        StageMachine.recede(EVENT_STAGE_MACHINE_CONFIG, ev);
         ev.consecutiveFails++;
         ev.evolveResult = '受挫';
       } else {
@@ -404,23 +555,6 @@ type：${picked.type}
   function getMaxFails(ev) {
     const level = ev.level || 1;
     return ev.type === 'progress' ? 2 + level : 6 - level;
-  }
-
-  function advanceStageRound(ev) {
-    const stageOrder = EVENT_STAGE_ORDER[ev.type] || EVENT_STAGE_ORDER.conflict;
-    const finalStage = EVENT_FINAL_STAGE[ev.type] || EVENT_FINAL_STAGE.conflict;
-    ev.stageRound++;
-    if (ev.stageRound >= 9) {
-      // 晋级下一阶段
-      const idx = stageOrder.indexOf(ev.stage);
-      if (idx !== -1 && idx < stageOrder.length - 1) {
-        ev.stage = stageOrder[idx + 1];
-        ev.stageRound = 1;
-      } else {
-        ev.stage = finalStage;
-        ev.stageRound = 9;
-      }
-    }
   }
 
   function logEruption(state, ev) {
@@ -682,12 +816,8 @@ type：${picked.type}
         // 事件类型一旦确定不可由 API 改动
         ev.type = existing.type || 'conflict';
 
-        const stageOrder = EVENT_STAGE_ORDER[existing.type] || EVENT_STAGE_ORDER.conflict;
-        const finalStage = EVENT_FINAL_STAGE[existing.type] || EVENT_FINAL_STAGE.conflict;
-        const terminalStages = EVENT_TERMINAL_STAGES[existing.type] || EVENT_TERMINAL_STAGES.conflict;
-
         // 终局事件保护：只允许 API 改 desc
-        if (terminalStages.includes(existing.stage)) {
+        if (StageMachine.isTerminal(EVENT_STAGE_MACHINE_CONFIG, existing)) {
           if (ev.desc !== undefined) existing.desc = ev.desc;
           core.ensureEventFields(existing);
           continue;
@@ -697,16 +827,7 @@ type：${picked.type}
         if (ev.stageRound !== undefined && ev.stageRound !== existing.stageRound) {
           existing.stageRound = ev.stageRound;
           existing.consecutiveFails = 0;
-          if (existing.stageRound >= 9) {
-            const idx = stageOrder.indexOf(existing.stage);
-            if (idx !== -1 && idx < stageOrder.length - 1) {
-              existing.stage = stageOrder[idx + 1];
-              existing.stageRound = existing.stageRound - 9;
-            } else {
-              existing.stage = finalStage;
-              existing.stageRound = 9;
-            }
-          }
+          StageMachine.resolveProgressOverflow(EVENT_STAGE_MACHINE_CONFIG, existing, { carryOverflow: true });
         }
         // 合并其他字段
         if (ev.stage !== undefined) existing.stage = ev.stage;
@@ -717,7 +838,7 @@ type：${picked.type}
         existing.type = ev.type;
         core.ensureEventFields(existing);
       } else {
-        if (!ev.type || !EVENT_TYPES.includes(ev.type)) ev.type = 'conflict';
+        StageMachine.normalizeType(EVENT_STAGE_MACHINE_CONFIG, ev);
         core.addEvent(state, ev);
       }
     }
@@ -1056,5 +1177,5 @@ ${extraInstruction ? '\n' + extraInstruction : ''}${toneSection}`;
     state: () => core.loadState()
   };
 
-  return { evolve, getLastDebug, abort, isRunning, getLastError, getBuiltinMergeIds, _BUILTIN_MERGE: BUILTIN_MERGE };
+  return { evolve, getLastDebug, abort, isRunning, getLastError, getBuiltinMergeIds, _BUILTIN_MERGE: BUILTIN_MERGE, _DICE_ENGINE: DiceEngine, _STAGE_MACHINE: StageMachine, _EVENT_STAGE_MACHINE_CONFIG: EVENT_STAGE_MACHINE_CONFIG };
 })();

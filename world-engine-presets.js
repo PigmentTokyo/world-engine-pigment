@@ -1404,10 +1404,22 @@
 
     var entries = await window.WORLD_ENGINE_WORLDBOOK.loadCurrentEntries();
     entries = Array.isArray(entries) ? entries : [];
+    var selectedIds = (typeof window.WORLD_ENGINE_WORLDBOOK.getSelectedIds === 'function')
+      ? window.WORLD_ENGINE_WORLDBOOK.getSelectedIds()
+      : [];
+    var hasSelection = (typeof window.WORLD_ENGINE_WORLDBOOK.hasSelection === 'function')
+      ? window.WORLD_ENGINE_WORLDBOOK.hasSelection()
+      : false;
+    var selectedSet = new Set(Array.isArray(selectedIds) ? selectedIds : []);
+    entries = entries.filter(function (entry) {
+      if (!entry || entry.disabled === true) return false;
+      return hasSelection ? selectedSet.has(entry.id) : true;
+    });
+
     var contentParts = [];
     for (var i = 0; i < entries.length; i++) {
       var entry = entries[i];
-      var title = entry.comment || entry.key || entry.uid || ('Entry ' + i);
+      var title = entry.title || entry.comment || entry.key || entry.uid || ('Entry ' + i);
       var body = entry.content || '';
       if (String(body).trim()) {
         contentParts.push('\u3010' + title + '\u3011\n' + String(body).trim());
@@ -1855,6 +1867,7 @@
     normalizePreset:    normalizePreset,
     getInternalSchema:  function () { return deepClone(INTERNAL_SCHEMA); },
     generateFromWorldbook: generateFromWorldbook,
+    _buildGenerationSource: buildGenerationSource,
     generateTonePrompt: generateTonePrompt,
     exportPreset:       exportPreset,
     importPreset:       importPreset,
