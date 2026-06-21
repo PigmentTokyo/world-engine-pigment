@@ -837,7 +837,10 @@ cooldown 由本地维护，API 不得输出或修改此字段。
       description: '经济对象。只在市场、道路、资源、价格、物流发生实质变化时返回。',
       fields: {
         climate: { type: 'enum', description: '当前经济温度。使用当前预设定义的经济状态。', example: '平稳' },
-        signals: { type: 'array<object>', description: '市场信号，每项包含 summary 与 scope。', example: [{ summary: '粮价上涨', scope: '北境' }] }
+        signals: { type: 'array<object>', description: '市场信号，每项包含 summary 与 scope。', example: [{ summary: '粮价上涨', scope: '北境' }] },
+        currencySystem: { type: 'string', label: '货币体系', description: '当前流通的货币/计价体系。', example: '官铸铜钱为主，边境兼用银两' },
+        scarcityIndex: { type: 'number', label: '稀缺指数', description: '关键物资稀缺程度，0-100，越高越紧缺。', example: 35 },
+        tradeRoutes: { type: 'array<string>', label: '贸易路线', description: '当前主要贸易路线，最多 5 条短语。', example: ['北境粮道', '西关盐路'] }
       }
     },
     reputation: {
@@ -885,8 +888,8 @@ cooldown 由本地维护，API 不得输出或修改此字段。
       moduleId: 'blackbox', field: 'blackbox', title: 'blackbox', container: 'object',
       description: '信息黑盒对象。用于未公开、未传播、只有少数人知道的信息。',
       fields: {
-        secretActions: { type: 'array<object>', description: '隐秘行为，每项包含 action 与 witnesses。', example: [{ action: '密室会谈', witnesses: '无' }] },
-        secretAssets: { type: 'array<object>', description: '隐秘资产，每项包含 name、exposure、status。', example: [{ name: '密信', exposure: 20, status: '隐藏' }] }
+        secretActions: { type: 'array<object>', description: '隐秘行为，每项包含 action 与 witnesses。', example: [{ action: '密室会谈', witnesses: '无' }], itemFields: {} },
+        secretAssets: { type: 'array<object>', description: '隐秘资产，每项包含 name、exposure、status。', example: [{ name: '密信', exposure: 20, status: '隐藏' }], itemFields: {} }
       }
     }
   };
@@ -899,6 +902,11 @@ cooldown 由本地维护，API 不得输出或修改此字段。
     return value && typeof value === 'object' && !Array.isArray(value);
   }
 
+  // 字段名安全检查：拒绝会破坏 prompt/JSON 的字符（空、控制符、引号、反斜杠）
+  function isSafeFieldName(name) {
+    return typeof name === 'string' && name.trim() !== '' && !/[\u0000-\u001f"\\]/.test(name);
+  }
+
   function normalizeFieldSpec(spec) {
     if (!isPlainObject(spec)) return null;
     const normalized = {
@@ -909,6 +917,14 @@ cooldown 由本地维护，API 不得输出或修改此字段。
     if (spec.label) normalized.label = String(spec.label);
     if (Object.prototype.hasOwnProperty.call(spec, 'display')) normalized.display = spec.display !== false;
     if (Array.isArray(spec.enum)) normalized.enum = spec.enum.map(String).filter(Boolean);
+    if (isPlainObject(spec.itemFields)) {
+      const itemFields = {};
+      Object.keys(spec.itemFields).forEach(key => {
+        const childSpec = normalizeFieldSpec(spec.itemFields[key]);
+        if (childSpec) itemFields[key] = childSpec;
+      });
+      normalized.itemFields = itemFields;
+    }
     return normalized;
   }
 
@@ -925,6 +941,7 @@ cooldown 由本地维护，API 不得输出或修改此字段。
     const replaceFields = isPlainObject(override.fields) ? override.fields : null;
     if (replaceFields) {
       Object.keys(replaceFields).forEach(field => {
+        if (!isSafeFieldName(field)) return;
         const spec = normalizeFieldSpec(replaceFields[field]);
         if (spec) merged.fields[field] = spec;
       });
@@ -932,13 +949,20 @@ cooldown 由本地维护，API 不得输出或修改此字段。
 
     const overrideFields = isPlainObject(override.overrideFields) ? override.overrideFields : {};
     Object.keys(overrideFields).forEach(field => {
+      if (!isSafeFieldName(field)) return;
       const spec = normalizeFieldSpec(overrideFields[field]);
       if (!spec) return;
-      merged.fields[field] = Object.assign({}, merged.fields[field] || {}, spec);
+      const prevSpec = merged.fields[field] || {};
+      const mergedSpec = Object.assign({}, prevSpec, spec);
+      if (isPlainObject(prevSpec.itemFields) || isPlainObject(spec.itemFields)) {
+        mergedSpec.itemFields = Object.assign({}, prevSpec.itemFields || {}, spec.itemFields || {});
+      }
+      merged.fields[field] = mergedSpec;
     });
 
     const addFields = isPlainObject(override.addFields) ? override.addFields : {};
     Object.keys(addFields).forEach(field => {
+      if (!isSafeFieldName(field)) return;
       const spec = normalizeFieldSpec(addFields[field]);
       if (spec) merged.fields[field] = spec;
     });
@@ -1031,6 +1055,13 @@ cooldown 由本地维护，API 不得输出或修改此字段。
         const spec = schema.fields[field] || {};
         const type = spec.type ? ' [' + spec.type + ']' : '';
         lines.push('- ' + field + type + ': ' + (spec.description || ''));
+        if (isPlainObject(spec.itemFields) && Object.keys(spec.itemFields).length) {
+          Object.keys(spec.itemFields).forEach(sub => {
+            const subSpec = spec.itemFields[sub] || {};
+            const subType = subSpec.type ? ' [' + subSpec.type + ']' : '';
+            lines.push('  · ' + field + '[].' + sub + subType + ': ' + (subSpec.description || ''));
+          });
+        }
       });
     });
 

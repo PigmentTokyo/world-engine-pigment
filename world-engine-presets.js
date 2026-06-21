@@ -797,6 +797,11 @@
     return text || fallback || '';
   }
 
+  // 字段名安全检查：允许中文(不建议但兼容)，仅拒绝会破坏 prompt/JSON 的字符
+  function isSafeFieldName(name) {
+    return !!name && !/[\u0000-\u001f"\\]/.test(name);
+  }
+
   function normalizeStringArray(value, fallback) {
     var arr = Array.isArray(value)
       ? value.map(function (item) { return normalizeText(item, ''); }).filter(Boolean)
@@ -892,6 +897,10 @@
       result.enum = value.enum.map(function (item) { return normalizeText(item, ''); }).filter(Boolean);
     }
     if (Object.prototype.hasOwnProperty.call(value, 'example')) result.example = deepClone(value.example);
+    if (isPlainObject(value.itemFields)) {
+      var itemFields = normalizeSchemaFieldMap(value.itemFields);
+      if (Object.keys(itemFields).length) result.itemFields = itemFields;
+    }
     return result;
   }
 
@@ -900,7 +909,7 @@
     if (!isPlainObject(value)) return result;
     Object.keys(value).forEach(function (fieldName) {
       var safeName = normalizeText(fieldName, '');
-      if (!safeName) return;
+      if (!safeName || !isSafeFieldName(safeName)) return;
       var spec = normalizeSchemaFieldSpec(value[fieldName]);
       if (spec) result[safeName] = spec;
     });
@@ -930,6 +939,37 @@
     });
     return result;
   }
+  var KNOWN_SCHEMA_TYPES = ['string', 'number', 'boolean', 'enum', 'array<string>', 'object', 'array<object>'];
+
+  // 校验 schemaOverrides 形状，返回告警字符串数组（不抛错，不阻断导入）
+  function validateSchemaOverrides(raw) {
+    var warnings = [];
+    if (raw == null) return warnings;
+    if (!isPlainObject(raw)) { warnings.push('schemaOverrides 不是对象，已忽略'); return warnings; }
+    Object.keys(raw).forEach(function (moduleId) {
+      var mod = raw[moduleId];
+      if (!isPlainObject(mod)) { warnings.push('模块「' + moduleId + '」的结构覆盖不是对象，已忽略'); return; }
+      ['fields', 'addFields', 'overrideFields'].forEach(function (bucket) {
+        var fm = mod[bucket];
+        if (fm === undefined) return;
+        if (!isPlainObject(fm)) { warnings.push(moduleId + '.' + bucket + ' 不是对象，已忽略'); return; }
+        Object.keys(fm).forEach(function (name) {
+          var trimmed = normalizeText(name, '');
+          if (!trimmed) { warnings.push('模块「' + moduleId + '」含空字段名，已忽略'); return; }
+          if (!isSafeFieldName(trimmed)) { warnings.push('字段名「' + name + '」含非法字符，已忽略'); return; }
+          if (/[^\x00-\x7F]/.test(trimmed)) warnings.push('字段名「' + trimmed + '」含非英文字符，建议改用英文');
+          else if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(trimmed)) warnings.push('字段名「' + trimmed + '」命名不规范，建议只用字母、数字、下划线');
+          var spec = fm[name];
+          if (isPlainObject(spec) && spec.type != null) {
+            var t = String(spec.type);
+            if (KNOWN_SCHEMA_TYPES.indexOf(t) === -1) warnings.push('字段「' + trimmed + '」的类型「' + t + '」非标准类型，将按文本处理');
+          }
+        });
+      });
+    });
+    return warnings;
+  }
+
   function normalizePreset(raw, options) {
     options = options || {};
     var source = isPlainObject(raw) ? raw : {};
@@ -1673,7 +1713,8 @@
     getInternalSchema:  function () { return deepClone(INTERNAL_SCHEMA); },
     generateFromWorldbook: generateFromWorldbook,
     exportPreset:       exportPreset,
-    importPreset:       importPreset
+    importPreset:       importPreset,
+    validateSchemaOverrides: validateSchemaOverrides
   };
 
   console.log('[WorldEngine Presets] Module loaded. Built-in presets: ' + BUILTIN_PRESETS.map(function (p) { return p.name; }).join(', '));

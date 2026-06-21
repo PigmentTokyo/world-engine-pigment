@@ -523,6 +523,271 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
       '</div>';
   }
 
+  // ===== 结构编辑器辅助（字段类型下拉 / 行渲染 / 校验 / 预览） =====
+  var SCHEMA_GRID_STYLE = 'display:grid;grid-template-columns:1fr 96px 1.4fr 1fr 1fr 48px 48px 64px;gap:6px;align-items:center;';
+  var SCHEMA_TYPE_OPTIONS = [
+    ['string', '文本'], ['number', '数字'], ['boolean', '布尔'], ['enum', '枚举'],
+    ['array<string>', '文本数组'], ['object', '对象'], ['array<object>', '对象数组']
+  ];
+
+  function schemaTypeSelectHTML(currentType) {
+    var t = String(currentType || 'string');
+    var known = SCHEMA_TYPE_OPTIONS.some(function (o) { return o[0] === t; });
+    var html = '<select class="we-schema-field-type">';
+    SCHEMA_TYPE_OPTIONS.forEach(function (o) {
+      html += '<option value="' + esc(o[0]) + '"' + (o[0] === t ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
+    });
+    if (!known && t) html += '<option value="' + esc(t) + '" selected>' + esc(t) + '（自定义）</option>';
+    html += '</select>';
+    return html;
+  }
+
+  function setSelectValue(sel, val) {
+    if (!sel) return;
+    val = String(val == null ? '' : val);
+    var found = false;
+    for (var i = 0; i < sel.options.length; i++) { if (sel.options[i].value === val) { found = true; break; } }
+    if (!found && val) {
+      var o = document.createElement('option');
+      o.value = val; o.textContent = val + '（自定义）';
+      sel.appendChild(o);
+    }
+    sel.value = val;
+  }
+
+  function buildExistingSchemaRowHTML(moduleId, field, spec, hidden) {
+    var enumText = Array.isArray(spec.enum) ? spec.enum.join(', ') : '';
+    var exampleText = spec.example === undefined ? '' : JSON.stringify(spec.example);
+    return '' +
+      '<div class="we-schema-row" data-schema-existing="1" data-schema-module="' + esc(moduleId) + '" data-schema-field="' + esc(field) + '" style="' + SCHEMA_GRID_STYLE + 'margin-bottom:6px;">' +
+        '<input class="we-schema-field-name" type="text" value="' + esc(field) + '" readonly title="基础字段不能直接重命名；可先隐藏，再新增一个字段。">' +
+        schemaTypeSelectHTML(spec.type) +
+        '<input class="we-schema-field-desc" type="text" value="' + esc(spec.description || '') + '">' +
+        '<input class="we-schema-field-enum" type="text" value="' + esc(enumText) + '" placeholder="a, b, c">' +
+        '<input class="we-schema-field-example" type="text" value="' + esc(exampleText) + '" placeholder="示例">' +
+        '<label style="display:flex;gap:4px;align-items:center;font-size:11px;"><input class="we-schema-field-display" type="checkbox"' + (spec.display === false ? '' : ' checked') + '>显示</label>' +
+        '<label style="display:flex;gap:4px;align-items:center;font-size:11px;"><input class="we-schema-field-hidden" type="checkbox"' + (hidden ? ' checked' : '') + '>隐藏</label>' +
+        '<button class="we-icon-btn we-schema-row-copy" type="button" title="复制为新字段" style="width:28px;height:28px;"><i class="fa-solid fa-copy"></i></button>' +
+      '</div>';
+  }
+
+  function buildNewSchemaRowHTML(moduleId, name, spec) {
+    spec = spec || {};
+    var enumText = Array.isArray(spec.enum) ? spec.enum.join(', ') : '';
+    var exampleText = spec.example === undefined ? '' : JSON.stringify(spec.example);
+    return '' +
+      '<div class="we-schema-row we-schema-new-row" data-schema-new="1" data-schema-module="' + esc(moduleId) + '" style="' + SCHEMA_GRID_STYLE + 'margin-top:8px;">' +
+        '<input class="we-schema-field-name" type="text" value="' + esc(name || '') + '" placeholder="字段名，例如 resources">' +
+        schemaTypeSelectHTML(spec.type) +
+        '<input class="we-schema-field-desc" type="text" value="' + esc(spec.description || '') + '" placeholder="字段说明">' +
+        '<input class="we-schema-field-enum" type="text" value="' + esc(enumText) + '" placeholder="枚举，可空">' +
+        '<input class="we-schema-field-example" type="text" value="' + esc(exampleText) + '" placeholder="示例，可空">' +
+        '<label style="display:flex;gap:4px;align-items:center;font-size:11px;"><input class="we-schema-field-display" type="checkbox"' + (spec.display === false ? '' : ' checked') + '>显示</label>' +
+        '<span></span>' +
+        '<span style="display:flex;gap:2px;justify-content:flex-end;">' +
+          '<button class="we-icon-btn we-schema-row-copy" type="button" title="复制字段" style="width:28px;height:28px;"><i class="fa-solid fa-copy"></i></button>' +
+          '<button class="we-icon-btn we-schema-row-remove" type="button" title="删除字段行" style="width:28px;height:28px;">×</button>' +
+        '</span>' +
+      '</div>';
+  }
+
+  function buildModuleRowsInnerHTML(moduleId, baseSchema, mergedSchema, moduleOverride) {
+    moduleOverride = moduleOverride || {};
+    var hiddenMap = {};
+    if (Array.isArray(moduleOverride.hiddenFields)) {
+      moduleOverride.hiddenFields.map(String).forEach(function (field) { hiddenMap[field] = true; });
+    }
+    var overrideFields = moduleOverride.overrideFields || {};
+    var addFields = moduleOverride.addFields || {};
+    var mergedFields = (mergedSchema && mergedSchema.fields) || {};
+    var rows = '';
+    Object.keys(baseSchema.fields).forEach(function (field) {
+      var spec = Object.assign({}, baseSchema.fields[field] || {}, overrideFields[field] || {}, mergedFields[field] || {});
+      rows += buildExistingSchemaRowHTML(moduleId, field, spec, !!hiddenMap[field]);
+    });
+    Object.keys(addFields).forEach(function (field) {
+      rows += buildNewSchemaRowHTML(moduleId, field, addFields[field] || {});
+    });
+    rows += buildNewSchemaRowHTML(moduleId, '', {});
+    return rows;
+  }
+
+  function handleCopySchemaFieldRow(button) {
+    var row = button && button.closest('.we-schema-row');
+    if (!row) return;
+    var block = row.closest('.we-schema-module-block');
+    var container = block && block.querySelector('.we-schema-rows');
+    if (!container) return;
+    var moduleId = block.getAttribute('data-schema-module') || '';
+    var nameInput = row.querySelector('.we-schema-field-name');
+    var srcName = nameInput ? nameInput.value.trim() : '';
+    var el = createSchemaNewRowElement(moduleId);
+    el.querySelector('.we-schema-field-name').value = srcName ? (srcName + '_copy') : '';
+    setSelectValue(el.querySelector('.we-schema-field-type'), (row.querySelector('.we-schema-field-type') || {}).value || 'string');
+    el.querySelector('.we-schema-field-desc').value = (row.querySelector('.we-schema-field-desc') || {}).value || '';
+    el.querySelector('.we-schema-field-enum').value = (row.querySelector('.we-schema-field-enum') || {}).value || '';
+    el.querySelector('.we-schema-field-example').value = (row.querySelector('.we-schema-field-example') || {}).value || '';
+    var srcDisp = row.querySelector('.we-schema-field-display');
+    var dstDisp = el.querySelector('.we-schema-field-display');
+    if (dstDisp) dstDisp.checked = srcDisp ? srcDisp.checked : true;
+    container.appendChild(el);
+  }
+
+  function handleResetSchemaModule(button) {
+    var block = button && button.closest('.we-schema-module-block');
+    if (!block) return;
+    var moduleId = block.getAttribute('data-schema-module') || '';
+    var container = block.querySelector('.we-schema-rows');
+    var rulesLoader = window.WORLD_ENGINE_RULES;
+    if (!container || !rulesLoader || !rulesLoader.getBaseModuleOutputSchema) return;
+    var baseSchema = rulesLoader.getBaseModuleOutputSchema(moduleId);
+    if (!baseSchema || !baseSchema.fields) return;
+    container.innerHTML = buildModuleRowsInnerHTML(moduleId, baseSchema, baseSchema, {});
+    toast('已恢复默认字段，点“保存表单结构”后生效');
+  }
+
+  function validateSchemaFormIssues() {
+    var errors = [], warnings = [];
+    var blocks = document.querySelectorAll('.we-schema-module-block[data-schema-module]');
+    for (var i = 0; i < blocks.length; i++) {
+      var moduleId = blocks[i].getAttribute('data-schema-module') || '';
+      var baseNames = {};
+      var existing = blocks[i].querySelectorAll('.we-schema-row[data-schema-existing="1"]');
+      for (var e = 0; e < existing.length; e++) {
+        var bn = existing[e].getAttribute('data-schema-field');
+        if (bn) baseNames[bn] = true;
+      }
+      var seen = {};
+      var newRows = blocks[i].querySelectorAll('.we-schema-row[data-schema-new="1"]');
+      for (var n = 0; n < newRows.length; n++) {
+        var row = newRows[n];
+        var nameInput = row.querySelector('.we-schema-field-name');
+        var name = nameInput ? nameInput.value.trim() : '';
+        var typeSel = row.querySelector('.we-schema-field-type');
+        var descInput = row.querySelector('.we-schema-field-desc');
+        var hasContent = (descInput && descInput.value.trim()) || (typeSel && typeSel.value && typeSel.value !== 'string');
+        if (!name) {
+          if (hasContent) errors.push('模块「' + moduleId + '」有一个新字段未填写字段名');
+          continue;
+        }
+        if (/[^\x00-\x7F]/.test(name)) {
+          warnings.push('字段名「' + name + '」含非英文字符，建议改用英文');
+        } else if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+          warnings.push('字段名「' + name + '」建议只用字母、数字和下划线，且不以数字开头');
+        }
+        if (baseNames[name] || seen[name]) warnings.push('字段名「' + name + '」与已有字段重名，建议改名');
+        seen[name] = true;
+      }
+    }
+    return { errors: errors, warnings: warnings };
+  }
+
+  // 轻量 JSON 扫描器：返回首个错误字符的下标（-1 表示扫描未发现明显错误）
+  function locateJsonErrorIndex(text) {
+    var i = 0, n = text.length;
+    function ws() { while (i < n) { var c = text[i]; if (c === ' ' || c === '\t' || c === '\n' || c === '\r') i++; else break; } }
+    function str() { i++; while (i < n) { var c = text[i]; if (c === '\\') { i += 2; continue; } if (c === '"') { i++; return -1; } i++; } return n; }
+    function num() { var s = i; if (text[i] === '-') i++; while (i < n && text[i] >= '0' && text[i] <= '9') i++; if (text[i] === '.') { i++; while (i < n && text[i] >= '0' && text[i] <= '9') i++; } if (text[i] === 'e' || text[i] === 'E') { i++; if (text[i] === '+' || text[i] === '-') i++; while (i < n && text[i] >= '0' && text[i] <= '9') i++; } return i > s ? -1 : i; }
+    function val() {
+      ws();
+      if (i >= n) return i;
+      var c = text[i];
+      if (c === '"') return str();
+      if (c === '{') return obj();
+      if (c === '[') return arr();
+      if (c === '-' || (c >= '0' && c <= '9')) return num();
+      if (text.substr(i, 4) === 'true') { i += 4; return -1; }
+      if (text.substr(i, 5) === 'false') { i += 5; return -1; }
+      if (text.substr(i, 4) === 'null') { i += 4; return -1; }
+      return i;
+    }
+    function obj() {
+      i++; ws();
+      if (text[i] === '}') { i++; return -1; }
+      while (i < n) {
+        ws();
+        if (text[i] !== '"') return i;
+        var e = str(); if (e >= 0) return e;
+        ws();
+        if (text[i] !== ':') return i;
+        i++;
+        var v = val(); if (v >= 0) return v;
+        ws();
+        if (text[i] === ',') { i++; continue; }
+        if (text[i] === '}') { i++; return -1; }
+        return i;
+      }
+      return i;
+    }
+    function arr() {
+      i++; ws();
+      if (text[i] === ']') { i++; return -1; }
+      while (i < n) {
+        var v = val(); if (v >= 0) return v;
+        ws();
+        if (text[i] === ',') { i++; continue; }
+        if (text[i] === ']') { i++; return -1; }
+        return i;
+      }
+      return i;
+    }
+    var r = val();
+    if (r >= 0) return r;
+    ws();
+    if (i < n) return i;
+    return -1;
+  }
+
+  function describeJsonPosition(text, pos) {
+    var before = text.slice(0, pos);
+    var line = before.split('\n').length;
+    var col = pos - before.lastIndexOf('\n');
+    var lineText = (text.split('\n')[line - 1] || '').slice(0, 80);
+    return '（第 ' + line + ' 行，第 ' + col + ' 列）\n> ' + lineText;
+  }
+
+  function formatJsonParseError(text, err) {
+    var msg = (err && err.message) ? err.message : String(err);
+    var m = /position (\d+)/.exec(msg);
+    if (m) return msg.replace(/ in JSON.*$/, '') + describeJsonPosition(text, Number(m[1]));
+    var lm = /line (\d+) column (\d+)/i.exec(msg);
+    if (lm) {
+      var ln = Number(lm[1]);
+      var lt = (text.split('\n')[ln - 1] || '').slice(0, 80);
+      return msg + '\n> ' + lt;
+    }
+    var idx = locateJsonErrorIndex(text);
+    if (idx >= 0) return 'JSON 格式错误' + describeJsonPosition(text, idx);
+    return msg;
+  }
+
+  function showSchemaPreviewConfirm(jsonText) {
+    return new Promise(function (resolve) {
+      var overlay = document.createElement('div');
+      overlay.className = 'we-confirm-overlay';
+      overlay.innerHTML =
+        '<div class="we-confirm-box" style="max-width:560px;width:90%;">' +
+          '<p style="margin:0 0 6px;">保存前预览输出结构：</p>' +
+          '<pre style="max-height:50vh;overflow:auto;text-align:left;background:var(--we-bg2,#1a1a1a);padding:8px;border-radius:4px;font-size:11px;white-space:pre-wrap;word-break:break-all;margin:0 0 8px;">' + esc(jsonText) + '</pre>' +
+          '<div class="we-confirm-actions">' +
+            '<button class="we-btn we-btn-danger" data-we-confirm="yes">确认保存</button>' +
+            '<button class="we-btn" data-we-confirm="no">取消</button>' +
+          '</div>' +
+        '</div>';
+      document.body.appendChild(overlay);
+      overlay.addEventListener('click', function (e) {
+        var btn = e.target.closest('[data-we-confirm]');
+        if (btn) {
+          if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+          resolve(btn.getAttribute('data-we-confirm') === 'yes');
+        } else if (e.target === overlay) {
+          if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+          resolve(false);
+        }
+      });
+    });
+  }
+
   function buildSchemaOverridesHTML() {
     var P = getPresets();
     if (!P) return '';
@@ -533,22 +798,13 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
     var bodyClass = _collapsed.schemaOverrides ? ' collapsed' : '';
     var value = JSON.stringify(preset.schemaOverrides || {}, null, 2);
     var overrides = (preset && preset.schemaOverrides) || {};
-    var gridStyle = 'display:grid;grid-template-columns:1fr 100px 1.4fr 1fr 1fr 54px 54px;gap:6px;align-items:center;';
+    var gridStyle = SCHEMA_GRID_STYLE;
     var builtinNote = isBuiltin
       ? '<div class="we-hint" style="margin-bottom:6px;color:var(--we-warning,#fdcb6e);">当前为内置预设，保存后会自动创建自定义副本。</div>'
       : '';
 
     function newFieldRowHTML(moduleId) {
-      return '' +
-        '<div class="we-schema-row we-schema-new-row" data-schema-new="1" data-schema-module="' + esc(moduleId) + '" style="' + gridStyle + 'margin-top:8px;">' +
-          '<input class="we-schema-field-name" type="text" value="" placeholder="字段名，例如 resources">' +
-          '<input class="we-schema-field-type" type="text" value="string">' +
-          '<input class="we-schema-field-desc" type="text" value="" placeholder="字段说明">' +
-          '<input class="we-schema-field-enum" type="text" value="" placeholder="枚举，可空">' +
-          '<input class="we-schema-field-example" type="text" value="" placeholder="示例，可空">' +
-          '<label style="display:flex;gap:4px;align-items:center;font-size:11px;"><input class="we-schema-field-display" type="checkbox" checked>显示</label>' +
-          '<button class="we-icon-btn we-schema-row-remove" type="button" title="删除字段行" style="width:28px;height:28px;">×</button>' +
-        '</div>';
+      return buildNewSchemaRowHTML(moduleId, '', {});
     }
 
     var schemaBlocks = '';
@@ -562,46 +818,7 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
           : rulesLoader.getModuleOutputSchema(mod.moduleId);
         if (!baseSchema || !baseSchema.fields) continue;
         var mergedSchema = rulesLoader.getModuleOutputSchema(mod.moduleId) || baseSchema;
-        var hiddenMap = {};
-        if (Array.isArray(moduleOverride.hiddenFields)) {
-          moduleOverride.hiddenFields.map(String).forEach(function (field) { hiddenMap[field] = true; });
-        }
-        var overrideFields = moduleOverride.overrideFields || {};
-        var addFields = moduleOverride.addFields || {};
-        var fields = Object.keys(baseSchema.fields);
-        var rows = '';
-        for (var fi = 0; fi < fields.length; fi++) {
-          var field = fields[fi];
-          var spec = Object.assign({}, baseSchema.fields[field] || {}, overrideFields[field] || {}, mergedSchema.fields[field] || {});
-          var enumText = Array.isArray(spec.enum) ? spec.enum.join(', ') : '';
-          var exampleText = spec.example === undefined ? '' : JSON.stringify(spec.example);
-          rows += '' +
-            '<div class="we-schema-row" data-schema-existing="1" data-schema-module="' + esc(mod.moduleId) + '" data-schema-field="' + esc(field) + '" style="' + gridStyle + 'margin-bottom:6px;">' +
-              '<input class="we-schema-field-name" type="text" value="' + esc(field) + '" readonly title="基础字段不能直接重命名；可先隐藏，再新增一个字段。">' +
-              '<input class="we-schema-field-type" type="text" value="' + esc(spec.type || 'string') + '">' +
-              '<input class="we-schema-field-desc" type="text" value="' + esc(spec.description || '') + '">' +
-              '<input class="we-schema-field-enum" type="text" value="' + esc(enumText) + '" placeholder="a, b, c">' +
-              '<input class="we-schema-field-example" type="text" value="' + esc(exampleText) + '" placeholder="示例">' +
-              '<label style="display:flex;gap:4px;align-items:center;font-size:11px;"><input class="we-schema-field-display" type="checkbox"' + (spec.display === false ? '' : ' checked') + '>显示</label>' +
-              '<label style="display:flex;gap:4px;align-items:center;font-size:11px;"><input class="we-schema-field-hidden" type="checkbox"' + (hiddenMap[field] ? ' checked' : '') + '>隐藏</label>' +
-            '</div>';
-        }
-        Object.keys(addFields).forEach(function (field) {
-          var spec = addFields[field] || {};
-          var enumText = Array.isArray(spec.enum) ? spec.enum.join(', ') : '';
-          var exampleText = spec.example === undefined ? '' : JSON.stringify(spec.example);
-          rows += '' +
-            '<div class="we-schema-row we-schema-new-row" data-schema-new="1" data-schema-module="' + esc(mod.moduleId) + '" style="' + gridStyle + 'margin-top:8px;">' +
-              '<input class="we-schema-field-name" type="text" value="' + esc(field) + '" placeholder="字段名，例如 resources">' +
-              '<input class="we-schema-field-type" type="text" value="' + esc(spec.type || 'string') + '">' +
-              '<input class="we-schema-field-desc" type="text" value="' + esc(spec.description || '') + '" placeholder="字段说明">' +
-              '<input class="we-schema-field-enum" type="text" value="' + esc(enumText) + '" placeholder="枚举，可空">' +
-              '<input class="we-schema-field-example" type="text" value="' + esc(exampleText) + '" placeholder="示例，可空">' +
-              '<label style="display:flex;gap:4px;align-items:center;font-size:11px;"><input class="we-schema-field-display" type="checkbox"' + (spec.display === false ? '' : ' checked') + '>显示</label>' +
-              '<button class="we-icon-btn we-schema-row-remove" type="button" title="删除字段行" style="width:28px;height:28px;">×</button>' +
-            '</div>';
-        });
-        rows += newFieldRowHTML(mod.moduleId);
+        var rows = buildModuleRowsInnerHTML(mod.moduleId, baseSchema, mergedSchema, moduleOverride);
 
         schemaBlocks += '' +
           '<div class="we-schema-module-block" data-schema-module="' + esc(mod.moduleId) + '" style="border:1px solid var(--we-border,#333);border-radius:6px;padding:8px;margin:8px 0;">' +
@@ -610,9 +827,13 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
               '<span class="we-hint" style="margin:0;">' + esc(baseSchema.field || mod.moduleId) + '</span>' +
             '</div>' +
             '<div style="' + gridStyle + 'font-size:11px;color:var(--we-text3,#888);margin-bottom:4px;">' +
-              '<span>字段</span><span>类型</span><span>说明</span><span>枚举</span><span>示例</span><span>显示</span><span>隐藏</span>' +
-            '</div>' + rows +
-            '<button class="we-btn we-schema-add-field" type="button" data-we-schema-add-field="' + esc(mod.moduleId) + '" style="margin-top:8px;">新增字段</button>' +
+              '<span>字段</span><span>类型</span><span>说明</span><span>枚举</span><span>示例</span><span>显示</span><span>隐藏</span><span>操作</span>' +
+            '</div>' +
+            '<div class="we-schema-rows">' + rows + '</div>' +
+            '<div style="display:flex;gap:6px;margin-top:8px;">' +
+              '<button class="we-btn we-schema-add-field" type="button" data-we-schema-add-field="' + esc(mod.moduleId) + '">新增字段</button>' +
+              '<button class="we-btn we-schema-reset" type="button" data-we-schema-reset="' + esc(mod.moduleId) + '">恢复默认字段</button>' +
+            '</div>' +
           '</div>';
       }
     }
@@ -1117,6 +1338,16 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
       return;
     }
 
+    if (target.closest('.we-schema-row-copy')) {
+      handleCopySchemaFieldRow(target.closest('.we-schema-row-copy'));
+      return;
+    }
+
+    if (target.closest('[data-we-schema-reset]')) {
+      handleResetSchemaModule(target.closest('[data-we-schema-reset]'));
+      return;
+    }
+
     if (target.closest('.we-schema-row-remove')) {
       handleRemoveSchemaFieldRow(target.closest('.we-schema-row-remove'));
       return;
@@ -1310,6 +1541,14 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
     var reader = new FileReader();
     reader.onload = function (ev) {
       try {
+        // 导入前校验 schemaOverrides 字段格式，给出提示（不阻断导入）
+        if (typeof P.validateSchemaOverrides === 'function') {
+          try {
+            var rawPreset = JSON.parse(ev.target.result);
+            var schemaWarnings = P.validateSchemaOverrides(rawPreset && rawPreset.schemaOverrides);
+            schemaWarnings.slice(0, 4).forEach(function (w) { toastWarning(w); });
+          } catch (ignore) {}
+        }
         var result = P.importPreset(ev.target.result);
         if (result) {
           // Switch to imported preset
@@ -1370,27 +1609,18 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
 
   // ── Handler: Add Term ──
   function createSchemaNewRowElement(moduleId) {
-    var div = document.createElement('div');
-    div.className = 'we-schema-row we-schema-new-row';
-    div.setAttribute('data-schema-new', '1');
-    div.setAttribute('data-schema-module', moduleId || '');
-    div.style.cssText = 'display:grid;grid-template-columns:1fr 100px 1.4fr 1fr 1fr 54px 54px;gap:6px;align-items:center;margin-top:8px;';
-    div.innerHTML =
-      '<input class="we-schema-field-name" type="text" value="" placeholder="字段名，例如 resources">' +
-      '<input class="we-schema-field-type" type="text" value="string">' +
-      '<input class="we-schema-field-desc" type="text" value="" placeholder="字段说明">' +
-      '<input class="we-schema-field-enum" type="text" value="" placeholder="枚举，可空">' +
-      '<input class="we-schema-field-example" type="text" value="" placeholder="示例，可空">' +
-      '<label style="display:flex;gap:4px;align-items:center;font-size:11px;"><input class="we-schema-field-display" type="checkbox" checked>显示</label>' +
-      '<button class="we-icon-btn we-schema-row-remove" type="button" title="删除字段行" style="width:28px;height:28px;">×</button>';
-    return div;
+    var wrap = document.createElement('div');
+    wrap.innerHTML = buildNewSchemaRowHTML(moduleId || '', '', {});
+    return wrap.firstChild;
   }
 
   function handleAddSchemaFieldRow(button) {
     var block = button && button.closest('.we-schema-module-block');
     if (!block) return;
     var moduleId = block.getAttribute('data-schema-module') || '';
-    block.insertBefore(createSchemaNewRowElement(moduleId), button);
+    var container = block.querySelector('.we-schema-rows');
+    if (container) container.appendChild(createSchemaNewRowElement(moduleId));
+    else block.insertBefore(createSchemaNewRowElement(moduleId), button);
   }
 
   function handleRemoveSchemaFieldRow(button) {
@@ -1517,10 +1747,16 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
   }
 
   function handleSaveSchemaOverrides() {
+    var issues = validateSchemaFormIssues();
+    if (issues.errors.length) { toastError(issues.errors[0]); return; }
+    issues.warnings.forEach(function (w) { toastWarning(w); });
     var parsed = collectSchemaOverridesFromForm();
+    var jsonText = JSON.stringify(parsed, null, 2);
     var textarea = document.getElementById('we-preset-schema-overrides');
-    if (textarea) textarea.value = JSON.stringify(parsed, null, 2);
-    saveSchemaOverridesObject(parsed, '表单结构已保存');
+    if (textarea) textarea.value = jsonText;
+    showSchemaPreviewConfirm(jsonText).then(function (ok) {
+      if (ok) saveSchemaOverridesObject(parsed, '表单结构已保存');
+    });
   }
 
   function handleSaveSchemaOverridesJson() {
@@ -1531,7 +1767,7 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
       parsed = JSON.parse(textarea.value || '{}');
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('schemaOverrides 必须是对象');
     } catch (err) {
-      toastError('输出结构 JSON 解析失败：' + (err.message || err));
+      toastError('输出结构 JSON 解析失败：' + formatJsonParseError(textarea.value || '', err));
       return;
     }
     saveSchemaOverridesObject(parsed, '高级 JSON 结构已保存');

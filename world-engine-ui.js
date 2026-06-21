@@ -18,6 +18,7 @@ window.WORLD_ENGINE_UI = (function() {
   //   list  = 条目当前所在的桶；index = 在该桶里的下标
   //   view  = 当前显示的表单类型（切下拉只改 view，不动数据；转换延到保存）
   let editingSecret = null;
+  let editingEconomy = null;
   let listPagerCounter = 0;
   const listPageState = {};
   const sectionCollapsed = { 'checkpoint-section': true, 'set-filter': true };
@@ -841,18 +842,40 @@ window.WORLD_ENGINE_UI = (function() {
       </div>`;
   }
 
+  function mapSchemaFields(fieldsMap, baseFields) {
+    if (!fieldsMap) return [];
+    baseFields = baseFields || {};
+    return Object.keys(fieldsMap).filter(function (key) {
+      return !baseFields[key] && (!fieldsMap[key] || fieldsMap[key].display !== false);
+    }).map(function (key) {
+      var spec = fieldsMap[key] || {};
+      return { key: key, label: spec.label || spec.title || key, type: spec.type || 'string', enum: spec.enum || [], display: spec.display !== false };
+    });
+  }
+
   function getSchemaExtraFields(moduleId, baseFields) {
     var rulesLoader = window.WORLD_ENGINE_RULES;
     if (!rulesLoader || !rulesLoader.getModuleOutputSchema) return [];
     var schema = rulesLoader.getModuleOutputSchema(moduleId);
     if (!schema || !schema.fields) return [];
-    baseFields = baseFields || {};
-    return Object.keys(schema.fields).filter(function (key) {
-      return !baseFields[key] && (!schema.fields[key] || schema.fields[key].display !== false);
-    }).map(function (key) {
-      var spec = schema.fields[key] || {};
-      return { key: key, label: spec.label || spec.title || key, type: spec.type || 'string', enum: spec.enum || [], display: spec.display !== false };
-    });
+    return mapSchemaFields(schema.fields, baseFields);
+  }
+
+  // 数组对象（如黑箱 secretActions/secretAssets）的子 schema 扩展字段
+  var SECRET_ITEM_BASE = {
+    action: { action: true, witnesses: true },
+    asset: { name: true, exposure: true, status: true }
+  };
+  var SECRET_ITEM_FIELD = { action: 'secretActions', asset: 'secretAssets' };
+  function getSecretItemSchemaFields(listType) {
+    var rulesLoader = window.WORLD_ENGINE_RULES;
+    if (!rulesLoader || !rulesLoader.getModuleOutputSchema) return [];
+    var schema = rulesLoader.getModuleOutputSchema('blackbox');
+    if (!schema || !schema.fields) return [];
+    var key = SECRET_ITEM_FIELD[listType];
+    var spec = key ? schema.fields[key] : null;
+    if (!spec || !spec.itemFields) return [];
+    return mapSchemaFields(spec.itemFields, SECRET_ITEM_BASE[listType] || {});
   }
 
   function formatSchemaDisplayValue(value) {
@@ -868,13 +891,62 @@ window.WORLD_ENGINE_UI = (function() {
   }
 
   function renderSchemaExtraFields(item, moduleId, baseFields, rowClass) {
-    if (!item) return '';
-    var fields = getSchemaExtraFields(moduleId, baseFields);
+    return buildSchemaExtraFieldsHtml(item, getSchemaExtraFields(moduleId, baseFields), rowClass);
+  }
+
+  function renderSchemaExtraValueHtml(field, value) {
+    if (value === undefined || value === null || value === '') return '';
+    var type = String((field && field.type) || 'string');
+    var isEnum = type === 'enum' || (field && Array.isArray(field.enum) && field.enum.length);
+    // 布尔 → 开关态标签
+    if (type === 'boolean' || typeof value === 'boolean') {
+      var on = (value === true || value === 'true' || value === 1 || value === '1' || value === '是');
+      return '<span class="we-xf-bool ' + (on ? 'we-xf-bool-on' : 'we-xf-bool-off') + '">' +
+        '<i class="fa-solid ' + (on ? 'fa-toggle-on' : 'fa-toggle-off') + '"></i>' + (on ? '是' : '否') + '</span>';
+    }
+    // 枚举 → 单个标签
+    if (isEnum && !Array.isArray(value)) {
+      return '<span class="we-xf-tag we-xf-tag-enum">' + u(String(value)) + '</span>';
+    }
+    // 数组 → 多个小标签（对象元素退化为 JSON 标签）
+    if (type.indexOf('array') === 0 || Array.isArray(value)) {
+      if (Array.isArray(value)) {
+        var tags = value.filter(function (v) { return v !== undefined && v !== null && v !== ''; })
+          .map(function (v) {
+            var t = (v && typeof v === 'object') ? JSON.stringify(v) : String(v);
+            return '<span class="we-xf-tag">' + u(t) + '</span>';
+          }).join('');
+        return tags ? '<span class="we-xf-tags">' + tags + '</span>' : '';
+      }
+    }
+    // 对象 → 折叠显示
+    if (type === 'object' || (typeof value === 'object')) {
+      var json = JSON.stringify(value, null, 2);
+      var label = Array.isArray(value) ? (value.length + ' 项') : '对象';
+      return '<details class="we-xf-obj"><summary>展开（' + label + '）</summary>' +
+        '<pre class="we-xf-obj-pre">' + u(json) + '</pre></details>';
+    }
+    // 数字 → 数值徽章（0-100 时徽章自带进度填充）
+    if (type === 'number' || (typeof value === 'number') || (typeof value === 'string' && value.trim() !== '' && Number.isFinite(Number(value)))) {
+      var num = Number(value);
+      if (Number.isFinite(num)) {
+        if (num >= 0 && num <= 100) {
+          return '<span class="we-xf-num" style="--xf-pct:' + Math.max(0, Math.min(100, num)) + '%;">' + u(String(value)) + '</span>';
+        }
+        return '<span class="we-xf-num we-xf-num-plain">' + u(String(value)) + '</span>';
+      }
+    }
+    // 文本兜底
+    return u(String(value));
+  }
+
+  function buildSchemaExtraFieldsHtml(item, fields, rowClass) {
+    if (!item || !fields) return '';
     rowClass = rowClass || 'we-faction-meta';
     return fields.map(function (field) {
-      var displayValue = formatSchemaDisplayValue(item[field.key]);
-      if (!displayValue) return '';
-      return '<div class="' + rowClass + '"><span class="we-schema-extra-label">' + u(field.label) + ': </span>' + u(displayValue) + '</div>';
+      var valueHtml = renderSchemaExtraValueHtml(field, item[field.key]);
+      if (!valueHtml) return '';
+      return '<div class="' + rowClass + ' we-xf-row"><span class="we-schema-extra-label">' + u(field.label) + ': </span>' + valueHtml + '</div>';
     }).join('');
   }
 
@@ -885,8 +957,11 @@ window.WORLD_ENGINE_UI = (function() {
   }
 
   function renderSchemaExtraEditor(item, moduleId, baseFields) {
-    var fields = getSchemaExtraFields(moduleId, baseFields);
-    if (!fields.length) return '';
+    return buildSchemaExtraEditorHtml(item, getSchemaExtraFields(moduleId, baseFields));
+  }
+
+  function buildSchemaExtraEditorHtml(item, fields) {
+    if (!fields || !fields.length) return '';
     var html = '<div class="we-event-editor-wide we-schema-extra-editor" style="display:grid;grid-template-columns:1fr;gap:6px;margin-top:4px;">' +
       '<div style="font-size:12px;color:var(--we-text2,#aaa);">自定义字段</div>';
     fields.forEach(function (field) {
@@ -1197,12 +1272,14 @@ window.WORLD_ENGINE_UI = (function() {
   function renderEconomy(econ, scope) {
     if (!econ) return '<div class="we-empty">暂无经济数据</div>';
     const sc = scope || 'state';
+    if (editingEconomy && editingEconomy.scope === sc) return renderEconomyEditor(econ, sc);
     const climates = ['繁荣','平稳','衰退','动荡'];
     const climateColors = { '繁荣': '#3ecf8e', '平稳': '#7a8a9a', '衰退': '#d9a34a', '动荡': '#e05555' };
     const climateBg = { '繁荣': 'rgba(62,207,142,0.08)', '平稳': 'rgba(122,138,154,0.06)', '衰退': 'rgba(217,163,74,0.08)', '动荡': 'rgba(224,85,85,0.08)' };
     const climate = econ.climate || '平稳';
     const cColor = climateColors[climate] || '#7a8a9a';
-    let html = '<div class="we-climate-bar" style="background:' + (climateBg[climate]||'rgba(122,138,154,0.06)') + ';">';
+    let html = '<div class="we-event-actions we-economy-actions"><button class="we-icon-btn we-economy-edit" data-economy-scope="' + sc + '" title="编辑经济"><i class="fa-solid fa-pen"></i></button></div>';
+    html += '<div class="we-climate-bar" style="background:' + (climateBg[climate]||'rgba(122,138,154,0.06)') + ';">';
     html += '<span class="we-climate-dot" style="background:' + cColor + ';box-shadow:0 0 8px ' + cColor + '88;"></span>';
     html += '<span class="we-climate-label" style="color:' + cColor + '">' + climate + '</span>';
     html += '<div class="we-climate-btns">';
@@ -1224,6 +1301,51 @@ window.WORLD_ENGINE_UI = (function() {
     }
     html += '<div class="we-signal-add" data-sig-scope="' + sc + '"><i class="fa-solid fa-plus"></i> 添加信号</div>';
     return html;
+  }
+
+  function renderEconomyEditor(econ, scope) {
+    const climates = ['繁荣','平稳','衰退','动荡'];
+    const cur = econ.climate || '平稳';
+    if (climates.indexOf(cur) === -1) climates.push(cur);
+    const climateOptions = climates.map(function (c) {
+      return '<option value="' + h(c) + '"' + (c === cur ? ' selected' : '') + '>' + h(c) + '</option>';
+    }).join('');
+    const signals = Array.isArray(econ.signals) ? econ.signals : [];
+    let signalRows = signals.map(function (sig, i) {
+      const summary = (sig && typeof sig === 'object') ? (sig.summary || '') : String(sig || '');
+      const sigScope = (sig && typeof sig === 'object') ? (sig.scope || '') : '';
+      return '<div class="we-econ-signal-row" data-sig-row="' + i + '">'
+        + '<input class="we-econ-sig-summary" type="text" placeholder="信号摘要" value="' + u(summary) + '">'
+        + '<input class="we-econ-sig-scope" type="text" placeholder="范围" value="' + u(sigScope) + '">'
+        + '<button class="we-icon-btn we-econ-sig-del" data-economy-scope="' + scope + '" data-sig-idx="' + i + '" title="删除信号"><i class="fa-solid fa-xmark"></i></button>'
+        + '</div>';
+    }).join('');
+    if (!signals.length) signalRows = '<div class="we-empty" style="margin:2px 0;">暂无市场信号</div>';
+    return '<div class="we-event-editor we-economy-editor" data-economy-scope="' + scope + '">'
+      + '<button class="we-event-editor-close we-economy-editor-close"><i class="fa-solid fa-xmark"></i></button>'
+      + '<div class="we-event-editor-grid">'
+      + '<label>经济气候<select class="we-economy-edit-climate">' + climateOptions + '</select></label>'
+      + '<div class="we-event-editor-wide">'
+      + '<div style="font-size:12px;color:var(--we-text2);margin-bottom:4px;">市场信号</div>'
+      + '<div class="we-econ-signal-list">' + signalRows + '</div>'
+      + '<button class="we-btn we-economy-sig-add" data-economy-scope="' + scope + '" style="margin-top:4px;"><i class="fa-solid fa-plus"></i> 添加信号</button>'
+      + '</div>'
+      + buildSchemaExtraEditorHtml(econ, getSchemaExtraFields('economy', { climate: true, signals: true }))
+      + '</div>'
+      + '<div class="we-event-editor-footer">'
+      + '<button class="we-btn we-btn-primary we-economy-editor-save"><i class="fa-solid fa-floppy-disk"></i> 保存</button>'
+      + '</div>'
+      + '</div>';
+  }
+
+  function readEconomySignals(editor, keepEmpty) {
+    const out = [];
+    editor.querySelectorAll('.we-econ-signal-row').forEach(function (row) {
+      const summary = (row.querySelector('.we-econ-sig-summary').value || '').trim();
+      const sigScope = (row.querySelector('.we-econ-sig-scope').value || '').trim();
+      if (summary || sigScope || keepEmpty) out.push({ summary: summary, scope: sigScope || '区域' });
+    });
+    return out;
   }
 
   function renderEnemies(enemiesList, scope) {
@@ -1424,6 +1546,7 @@ window.WORLD_ENGINE_UI = (function() {
           <div class="we-secret-body">
             <div class="we-secret-title">${u(a.action || '未命名行为')}</div>
             <div class="we-secret-meta">知情者 · ${u(a.witnesses || '无')}</div>
+            ${buildSchemaExtraFieldsHtml(a, getSecretItemSchemaFields('action'), 'we-secret-meta')}
           </div>
         </div>`;
       });
@@ -1449,6 +1572,7 @@ window.WORLD_ENGINE_UI = (function() {
               <div class="we-secret-expo-track"><div class="we-secret-expo-fill" style="width:${expo}%;"></div></div>
               <span class="we-secret-expo-num">暴露 ${expo}%</span>
             </div>
+            ${buildSchemaExtraFieldsHtml(a, getSecretItemSchemaFields('asset'), 'we-secret-meta')}
           </div>
         </div>`;
       });
@@ -1483,7 +1607,7 @@ window.WORLD_ENGINE_UI = (function() {
     return `
       <div class="we-event-editor we-secret-editor" data-secret-scope="${scope}" data-secret-list="${list}" data-secret-index="${index}" data-secret-view="${view}">
         <button class="we-event-editor-close we-secret-editor-close"><i class="fa-solid fa-xmark"></i></button>
-        <div class="we-event-editor-grid">${fields}</div>
+        <div class="we-event-editor-grid">${fields}${buildSchemaExtraEditorHtml(a, getSecretItemSchemaFields(view))}</div>
         <div class="we-event-editor-footer">
           <button class="we-btn we-btn-primary we-secret-save"><i class="fa-solid fa-floppy-disk"></i> 保存</button>
         </div>
@@ -2255,6 +2379,62 @@ window.WORLD_ENGINE_UI = (function() {
       };
     });
 
+    // ===== 经济模块编辑器事件 =====
+    document.querySelectorAll('.we-economy-edit').forEach(button => {
+      button.onclick = () => { editingEconomy = { scope: button.dataset.economyScope }; refresh(); };
+    });
+    document.querySelectorAll('.we-economy-editor-close').forEach(button => {
+      button.onclick = () => { editingEconomy = null; refresh(); };
+    });
+    document.querySelectorAll('.we-economy-sig-add').forEach(button => {
+      button.onclick = () => {
+        const editor = button.closest('.we-economy-editor');
+        const scope = button.dataset.economyScope;
+        const state = loadScopedState(scope);
+        state.economy = state.economy || {};
+        const signals = readEconomySignals(editor, true);
+        signals.push({ summary: '', scope: '区域' });
+        state.economy.signals = signals;
+        const climateSel = editor.querySelector('.we-economy-edit-climate');
+        if (climateSel) state.economy.climate = climateSel.value;
+        applySchemaExtraEditor(editor, state.economy);
+        saveScopedState(scope, state);
+        refresh();
+      };
+    });
+    document.querySelectorAll('.we-econ-sig-del').forEach(button => {
+      button.onclick = () => {
+        const editor = button.closest('.we-economy-editor');
+        const scope = button.dataset.economyScope;
+        const idx = Number(button.dataset.sigIdx);
+        const state = loadScopedState(scope);
+        state.economy = state.economy || {};
+        const signals = readEconomySignals(editor, true);
+        if (idx >= 0 && idx < signals.length) signals.splice(idx, 1);
+        state.economy.signals = signals;
+        const climateSel = editor.querySelector('.we-economy-edit-climate');
+        if (climateSel) state.economy.climate = climateSel.value;
+        applySchemaExtraEditor(editor, state.economy);
+        saveScopedState(scope, state);
+        refresh();
+      };
+    });
+    document.querySelectorAll('.we-economy-editor-save').forEach(button => {
+      button.onclick = () => {
+        const editor = button.closest('.we-economy-editor');
+        const scope = editor.dataset.economyScope;
+        const state = loadScopedState(scope);
+        state.economy = state.economy || {};
+        state.economy.climate = editor.querySelector('.we-economy-edit-climate').value;
+        state.economy.signals = readEconomySignals(editor, false);
+        if (!applySchemaExtraEditor(editor, state.economy)) return;
+        saveScopedState(scope, state);
+        editingEconomy = null;
+        showToast('经济模块已保存');
+        refresh();
+      };
+    });
+
     // ===== 区域事件编辑器事件 =====
     document.querySelectorAll('.we-ri-edit').forEach(button => {
       button.onclick = () => {
@@ -2362,6 +2542,7 @@ window.WORLD_ENGINE_UI = (function() {
             status: editor.querySelector('.we-secret-f-status').value
           };
         }
+        if (!applySchemaExtraEditor(editor, item)) return;
 
         if (view === list) {
           srcArr[index] = item;                            // 原地更新
