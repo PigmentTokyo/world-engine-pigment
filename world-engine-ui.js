@@ -1833,6 +1833,7 @@ window.WORLD_ENGINE_UI = (function() {
         <button class="we-btn" id="we-import-data">导入 JSON</button>
         <input type="file" id="we-import-file" accept=".json" style="display:none;">
       </div>`;
+    const includePresetForTone = window.WORLD_ENGINE_STORE?.getItem?.('world_engine_tone_generate_with_preset') !== 'false';
     const toneBody = `
       <div style="display:flex;gap:6px;flex-wrap:wrap;">
         <button class="we-btn we-btn-primary" id="we-tone-generate">&#20174;&#35774;&#23450;&#29983;&#25104;</button>
@@ -1841,6 +1842,9 @@ window.WORLD_ENGINE_UI = (function() {
         <button class="we-btn" id="we-tone-clear">清除</button>
         <input type="file" id="we-tone-file" accept=".txt" style="display:none;">
       </div>
+      <label class="we-hint" style="display:flex;align-items:center;gap:6px;margin-top:6px;">
+        <input type="checkbox" id="we-tone-generate-preset" ${includePresetForTone ? 'checked' : ''}> &#29983;&#25104;&#26102;&#21442;&#32771;&#24403;&#21069;&#19990;&#30028;&#39044;&#35774;
+      </label>
       <div class="we-hint" id="we-tone-status" style="margin-top:6px;"></div>`;
     return sec('set-worldbook', '后台推演世界书', worldbookBody)
       + sec('set-data', '数据导入/导出', dataBody)
@@ -3064,6 +3068,13 @@ window.WORLD_ENGINE_UI = (function() {
     }
     updateToneStatus();
 
+    const toneGeneratePreset = document.getElementById('we-tone-generate-preset');
+    if (toneGeneratePreset) {
+      toneGeneratePreset.onchange = () => {
+        window.WORLD_ENGINE_STORE?.setItem?.('world_engine_tone_generate_with_preset', toneGeneratePreset.checked ? 'true' : 'false');
+      };
+    }
+
     const toneGenerateBtn = document.getElementById('we-tone-generate');
     if (toneGenerateBtn) {
       toneGenerateBtn.onclick = async () => {
@@ -3078,9 +3089,11 @@ window.WORLD_ENGINE_UI = (function() {
         if (statusEl) statusEl.textContent = '\u6b63\u5728\u6839\u636e\u8bbe\u5b9a\u751f\u6210\u9644\u52a0\u63d0\u793a\u8bcd...';
         try {
           const includeCharacterDescription = window.WORLD_ENGINE_STORE?.getItem?.('world_engine_generate_with_character_profile') !== 'false';
+          const includePreset = document.getElementById('we-tone-generate-preset')?.checked !== false;
           const text = await window.WORLD_ENGINE_PRESETS.generateTonePrompt({
             includeCharacterDescription: includeCharacterDescription,
-            includeUserPersona: true
+            includeUserPersona: true,
+            includePreset: includePreset
           });
           saveTonePrompt(text);
           updateToneStatus();

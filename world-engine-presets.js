@@ -1351,6 +1351,51 @@
     return '';
   }
 
+
+  function summarizeActivePresetForGeneration() {
+    try {
+      var preset = getActivePreset();
+      if (!preset) return '';
+      var dimensions = {};
+      var rawDimensions = preset.reputation && preset.reputation.dimensions || {};
+      Object.keys(rawDimensions).forEach(function (key) {
+        var item = rawDimensions[key] || {};
+        dimensions[key] = { name: item.name || key, description: item.description || '' };
+      });
+      var eventTypes = (preset.regionalIncidents && preset.regionalIncidents.types || []).slice(0, 20).map(function (item) {
+        return {
+          type: item.type,
+          label: item.label,
+          weight: item.weight,
+          guide: item.guide
+        };
+      });
+      var summary = {
+        name: preset.name || '',
+        description: preset.description || '',
+        disabledModules: Array.isArray(preset.disabledModules) ? preset.disabledModules : [],
+        schemaOverrides: preset.schemaOverrides || {},
+        customRules: preset.customRules || '',
+        reputationDimensions: dimensions,
+        regionalIncidents: {
+          chance: preset.regionalIncidents && preset.regionalIncidents.chance,
+          durationRounds: preset.regionalIncidents && preset.regionalIncidents.durationRounds,
+          cooldownRounds: preset.regionalIncidents && preset.regionalIncidents.cooldownRounds,
+          types: eventTypes
+        },
+        ui: {
+          labels: preset.ui && preset.ui.labels || {},
+          moods: preset.ui && preset.ui.moods || {},
+          summaryEmpty: preset.ui && preset.ui.summaryEmpty || ''
+        }
+      };
+      return truncateGenerationText(JSON.stringify(summary, null, 2), 9000, '\u4e16\u754c\u9884\u8bbe');
+    } catch (e) {
+      console.warn('[WorldEngine Presets] Failed to summarize active preset', e);
+      return '';
+    }
+  }
+
   async function buildGenerationSource(options) {
     options = options || {};
     if (!window.WORLD_ENGINE_WORLDBOOK || typeof window.WORLD_ENGINE_WORLDBOOK.loadCurrentEntries !== 'function') {
@@ -1377,19 +1422,23 @@
       characterText = truncateGenerationText(window.WORLD_ENGINE_WORLDBOOK.loadCurrentCharacterProfile() || '', 8000, '\u89d2\u8272\u5361');
     }
     var personaText = options.includeUserPersona === false ? '' : readUserPersonaText();
+    var presetText = options.includePreset === true ? summarizeActivePresetForGeneration() : '';
 
-    if (!worldbookText.trim() && !characterText.trim() && !personaText.trim()) {
-      throw new Error('[WorldEngine Presets] No worldbook entries, character description, or user persona found.');
+
+    if (!worldbookText.trim() && !characterText.trim() && !personaText.trim() && !presetText.trim()) {
+      throw new Error('[WorldEngine Presets] No worldbook entries, character description, user persona, or active preset found.');
     }
 
     var sections = [];
     if (worldbookText.trim()) sections.push('## \u4e16\u754c\u4e66\u5185\u5bb9\n\n' + worldbookText);
     if (characterText.trim()) sections.push('## \u5f53\u524d\u89d2\u8272\u5361\u63cf\u8ff0\n\n' + characterText);
     if (personaText.trim()) sections.push('## \u7528\u6237 persona\n\n' + personaText);
+    if (presetText.trim()) sections.push('## \u5f53\u524d\u4e16\u754c\u9884\u8bbe\n\n' + presetText);
     return {
       worldbookText: worldbookText,
       characterText: characterText,
       personaText: personaText,
+      presetText: presetText,
       sections: sections.join('\n\n')
     };
   }
@@ -1591,7 +1640,8 @@
     options = options || {};
     var source = await buildGenerationSource({
       includeCharacterDescription: options.includeCharacterDescription === true,
-      includeUserPersona: options.includeUserPersona !== false
+      includeUserPersona: options.includeUserPersona !== false,
+      includePreset: options.includePreset === true
     });
 
     if (!window.WORLD_ENGINE_API || typeof window.WORLD_ENGINE_API.callApi !== 'function') {
@@ -1606,6 +1656,7 @@
       + '- Do not retell lore, write plot, decide for the user or characters, or invent unsupported factions/rules.\n'
       + '- Keep it restrained, about 300-800 Chinese characters, with clear short rules or bullets.\n'
       + '- Prefer executable guidance: how resources change, factions react, danger escalates, secrets surface, and technology/magic/institutions constrain events.\n'
+      + '- If an active preset section is provided, align with its schemaOverrides, disabled modules, event types, and custom rules; do not contradict that structure.\n'
       + '- If character card or persona conflicts with worldbook, worldbook rules win; use character/persona only as current perspective and focus.';
 
     var response = await window.WORLD_ENGINE_API.callApi(prompt, 2200, 0.55);
