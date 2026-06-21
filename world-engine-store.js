@@ -1,15 +1,103 @@
-// world-engine-store.js — 存储中间层
-// 把世界引擎的所有存档从狭小的 localStorage（约 5MB，与酒馆共用）迁移到 IndexedDB（容量大几十倍）。
-// 对上层暴露与 localStorage 相同的同步读写接口：启动时把 IndexedDB 数据灌入内存镜像，
-// 读直接走镜像（同步），写同步更新镜像并异步刷入 IndexedDB。IndexedDB 不可用时自动回退 localStorage。
+// world-engine-store.js — persistent key/value storage.
+// Global and sensitive settings stay local. Chat-scoped engine data is mirrored
+// into SillyTavern chat metadata so it can follow the conversation across devices.
 window.WORLD_ENGINE_STORE = (function() {
   const DB_NAME = 'world_engine';
   const STORE_NAME = 'kv';
   const PREFIX = 'world_engine_';
+  const CHAT_META_ROOT = 'world_engine';
 
   let db = null;
   let ready = false;
-  const mirror = new Map(); // key -> string value（内存镜像，支持同步读）
+  const mirror = new Map();
+
+  function getContext() {
+    try {
+      return window.SillyTavern && typeof window.SillyTavern.getContext === 'function'
+        ? window.SillyTavern.getContext()
+        : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function getChatId() {
+    try {
+      if (window.WORLD_ENGINE_CORE && typeof window.WORLD_ENGINE_CORE.getChatId === 'function') {
+        return window.WORLD_ENGINE_CORE.getChatId() || 'default';
+      }
+      const ctx = getContext();
+      return (ctx && (ctx.chatId || ctx.chat_id || ctx.chat)) || 'default';
+    } catch (e) {
+      return 'default';
+    }
+  }
+
+  function getChatMetadataRoot(create) {
+    const ctx = getContext();
+    const metadata = ctx && (ctx.chatMetadata || ctx.chat_metadata || ctx.metadata);
+    if (!metadata || typeof metadata !== 'object') return null;
+    if (create && (!metadata[CHAT_META_ROOT] || typeof metadata[CHAT_META_ROOT] !== 'object')) {
+      metadata[CHAT_META_ROOT] = {};
+    }
+    return metadata[CHAT_META_ROOT] && typeof metadata[CHAT_META_ROOT] === 'object'
+      ? metadata[CHAT_META_ROOT]
+      : null;
+  }
+
+  function saveChatMetadata() {
+    const ctx = getContext();
+    try {
+      if (ctx && typeof ctx.saveMetadataDebounced === 'function') ctx.saveMetadataDebounced();
+      else if (ctx && typeof ctx.saveMetadata === 'function') ctx.saveMetadata();
+    } catch (e) {
+      console.warn('[WorldEngine Store] Failed to save chat metadata', e);
+    }
+  }
+
+  function getChatScopedSlot(key) {
+    const chatId = getChatId();
+    const statePrefix = 'world_engine_' + chatId;
+    if (key === statePrefix) return 'state';
+    if (key === statePrefix + '_checkpoint') return 'checkpoint';
+    if (key === statePrefix + '_anchorLayer') return 'anchorLayer';
+    if (key === statePrefix + '_fingerprint') return 'fingerprint';
+    if (key === 'world_engine_worldbook_selection_' + chatId) return 'worldbookSelection';
+    if (key === 'world_engine_tone_prompt_' + chatId) return 'tonePrompt';
+    return null;
+  }
+
+  function readChatScoped(key) {
+    const slot = getChatScopedSlot(key);
+    if (!slot) return null;
+    const root = getChatMetadataRoot(false);
+    if (!root || !Object.prototype.hasOwnProperty.call(root, slot)) return null;
+    const value = root[slot];
+    return value == null ? null : String(value);
+  }
+
+  function writeChatScoped(key, value) {
+    const slot = getChatScopedSlot(key);
+    if (!slot) return false;
+    const root = getChatMetadataRoot(true);
+    if (!root) return false;
+    root[slot] = String(value);
+    root.version = 1;
+    root.updatedAt = Date.now();
+    saveChatMetadata();
+    return true;
+  }
+
+  function removeChatScoped(key) {
+    const slot = getChatScopedSlot(key);
+    if (!slot) return false;
+    const root = getChatMetadataRoot(false);
+    if (!root || !Object.prototype.hasOwnProperty.call(root, slot)) return false;
+    delete root[slot];
+    root.updatedAt = Date.now();
+    saveChatMetadata();
+    return true;
+  }
 
   function openDB() {
     return new Promise((resolve, reject) => {
@@ -42,7 +130,7 @@ window.WORLD_ENGINE_STORE = (function() {
   function idbPut(key, value) {
     if (!db) return;
     try { db.transaction(STORE_NAME, 'readwrite').objectStore(STORE_NAME).put(value, key); }
-    catch (e) { console.warn('[世界引擎] IndexedDB 写入失败', e); }
+    catch (e) { console.warn('[WorldEngine Store] IndexedDB write failed', e); }
   }
 
   function idbDel(key) {
@@ -51,17 +139,15 @@ window.WORLD_ENGINE_STORE = (function() {
     catch (e) {}
   }
 
-  // 启动时调用一次：打开 IndexedDB、灌入镜像、迁移并清理 localStorage 中的旧存档
   async function hydrate() {
     if (ready) return;
     try {
       db = await openDB();
       for (const [k, v] of await idbGetAll()) mirror.set(k, v);
     } catch (e) {
-      console.warn('[世界引擎] IndexedDB 不可用，回退到 localStorage', e);
+      console.warn('[WorldEngine Store] IndexedDB unavailable, falling back to localStorage', e);
       db = null;
     }
-    // 把 localStorage 里遗留的 world_engine_* 搬进 IndexedDB，并腾出 localStorage 空间
     try {
       const legacyKeys = [];
       for (let i = 0; i < localStorage.length; i++) {
@@ -72,35 +158,50 @@ window.WORLD_ENGINE_STORE = (function() {
         const v = localStorage.getItem(k);
         if (v == null) continue;
         if (!mirror.has(k)) { mirror.set(k, v); idbPut(k, v); }
-        if (db) localStorage.removeItem(k); // 仅在 IDB 可用（已落盘）时才删，避免丢数据
+        if (db) localStorage.removeItem(k);
       }
       if (db && legacyKeys.length) {
-        console.log(`[世界引擎] 已迁移 ${legacyKeys.length} 条存档至 IndexedDB`);
+        console.log('[WorldEngine Store] Migrated ' + legacyKeys.length + ' localStorage keys to IndexedDB');
       }
-    } catch (e) { console.warn('[世界引擎] 旧存档迁移失败（非致命）', e); }
+    } catch (e) {
+      console.warn('[WorldEngine Store] Legacy migration failed', e);
+    }
     ready = true;
   }
 
   function getItem(key) {
-    if (mirror.has(key)) return mirror.get(key);
-    // 镜像未命中（未 hydrate 或 IDB 不可用）时回退到 localStorage
-    try { return localStorage.getItem(key); } catch (e) { return null; }
+    const chatValue = readChatScoped(key);
+    if (chatValue !== null) return chatValue;
+
+    let localValue = null;
+    if (mirror.has(key)) localValue = mirror.get(key);
+    else {
+      try { localValue = localStorage.getItem(key); } catch (e) { localValue = null; }
+    }
+
+    if (localValue !== null && getChatScopedSlot(key)) {
+      writeChatScoped(key, localValue);
+    }
+    return localValue;
   }
 
   function setItem(key, value) {
     value = String(value);
+    writeChatScoped(key, value);
     mirror.set(key, value);
     if (db) idbPut(key, value);
-    else localStorage.setItem(key, value); // IDB 不可用时退回 localStorage（可能抛配额错误）
+    else {
+      try { localStorage.setItem(key, value); } catch (e) {}
+    }
   }
 
   function removeItem(key) {
+    removeChatScoped(key);
     mirror.delete(key);
     if (db) idbDel(key);
     else { try { localStorage.removeItem(key); } catch (e) {} }
   }
 
-  // 返回镜像中所有 key（替代 localStorage.length / localStorage.key(i)）
   function keys() {
     if (mirror.size || db) return [...mirror.keys()];
     const out = [];

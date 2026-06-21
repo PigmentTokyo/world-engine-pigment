@@ -133,12 +133,64 @@ ${content}`;
     }
   }
 
+  function pickString(source, keys) {
+    for (const key of keys) {
+      const value = source && source[key];
+      if (typeof value === 'string' && value.trim()) return value.trim();
+      const nested = source && source.data && source.data[key];
+      if (typeof nested === 'string' && nested.trim()) return nested.trim();
+    }
+    return '';
+  }
+
+  function getCurrentCharacterObject(ctx) {
+    if (!ctx) return null;
+    if (ctx.character && typeof ctx.character === 'object') return ctx.character;
+    const chars = Array.isArray(ctx.characters) ? ctx.characters : [];
+    const ids = [ctx.characterId, ctx.this_chid, ctx.character_id, ctx.chid];
+    for (const id of ids) {
+      if (id === undefined || id === null || id === '') continue;
+      const byIndex = chars[Number(id)];
+      if (byIndex) return byIndex;
+      const byKey = chars.find(ch => ch && (ch.avatar === id || ch.name === id || ch.id === id));
+      if (byKey) return byKey;
+    }
+    if (ctx.name2) {
+      const byName = chars.find(ch => ch && ch.name === ctx.name2);
+      if (byName) return byName;
+    }
+    return chars[0] || null;
+  }
+
+  function loadCurrentCharacterProfile() {
+    const ctx = window.SillyTavern?.getContext?.();
+    const character = getCurrentCharacterObject(ctx);
+    const name = pickString(character, ['name']) || pickString(ctx, ['name2', 'characterName']);
+    const parts = [];
+
+    if (name) parts.push('【角色名】\n' + name);
+    const description = pickString(character, ['description', 'desc']);
+    if (description) parts.push('【角色描述】\n' + description);
+    const personality = pickString(character, ['personality', 'personality_summary']);
+    if (personality) parts.push('【性格】\n' + personality);
+    const scenario = pickString(character, ['scenario', 'world_scenario']);
+    if (scenario) parts.push('【场景/背景】\n' + scenario);
+    const creatorNotes = pickString(character, ['creator_notes', 'creator_notes_multilingual', 'notes']);
+    if (creatorNotes) parts.push('【作者备注】\n' + creatorNotes);
+    const mesExample = pickString(character, ['mes_example', 'example_dialogue']);
+    if (mesExample) parts.push('【示例对话】\n' + mesExample);
+
+    const text = parts.join('\n\n').trim();
+    return text.length > 8000 ? text.substring(0, 8000) + '\n\n[...角色卡内容过长，已截断...]' : text;
+  }
+
   return {
     getChatId,
     hasSelection,
     getSelectedIds,
     saveSelectedIds,
     loadCurrentEntries,
+    loadCurrentCharacterProfile,
     buildPromptSection
   };
 })();

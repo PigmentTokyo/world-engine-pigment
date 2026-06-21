@@ -17,6 +17,19 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
   var _injected = false;
   var _generating = false;
   var _observer = null;
+  var GENERATE_WITH_CHARACTER_KEY = 'world_engine_generate_with_character_profile';
+
+  function getGenerateWithCharacter() {
+    var store = window.WORLD_ENGINE_STORE;
+    var raw = store && store.getItem ? store.getItem(GENERATE_WITH_CHARACTER_KEY) : null;
+    return raw == null ? true : raw === 'true';
+  }
+
+  function saveGenerateWithCharacter(value) {
+    var store = window.WORLD_ENGINE_STORE;
+    if (store && store.setItem) store.setItem(GENERATE_WITH_CHARACTER_KEY, value ? 'true' : 'false');
+  }
+
 
   // Collapsible section state (persisted in memory only)
   var _collapsed = {
@@ -413,6 +426,7 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
 
     var badgeClass = activePreset.builtin ? 'builtin' : 'custom';
     var badgeText = activePreset.builtin ? '内置预设' : '自定义预设';
+    var includeCharacter = getGenerateWithCharacter();
 
     return '' +
       '<div class="we-section">' +
@@ -430,13 +444,14 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
         '</div>' +
         '<div class="we-preset-actions">' +
           '<button class="we-btn we-btn-primary" id="we-preset-apply">应用</button>' +
-          '<button class="we-btn" id="we-preset-generate"' + (_generating ? ' disabled' : '') + '>从世界书生成</button>' +
+          '<button class="we-btn" id="we-preset-generate"' + (_generating ? ' disabled' : '') + '>从设定生成</button>' +
           '<button class="we-btn" id="we-preset-import">导入预设</button>' +
           '<button class="we-btn" id="we-preset-export">导出当前预设</button>' +
           (activePreset.builtin ? '' : '<button class="we-btn we-btn-danger" id="we-preset-delete">删除当前预设</button>') +
         '</div>' +
+        '<label class="we-hint" style="display:flex;align-items:center;gap:6px;margin-top:6px;"><input type="checkbox" id="we-preset-generate-character"' + (includeCharacter ? ' checked' : '') + '> 同时读取当前角色卡描述</label>' +
         (_generating
-          ? '<div class="we-preset-generating"><div class="we-spinner"></div>正在从世界书生成预设，请稍候...</div>'
+          ? '<div class="we-preset-generating"><div class="we-spinner"></div>正在从世界书和角色卡生成预设，请稍候...</div>'
           : '') +
         '<input type="file" id="we-preset-file-input" accept=".json">' +
       '</div>';
@@ -1202,7 +1217,6 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
       buildRulesEditorHTML() +
       buildModuleTogglesHTML() +
       buildSchemaOverridesHTML() +
-      buildTermMapHTML() +
       buildPresetDetailsHTML();
   }
 
@@ -1482,11 +1496,13 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
     refreshPresetSection();
 
     try {
-      var newPreset = await P.generateFromWorldbook();
+      var includeCharacterDescription = !!(document.getElementById('we-preset-generate-character') || {}).checked;
+      saveGenerateWithCharacter(includeCharacterDescription);
+      var newPreset = await P.generateFromWorldbook({ includeCharacterDescription: includeCharacterDescription });
       if (newPreset) {
         // Switch to the newly generated preset
         P.setActivePreset(newPreset.id);
-        toast('已从世界书生成预设: ' + newPreset.name);
+        toast('已从设定生成预设: ' + newPreset.name);
         // Refresh the main panel
         if (window.WORLD_ENGINE_UI && typeof window.WORLD_ENGINE_UI.refresh === 'function') {
           window.WORLD_ENGINE_UI.refresh(false);

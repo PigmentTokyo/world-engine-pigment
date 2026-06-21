@@ -2,6 +2,39 @@
 window.WORLD_ENGINE_API = (function() {
   let cachedSettings = null;
 
+  function getChatId() {
+    try {
+      if (window.WORLD_ENGINE_CORE && typeof window.WORLD_ENGINE_CORE.getChatId === 'function') {
+        return window.WORLD_ENGINE_CORE.getChatId() || 'default';
+      }
+      const ctx = window.SillyTavern && typeof window.SillyTavern.getContext === 'function' ? window.SillyTavern.getContext() : null;
+      return (ctx && (ctx.chatId || ctx.chat_id || ctx.chat)) || 'default';
+    } catch (e) {
+      return 'default';
+    }
+  }
+
+  function getChatTonePrompt() {
+    try {
+      const store = window.WORLD_ENGINE_STORE;
+      if (!store || typeof store.getItem !== 'function') return null;
+      return store.getItem('world_engine_tone_prompt_' + getChatId());
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function setChatTonePrompt(text) {
+    try {
+      const store = window.WORLD_ENGINE_STORE;
+      if (!store || typeof store.setItem !== 'function') return false;
+      store.setItem('world_engine_tone_prompt_' + getChatId(), text || '');
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
   function getSettings(forceRefresh) {
     if (forceRefresh) cachedSettings = null;
     if (cachedSettings) return cachedSettings;
@@ -28,10 +61,23 @@ window.WORLD_ENGINE_API = (function() {
       evolveTimeMaxRounds: 10
     };
     const raw = window.WORLD_ENGINE_STORE.getItem('world_engine_settings');
+    let parsed = {};
     if (raw) {
-      try { cachedSettings = { ...defaults, ...JSON.parse(raw) }; return cachedSettings; } catch(e) {}
+      try { parsed = JSON.parse(raw) || {}; } catch(e) {}
     }
-    cachedSettings = defaults;
+    cachedSettings = { ...defaults, ...parsed };
+    const chatTonePrompt = getChatTonePrompt();
+    if (chatTonePrompt !== null) {
+      cachedSettings.tonePrompt = chatTonePrompt;
+    } else if (typeof parsed.tonePrompt === 'string' && parsed.tonePrompt) {
+      cachedSettings.tonePrompt = parsed.tonePrompt;
+      if (setChatTonePrompt(parsed.tonePrompt)) {
+        try {
+          delete parsed.tonePrompt;
+          window.WORLD_ENGINE_STORE.setItem('world_engine_settings', JSON.stringify(parsed));
+        } catch (e) {}
+      }
+    }
     return cachedSettings;
   }
 

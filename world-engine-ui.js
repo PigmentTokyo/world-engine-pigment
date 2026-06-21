@@ -1835,6 +1835,7 @@ window.WORLD_ENGINE_UI = (function() {
       </div>`;
     const toneBody = `
       <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="we-btn we-btn-primary" id="we-tone-generate">&#20174;&#35774;&#23450;&#29983;&#25104;</button>
         <button class="we-btn" id="we-tone-import">导入</button>
         <button class="we-btn" id="we-tone-export">导出</button>
         <button class="we-btn" id="we-tone-clear">清除</button>
@@ -3043,10 +3044,16 @@ window.WORLD_ENGINE_UI = (function() {
     function getTonePrompt() {
       return (window.WORLD_ENGINE_API?.getSettings(true)?.tonePrompt || '');
     }
+    function getTonePromptKey() {
+      const chatId = window.WORLD_ENGINE_CORE?.getChatId?.() || 'default';
+      return 'world_engine_tone_prompt_' + chatId;
+    }
     function saveTonePrompt(text) {
+      const store = window.WORLD_ENGINE_STORE;
+      if (store && typeof store.setItem === 'function') {
+        store.setItem(getTonePromptKey(), text || '');
+      }
       const wapi = window.WORLD_ENGINE_API;
-      const cur = wapi && wapi.getSettings ? wapi.getSettings(true) : {};
-      window.WORLD_ENGINE_STORE.setItem('world_engine_settings', JSON.stringify({ ...cur, tonePrompt: text }));
       if (wapi && wapi.getSettings) wapi.getSettings(true);
     }
     function updateToneStatus() {
@@ -3056,6 +3063,38 @@ window.WORLD_ENGINE_UI = (function() {
       el.textContent = t ? `当前已设置附加提示词（${t.length} 字）` : '当前未设置附加提示词';
     }
     updateToneStatus();
+
+    const toneGenerateBtn = document.getElementById('we-tone-generate');
+    if (toneGenerateBtn) {
+      toneGenerateBtn.onclick = async () => {
+        if (!window.WORLD_ENGINE_PRESETS || typeof window.WORLD_ENGINE_PRESETS.generateTonePrompt !== 'function') {
+          showToast('\u9644\u52a0\u63d0\u793a\u8bcd\u751f\u6210\u529f\u80fd\u4e0d\u53ef\u7528', true);
+          return;
+        }
+        const oldText = toneGenerateBtn.textContent;
+        toneGenerateBtn.disabled = true;
+        toneGenerateBtn.textContent = '\u751f\u6210\u4e2d...';
+        const statusEl = document.getElementById('we-tone-status');
+        if (statusEl) statusEl.textContent = '\u6b63\u5728\u6839\u636e\u8bbe\u5b9a\u751f\u6210\u9644\u52a0\u63d0\u793a\u8bcd...';
+        try {
+          const includeCharacterDescription = window.WORLD_ENGINE_STORE?.getItem?.('world_engine_generate_with_character_profile') !== 'false';
+          const text = await window.WORLD_ENGINE_PRESETS.generateTonePrompt({
+            includeCharacterDescription: includeCharacterDescription,
+            includeUserPersona: true
+          });
+          saveTonePrompt(text);
+          updateToneStatus();
+          showToast('\u9644\u52a0\u63d0\u793a\u8bcd\u5df2\u751f\u6210');
+        } catch (e) {
+          console.error('[WorldEngine] Generate tone prompt failed', e);
+          updateToneStatus();
+          showToast('\u751f\u6210\u5931\u8d25\uff1a' + (e && e.message ? e.message : e), true);
+        } finally {
+          toneGenerateBtn.disabled = false;
+          toneGenerateBtn.textContent = oldText;
+        }
+      };
+    }
 
     const toneImportBtn = document.getElementById('we-tone-import');
     const toneFile = document.getElementById('we-tone-file');

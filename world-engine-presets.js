@@ -1257,20 +1257,13 @@
    * guidance — never parsed back as JSON.
    */
   function applyTermMap(text) {
-    var preset = getActivePreset();
-    return replaceWithMap(text, preset && preset.termMap);
+    return text;
   }
 
   function applyDisplayTerms(text) {
-    return applyTermMap(text);
+    return text;
   }
 
-  /**
-   * Build the prompt-safe subset of the active preset's termMap:
-   *  - excludes canonical enum VALUES (must stay verbatim for JSON parsing);
-   *  - derives bare 2-char dimension words (朝堂之上→朝堂) so flavor prose in
-   *    the rules is also genericized.
-   */
   function buildPromptTermMap(preset) {
     var map = (preset && preset.termMap) || {};
     var out = {};
@@ -1290,8 +1283,7 @@
    * because canonical enum values are preserved.
    */
   function applyPromptTerms(text) {
-    var preset = getActivePreset();
-    return replaceWithMap(text, buildPromptTermMap(preset));
+    return text;
   }
 
   // ═════════════════════════════════════════════
@@ -1342,45 +1334,99 @@
   }
 
   // ═════════════════════════════════════════════
-  //  AUTO-GENERATE FROM WORLDBOOK
-  // ═════════════════════════════════════════════
 
-  /**
-   * Auto-generate a preset by reading the worldbook and asking the LLM
-   * to analyze the setting and produce matching terminology.
-   * @returns {Promise<Object>} — the generated preset object
-   */
-  async function generateFromWorldbook() {
-    // 1. Load worldbook entries
+
+  function truncateGenerationText(text, maxLength, label) {
+    text = String(text || '').trim();
+    if (!text || text.length <= maxLength) return text;
+    return text.substring(0, maxLength) + '\n\n[...' + label + '\u5185\u5bb9\u8fc7\u957f\uff0c\u5df2\u622a\u65ad...]';
+  }
+
+  function readUserPersonaText() {
+    try {
+      if (window.WORLD_ENGINE_CORE && typeof window.WORLD_ENGINE_CORE.getUserPersona === 'function') {
+        return truncateGenerationText(window.WORLD_ENGINE_CORE.getUserPersona() || '', 4000, '\u7528\u6237 persona');
+      }
+    } catch (e) {}
+    return '';
+  }
+
+  async function buildGenerationSource(options) {
+    options = options || {};
     if (!window.WORLD_ENGINE_WORLDBOOK || typeof window.WORLD_ENGINE_WORLDBOOK.loadCurrentEntries !== 'function') {
       throw new Error('[WorldEngine Presets] window.WORLD_ENGINE_WORLDBOOK.loadCurrentEntries is not available');
     }
-    var entries = await window.WORLD_ENGINE_WORLDBOOK.loadCurrentEntries();
-    if (!entries || entries.length === 0) {
-      throw new Error('[WorldEngine Presets] No worldbook entries found. Please ensure the worldbook is loaded.');
-    }
 
-    // 2. Build the worldbook content summary
+    var entries = await window.WORLD_ENGINE_WORLDBOOK.loadCurrentEntries();
+    entries = Array.isArray(entries) ? entries : [];
     var contentParts = [];
     for (var i = 0; i < entries.length; i++) {
       var entry = entries[i];
       var title = entry.comment || entry.key || entry.uid || ('Entry ' + i);
       var body = entry.content || '';
-      if (body.trim()) {
-        contentParts.push('【' + title + '】\n' + body.trim());
+      if (String(body).trim()) {
+        contentParts.push('\u3010' + title + '\u3011\n' + String(body).trim());
       }
     }
-    var worldbookText = contentParts.join('\n\n');
-    // Truncate if extremely long
-    if (worldbookText.length > 12000) {
-      worldbookText = worldbookText.substring(0, 12000) + '\n\n[...内容过长，已截断...]';
+
+    var worldbookText = truncateGenerationText(contentParts.join('\n\n'), 12000, '\u4e16\u754c\u4e66');
+    var characterText = '';
+    if (options.includeCharacterDescription === true &&
+        window.WORLD_ENGINE_WORLDBOOK &&
+        typeof window.WORLD_ENGINE_WORLDBOOK.loadCurrentCharacterProfile === 'function') {
+      characterText = truncateGenerationText(window.WORLD_ENGINE_WORLDBOOK.loadCurrentCharacterProfile() || '', 8000, '\u89d2\u8272\u5361');
+    }
+    var personaText = options.includeUserPersona === false ? '' : readUserPersonaText();
+
+    if (!worldbookText.trim() && !characterText.trim() && !personaText.trim()) {
+      throw new Error('[WorldEngine Presets] No worldbook entries, character description, or user persona found.');
     }
 
-    // 3. Build the generation prompt
-    var systemPrompt = '你是一个世界观分析专家。用户会给你一组世界书条目，你需要分析其中描述的世界类型（奇幻、科幻、历史、现代、末日等），然后生成一套完整的世界引擎预设术语表。';
+    var sections = [];
+    if (worldbookText.trim()) sections.push('## \u4e16\u754c\u4e66\u5185\u5bb9\n\n' + worldbookText);
+    if (characterText.trim()) sections.push('## \u5f53\u524d\u89d2\u8272\u5361\u63cf\u8ff0\n\n' + characterText);
+    if (personaText.trim()) sections.push('## \u7528\u6237 persona\n\n' + personaText);
+    return {
+      worldbookText: worldbookText,
+      characterText: characterText,
+      personaText: personaText,
+      sections: sections.join('\n\n')
+    };
+  }
 
-    var userPrompt = '请分析以下世界书内容，判断其世界观类型，然后生成一套完整的世界引擎预设。\n\n'
-      + '## 世界书内容\n\n' + worldbookText + '\n\n'
+  //  AUTO-GENERATE FROM WORLDBOOK
+  // ═════════════════════════════════════════════
+
+  /**
+   * Auto-generate a preset by reading the worldbook and optionally the current
+   * character card, then asking the LLM to produce direct world-specific wording.
+   * @param {Object} options
+   * @param {boolean} options.includeCharacterDescription
+   * @returns {Promise<Object>} — the generated preset object
+   */
+  async function generateFromWorldbook(options) {
+    options = options || {};
+    var includeCharacterDescription = options.includeCharacterDescription === true;
+
+    var source = await buildGenerationSource({
+      includeCharacterDescription: includeCharacterDescription,
+      includeUserPersona: options.includeUserPersona !== false
+    });
+    var worldbookText = source.worldbookText;
+    var characterSection = source.characterText
+      ? '## \u5f53\u524d\u89d2\u8272\u5361\u63cf\u8ff0\n\n' + source.characterText + '\n\n'
+      : '';
+    var personaSection = source.personaText
+      ? '## \u7528\u6237 persona\n\n' + source.personaText + '\n\n'
+      : '';
+
+    // 3. Build the generation prompt
+    var systemPrompt = '你是一个世界观分析专家。用户会给你世界书条目和/或当前 SillyTavern 角色卡描述。你需要分析其中描述的世界类型（奇幻、科幻、历史、现代、末日等），然后生成一套完整的世界引擎预设。';
+
+    var userPrompt = '请分析以下设定内容，判断其世界观类型，然后生成一套完整的世界引擎预设。\n\n'
+      + '## 世界书内容\n\n' + (worldbookText || '（未提供世界书条目）') + '\n\n'
+      + characterSection
+      + personaSection
       + '## 要求\n\n'
       + '请严格按以下JSON格式返回结果（只返回JSON，不要返回其他内容）：\n\n'
       + '```json\n'
@@ -1430,15 +1476,6 @@
       + '      }\n'
       + '    }\n'
       + '  },\n'
-      + '  "termMap": {\n'
-      + '    "朝堂之上": "对应的新术语", "市井之间": "...", "草莽之中": "...", "同道之间": "...",\n'
-      + '    "天怒人怨": "...", "声名狼藉": "...", "默默无闻": "...", "受人尊敬": "...", "万众敬仰": "...",\n'
-      + '    "鼎盛": "...", "稳固": "...", "倾轧": "...", "困顿": "...", "衰落": "...", "瓦解": "...",\n'
-      + '    "血盟": "...", "盟友": "...", "友好": "...", "中立": "...", "冷淡": "...", "敌对": "...", "世仇": "...",\n'
-      + '    "繁荣": "...", "平稳": "...", "衰退": "...", "动荡": "...",\n'
-      + '    "朝廷": "...", "官府": "...", "百姓": "...", "江湖": "...", "武林": "...", "门派": "...",\n'
-      + '    "帮派": "...", "银两": "...", "粮草": "...", "兵马": "...", "城池": "...", "村镇": "...", "山寨": "..."\n'
-      + '  },\n'
       + '  "ui": {\n'
       + '    "labels": {\n'
       + '      "世界核心": "...", "稳定度": "...", "事件": "...", "势力": "...", "风声": "...", "大势": "...",\n'
@@ -1456,9 +1493,9 @@
       + '- 【关键】verdicts / statusVerdicts / relationVerdicts / climateVerdicts 的 key 必须原样使用上面给出的固定中文枚举（天怒人怨/声名狼藉/默默无闻/受人尊敬/万众敬仰；鼎盛/稳固/倾轧/困顿/衰落/瓦解；血盟/盟友/友好/中立/冷淡/敌对/世仇；繁荣/平稳/衰退/动荡），不要翻译、不要改写、不要增减——这些是世界引擎的内部固定枚举。\n'
       + '- 不要返回 levels / statuses / relations / climates 这些数组，它们由引擎固定，无需生成。\n'
       + '- verdicts 的“描述文字”才用目标世界观的风格来写，要生动具体、贴合世界观。\n'
-      + '- termMap 负责把上述固定枚举词与古风/武侠名词翻译成目标世界观的“显示说法”：key 是原始术语，value 是新术语；只用于界面显示与文风注入，不影响引擎枚举。\n'
+      + '- 不要返回 termMap。不要使用“原始术语 -> 替换词”的方式；请直接在 reputation.dimensions、verdicts 描述、ui.labels、ui.moods、schemaOverrides 的说明与示例中写出贴合当前世界的显示文本。\n'
       + '- regionalIncidents.types 需要约12种，weight 总和约为100。\n'
-      + '- ui.labels 把界面上的词替换成本世界观的说法：key 必须原样使用上面给出的中文词，value 是新叫法（例如赛博朋克可把“世界核心”改为“系统核心”、“账本”改为“事件日志”）。\n'
+      + '- ui.labels 直接定义界面显示文案：key 必须原样使用上面给出的中文词，value 是当前世界观下自然的叫法（例如赛博朋克可把“世界核心”改为“系统核心”、“账本”改为“事件日志”）。\n'
       + '- ui.moods 的 key 必须用固定的五档（天下太平/暗流浮动/局势紧张/动荡失序/崩坏边缘），value 是该世界观下对应稳定度档位的一句氛围短语（替换古风诗句）。\n'
       + '- 只返回JSON，不要有额外文字'
       + '\n- schemaOverrides 设计原则：只为“世界运转真正重要、会反复追踪、会影响推演判断”的概念新增字段；不要把长设定、背景介绍、一次性描述塞进字段。'
@@ -1513,7 +1550,7 @@
       factions: parsed.factions || ANCIENT_CHINESE.factions,
       economy: parsed.economy || ANCIENT_CHINESE.economy,
       regionalIncidents: parsed.regionalIncidents || ANCIENT_CHINESE.regionalIncidents,
-      termMap: parsed.termMap || {},
+      termMap: {},
       ui: parsed.ui || {},
       schemaOverrides: parsed.schemaOverrides || {},
       customRules: ''
@@ -1542,6 +1579,45 @@
   }
 
   // ═════════════════════════════════════════════
+
+
+  /**
+   * Generate a concise extra evolution prompt from the same setting sources used
+   * by world-preset generation: worldbook, optional character card, and persona.
+   * @param {Object} options
+   * @returns {Promise<string>}
+   */
+  async function generateTonePrompt(options) {
+    options = options || {};
+    var source = await buildGenerationSource({
+      includeCharacterDescription: options.includeCharacterDescription === true,
+      includeUserPersona: options.includeUserPersona !== false
+    });
+
+    if (!window.WORLD_ENGINE_API || typeof window.WORLD_ENGINE_API.callApi !== 'function') {
+      throw new Error('[WorldEngine Presets] window.WORLD_ENGINE_API.callApi is not available');
+    }
+
+    var prompt = 'You generate an extra prompt for World Engine background simulation. Output concise Simplified Chinese text only.\n\n'
+      + source.sections + '\n\n'
+      + 'Requirements:\n'
+      + '- Return only the prompt body. Do not return JSON, explanations, or code fences.\n'
+      + '- Make simulation fit this world: world operating logic, priorities, hard constraints, trackable states, and common failure modes.\n'
+      + '- Do not retell lore, write plot, decide for the user or characters, or invent unsupported factions/rules.\n'
+      + '- Keep it restrained, about 300-800 Chinese characters, with clear short rules or bullets.\n'
+      + '- Prefer executable guidance: how resources change, factions react, danger escalates, secrets surface, and technology/magic/institutions constrain events.\n'
+      + '- If character card or persona conflicts with worldbook, worldbook rules win; use character/persona only as current perspective and focus.';
+
+    var response = await window.WORLD_ENGINE_API.callApi(prompt, 2200, 0.55);
+    var text = String(response || '').trim();
+    text = text.replace(new RegExp('^' + String.fromCharCode(96, 96, 96) + '(?:text|markdown)?\\s*', 'i'), '')
+      .replace(new RegExp('\\s*' + String.fromCharCode(96, 96, 96) + '\\s*$', 'i'), '')
+      .trim();
+    if (!text) throw new Error('[WorldEngine Presets] API returned empty tone prompt');
+    if (text.length > 3000) text = text.substring(0, 3000).trim();
+    return text;
+  }
+
   //  UI CHROME LABELS (per world-view)
   //  Canonical Chinese chrome words -> display wording. Stability tier KEYS
   //  stay canonical (logic unchanged); only the displayed text is swapped.
@@ -1712,6 +1788,7 @@
     normalizePreset:    normalizePreset,
     getInternalSchema:  function () { return deepClone(INTERNAL_SCHEMA); },
     generateFromWorldbook: generateFromWorldbook,
+    generateTonePrompt: generateTonePrompt,
     exportPreset:       exportPreset,
     importPreset:       importPreset,
     validateSchemaOverrides: validateSchemaOverrides
