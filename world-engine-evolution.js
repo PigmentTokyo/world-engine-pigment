@@ -636,6 +636,61 @@ type：${picked.type}
   "blackbox": { "secretActions": [], "secretAssets": [] }
 }`;
 
+  // ======== 内置模块合并处理器（阶段 1 · 从 evolve() 抽取，行为不变；为后续「按描述符分发」铺垫）========
+  function mergeEnemies(state, update) {
+    if (!update.enemies || !update.enemies.length) return;
+    for (const en of update.enemies) {
+      if (!en.name || !en.reason) continue;
+      if (!en.type || !['blood', 'grudge'].includes(en.type)) en.type = 'blood';
+      if (!en.status|| !['追踪中','策划中','执行中','已终结'].includes(en.status)) en.status = '追踪中';
+      const idx = (state.enemies || []).findIndex(ex => ex.name === en.name);
+      if (idx !== -1) state.enemies[idx] = { ...state.enemies[idx], ...en };
+      else state.enemies.unshift(en);
+    }
+    // 已终结的仇敌保留20轮后清理
+    state.enemies = (state.enemies || []).filter(en => {
+      if (en.status === '已终结') {
+        en._terminalSince = en._terminalSince || state.round;
+        return (state.round - en._terminalSince) < 20;
+      }
+      return true;
+    });
+    if (state.enemies.length > 8) state.enemies.length = 8;
+  }
+
+  function mergeBlackbox(state, update) {
+    if (!update.blackbox) return;
+    state.blackbox = update.blackbox;
+    const totalBlackbox = (state.blackbox.secretActions?.length || 0) + (state.blackbox.secretAssets?.length || 0);
+    if (totalBlackbox > 12) {
+      const excess = totalBlackbox - 12;
+      const actions = state.blackbox.secretActions || [];
+      const assets = state.blackbox.secretAssets || [];
+      if (actions.length > excess) {
+        state.blackbox.secretActions.length = Math.max(1, actions.length - excess);
+      } else {
+        state.blackbox.secretActions = [];
+        state.blackbox.secretAssets.length = Math.max(1, assets.length - excess + actions.length);
+      }
+    }
+  }
+
+  function mergeFactions(state, update) {
+    for (const fac of (update.factions || [])) core.addFaction(state, fac);
+  }
+  function mergeWorldTrends(state, update) {
+    for (const trend of (update.worldTrends || [])) core.addWorldTrend(state, trend);
+  }
+  function mergeWinds(state, update) {
+    for (const wind of (update.winds || [])) core.addWind(state, wind);
+  }
+  function mergeEconomy(state, update) {
+    if (update.economy && Object.keys(update.economy).length) Object.assign(state.economy, update.economy);
+  }
+  function mergeReputation(state, update) {
+    if (update.reputation && Object.keys(update.reputation).length) Object.assign(state.reputation, update.reputation);
+  }
+
   async function callEvolutionAPI(state, userMsg, aiMsg, extraInstruction = '', dialogueText = '') {
     const rulesLoader = window.WORLD_ENGINE_RULES;
     const fullRules = rulesLoader ? rulesLoader.getAllRulesText() : '【规则加载失败】';
@@ -690,19 +745,9 @@ ${(() => {
     ? `\n## {{user}} 身份设定\n以下是 {{user}} 的角色背景设定，推演时请将其作为 {{user}} 的身份、社会地位、职业、能力等背景信息来考量，并据此影响势力态度、声誉判定、NPC 反应等：\n${persona}\n`
     : '';
 })()}${(() => {
-  // 构建禁用模块提示：告诉 LLM 不要输出已禁用模块对应的字段
-  const MODULE_FIELD_MAP = {
-    events: 'events', factions: 'factions', winds: 'winds',
-    influence: 'influenceChain', reputation: 'reputation',
-    economy: 'economy', enemies: 'enemies', regional: 'regionalIncident',
-    blackbox: 'blackbox', trends: 'worldTrends'
-  };
-  let disabled = [];
-  if (window.WORLD_ENGINE_PRESETS && window.WORLD_ENGINE_PRESETS.getActivePreset) {
-    const preset = window.WORLD_ENGINE_PRESETS.getActivePreset();
-    if (Array.isArray(preset.disabledModules)) disabled = preset.disabledModules;
-  }
-  const skippedFields = disabled.map(id => MODULE_FIELD_MAP[id]).filter(Boolean);
+  // 构建禁用模块提示：字段映射统一由 rules-loader 描述符层提供（单一来源，消除重复 MODULE_FIELD_MAP）
+  const rl = window.WORLD_ENGINE_RULES;
+  const skippedFields = (rl && typeof rl.getDisabledOutputFields === 'function') ? rl.getDisabledOutputFields() : [];
   if (skippedFields.length === 0) return '';
   return `\n## 已禁用的模块\n以下模块已被用户禁用，请不要在输出 JSON 中包含这些字段：${skippedFields.join('、')}。\n`;
 })()}
@@ -850,33 +895,15 @@ ${extraInstruction ? '\n' + extraInstruction : ''}${toneSection}`;
           core.addEvent(state, ev);
         }
       }
-      for (const fac of update.factions) core.addFaction(state, fac);
-      for (const trend of update.worldTrends) core.addWorldTrend(state, trend);
-      for (const wind of update.winds) core.addWind(state, wind);
-      if (Object.keys(update.economy).length) Object.assign(state.economy, update.economy);
-      if (Object.keys(update.reputation).length) Object.assign(state.reputation, update.reputation);
+      mergeFactions(state, update);
+      mergeWorldTrends(state, update);
+      mergeWinds(state, update);
+      mergeEconomy(state, update);
+      mergeReputation(state, update);
       if (update.world_digest) state.worldDigest = update.world_digest;
 
       // 仇敌录
-      if (update.enemies.length) {
-        for (const en of update.enemies) {
-          if (!en.name || !en.reason) continue;
-          if (!en.type || !['blood', 'grudge'].includes(en.type)) en.type = 'blood';
-          if (!en.status|| !['追踪中','策划中','执行中','已终结'].includes(en.status)) en.status = '追踪中';
-          const idx = (state.enemies || []).findIndex(ex => ex.name === en.name);
-          if (idx !== -1) state.enemies[idx] = { ...state.enemies[idx], ...en };
-          else state.enemies.unshift(en);
-        }
-        // 已终结的仇敌保留20轮后清理
-        state.enemies = (state.enemies || []).filter(en => {
-          if (en.status === '已终结') {
-            en._terminalSince = en._terminalSince || state.round;
-            return (state.round - en._terminalSince) < 20;
-          }
-          return true;
-        });
-        if (state.enemies.length > 8) state.enemies.length = 8;
-      }
+      mergeEnemies(state, update);
 
       // 影响链
       if (update.influenceChain.length) {
@@ -919,21 +946,7 @@ ${extraInstruction ? '\n' + extraInstruction : ''}${toneSection}`;
       // 区域突发事件合并
       mergeRegionalIncident(state, update);
 
-      if (update.blackbox) {
-        state.blackbox = update.blackbox;
-        const totalBlackbox = (state.blackbox.secretActions?.length || 0) + (state.blackbox.secretAssets?.length || 0);
-        if (totalBlackbox > 12) {
-          const excess = totalBlackbox - 12;
-          const actions = state.blackbox.secretActions || [];
-          const assets = state.blackbox.secretAssets || [];
-          if (actions.length > excess) {
-            state.blackbox.secretActions.length = Math.max(1, actions.length - excess);
-          } else {
-            state.blackbox.secretActions = [];
-            state.blackbox.secretAssets.length = Math.max(1, assets.length - excess + actions.length);
-          }
-        }
-      }
+      mergeBlackbox(state, update);
 
       // 自动清理：已消散/已失败的事件链 & 已结束的天下大势
       // - 负面终局（已消散/已失败）：下一轮即删

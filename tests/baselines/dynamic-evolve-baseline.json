@@ -1,0 +1,583 @@
+[
+  {
+    "round": 1,
+    "ok": true,
+    "state": {
+      "round": 1,
+      "worldDigest": "北境渡口风波起。",
+      "events": [
+        {
+          "name": "青炉司改良火药",
+          "type": "progress",
+          "level": 3,
+          "stage": "执行",
+          "stageRound": 3,
+          "desc": "试小炉",
+          "consecutiveFails": 0,
+          "stall": false
+        },
+        {
+          "name": "血刀门复仇",
+          "type": "conflict",
+          "level": 2,
+          "stage": "发酵",
+          "stageRound": 4,
+          "desc": "追兵抵近渡口",
+          "consecutiveFails": 0,
+          "stall": false
+        }
+      ],
+      "factions": [
+        {
+          "name": "血刀门",
+          "scope": "北境三郡",
+          "status": "稳固",
+          "relation": "敌对",
+          "currentGoal": "夺回码头",
+          "core_person": "沈缺",
+          "powerPillars": [
+            "武力",
+            "财源"
+          ]
+        }
+      ],
+      "winds": [
+        {
+          "topic": "渡口封锁",
+          "type": "report",
+          "level": 2,
+          "content": "北渡口被封",
+          "scope": "北渡口",
+          "source": "船夫",
+          "quietRounds": 0
+        }
+      ],
+      "worldTrends": [
+        {
+          "name": "北境军粮短缺",
+          "scope": "北境诸郡",
+          "status": "持续中",
+          "description": "粮道受阻",
+          "source": "边境战事"
+        }
+      ],
+      "reputation": {
+        "authority": "默默无闻",
+        "common": "受人尊敬",
+        "shadow": "默默无闻",
+        "circuit": "默默无闻",
+        "lastChange": "救助难民"
+      },
+      "economy": {
+        "climate": "衰退",
+        "signals": [
+          {
+            "summary": "粮价上涨",
+            "scope": "北境"
+          }
+        ]
+      },
+      "memories": [],
+      "enemies": [
+        {
+          "name": "血刀门少主",
+          "reason": "杀其亲族",
+          "type": "blood",
+          "status": "追踪中"
+        }
+      ],
+      "influenceChain": [
+        {
+          "trigger": "渡口封锁风声",
+          "impact": "商队改道",
+          "fallout": "军需紧张",
+          "_createdRound": 1
+        }
+      ],
+      "regionalIncident": {
+        "active": false,
+        "title": "",
+        "type": "",
+        "scope": "",
+        "impact": "",
+        "cooldown": 0,
+        "_retry": false,
+        "_retryType": "",
+        "duration": 0
+      },
+      "blackbox": {
+        "secretActions": [
+          {
+            "action": "密室会谈",
+            "witnesses": "无"
+          }
+        ],
+        "secretAssets": [
+          {
+            "name": "密信",
+            "exposure": 20,
+            "status": "隐藏"
+          }
+        ]
+      },
+      "lastEvolveResult": {
+        "events": [
+          {
+            "name": "血刀门复仇",
+            "type": "conflict",
+            "level": 2,
+            "stage": "发酵",
+            "stageRound": 4,
+            "desc": "追兵抵近渡口",
+            "consecutiveFails": 0,
+            "stall": false
+          },
+          {
+            "name": "青炉司改良火药",
+            "type": "progress",
+            "level": 3,
+            "stage": "执行",
+            "stageRound": 3,
+            "desc": "试小炉",
+            "consecutiveFails": 0,
+            "stall": false
+          }
+        ],
+        "factions": [
+          {
+            "name": "血刀门",
+            "scope": "北境三郡",
+            "status": "稳固",
+            "relation": "敌对",
+            "currentGoal": "夺回码头",
+            "core_person": "沈缺",
+            "powerPillars": [
+              "武力",
+              "财源"
+            ]
+          }
+        ],
+        "winds": [
+          {
+            "topic": "渡口封锁",
+            "type": "report",
+            "level": 2,
+            "content": "北渡口被封",
+            "scope": "北渡口",
+            "source": "船夫",
+            "quietRounds": 0
+          }
+        ],
+        "worldTrends": [
+          {
+            "name": "北境军粮短缺",
+            "scope": "北境诸郡",
+            "status": "持续中",
+            "description": "粮道受阻",
+            "source": "边境战事"
+          }
+        ],
+        "economy": {
+          "climate": "衰退",
+          "signals": [
+            {
+              "summary": "粮价上涨",
+              "scope": "北境"
+            }
+          ]
+        },
+        "reputation": {
+          "authority": "默默无闻",
+          "common": "受人尊敬",
+          "shadow": "默默无闻",
+          "circuit": "默默无闻",
+          "lastChange": "救助难民"
+        },
+        "enemies": [
+          {
+            "name": "血刀门少主",
+            "reason": "杀其亲族",
+            "type": "blood",
+            "status": "追踪中"
+          }
+        ],
+        "influenceChain": [
+          {
+            "trigger": "渡口封锁风声",
+            "impact": "商队改道",
+            "fallout": "军需紧张",
+            "_createdRound": 1
+          }
+        ],
+        "blackbox": {
+          "secretActions": [
+            {
+              "action": "密室会谈",
+              "witnesses": "无"
+            }
+          ],
+          "secretAssets": [
+            {
+              "name": "密信",
+              "exposure": 20,
+              "status": "隐藏"
+            }
+          ]
+        },
+        "world_digest": "北境渡口风波起。"
+      },
+      "lastInjection": null,
+      "lastUpdated": {
+        "chatId": "default",
+        "timestamp": 1700000000000
+      }
+    }
+  },
+  {
+    "round": 2,
+    "ok": true,
+    "state": {
+      "round": 2,
+      "worldDigest": "战事吃紧，物价飞腾。",
+      "events": [
+        {
+          "name": "青炉司改良火药",
+          "type": "progress",
+          "level": 3,
+          "stage": "执行",
+          "stageRound": 2,
+          "desc": "试小炉",
+          "consecutiveFails": 1,
+          "stall": false,
+          "evolveResult": "受挫"
+        },
+        {
+          "name": "血刀门复仇",
+          "type": "conflict",
+          "level": 2,
+          "stage": "逼近",
+          "stageRound": 6,
+          "desc": "追兵设伏",
+          "consecutiveFails": 0,
+          "stall": false,
+          "evolveResult": "成功"
+        }
+      ],
+      "factions": [
+        {
+          "name": "青炉司",
+          "scope": "西关",
+          "status": "鼎盛",
+          "relation": "中立",
+          "currentGoal": "量产火药",
+          "core_person": "司丞",
+          "powerPillars": [
+            "技术"
+          ]
+        },
+        {
+          "name": "血刀门",
+          "scope": "北境三郡",
+          "status": "稳固",
+          "relation": "敌对",
+          "currentGoal": "夺回码头",
+          "core_person": "沈缺",
+          "powerPillars": [
+            "武力",
+            "财源"
+          ]
+        }
+      ],
+      "winds": [
+        {
+          "topic": "渡口封锁",
+          "type": "rumor",
+          "level": 3,
+          "content": "封锁要持续半月",
+          "scope": "北境",
+          "source": "脚夫",
+          "quietRounds": 0
+        }
+      ],
+      "worldTrends": [
+        {
+          "name": "北境军粮短缺",
+          "scope": "北境诸郡",
+          "status": "持续中",
+          "description": "粮道受阻",
+          "source": "边境战事"
+        }
+      ],
+      "reputation": {
+        "authority": "默默无闻",
+        "common": "万众敬仰",
+        "shadow": "默默无闻",
+        "circuit": "默默无闻",
+        "lastChange": "平息骚乱"
+      },
+      "economy": {
+        "climate": "动荡",
+        "signals": [
+          {
+            "summary": "盐价飞涨",
+            "scope": "西关"
+          }
+        ]
+      },
+      "memories": [],
+      "enemies": [
+        {
+          "name": "血刀门少主",
+          "reason": "杀其亲族",
+          "type": "blood",
+          "status": "追踪中"
+        }
+      ],
+      "influenceChain": [
+        {
+          "trigger": "渡口封锁风声",
+          "impact": "商队改道",
+          "fallout": "军需紧张",
+          "_createdRound": 1
+        }
+      ],
+      "regionalIncident": {
+        "active": false,
+        "title": "",
+        "type": "",
+        "scope": "",
+        "impact": "",
+        "cooldown": 0,
+        "_retry": false,
+        "_retryType": "",
+        "duration": 0
+      },
+      "blackbox": {
+        "secretActions": [],
+        "secretAssets": []
+      },
+      "lastEvolveResult": {
+        "events": [
+          {
+            "name": "血刀门复仇",
+            "type": "conflict",
+            "level": 2,
+            "stage": "逼近",
+            "stageRound": 6,
+            "desc": "追兵设伏"
+          }
+        ],
+        "factions": [
+          {
+            "name": "青炉司",
+            "scope": "西关",
+            "status": "鼎盛",
+            "relation": "中立",
+            "currentGoal": "量产火药",
+            "core_person": "司丞",
+            "powerPillars": [
+              "技术"
+            ]
+          }
+        ],
+        "winds": [
+          {
+            "topic": "渡口封锁",
+            "type": "rumor",
+            "level": 3,
+            "content": "封锁要持续半月",
+            "scope": "北境",
+            "source": "脚夫",
+            "quietRounds": 0
+          }
+        ],
+        "economy": {
+          "climate": "动荡",
+          "signals": [
+            {
+              "summary": "盐价飞涨",
+              "scope": "西关"
+            }
+          ]
+        },
+        "reputation": {
+          "common": "万众敬仰",
+          "lastChange": "平息骚乱"
+        },
+        "world_digest": "战事吃紧，物价飞腾。",
+        "worldTrends": [],
+        "enemies": [],
+        "influenceChain": [],
+        "blackbox": {
+          "secretActions": [],
+          "secretAssets": []
+        }
+      },
+      "lastInjection": null,
+      "lastUpdated": {
+        "chatId": "default",
+        "timestamp": 1700000000000
+      }
+    }
+  },
+  {
+    "round": 3,
+    "ok": true,
+    "state": {
+      "round": 3,
+      "worldDigest": "渡口血案落幕。",
+      "events": [
+        {
+          "name": "青炉司改良火药",
+          "type": "progress",
+          "level": 3,
+          "stage": "执行",
+          "stageRound": 2,
+          "desc": "试小炉",
+          "consecutiveFails": 2,
+          "stall": false,
+          "evolveResult": "保持"
+        },
+        {
+          "name": "血刀门复仇",
+          "type": "conflict",
+          "level": 2,
+          "stage": "已爆发",
+          "stageRound": 9,
+          "desc": "渡口火并爆发",
+          "consecutiveFails": 0,
+          "stall": false,
+          "evolveResult": "成功",
+          "_terminalSince": 2
+        }
+      ],
+      "factions": [
+        {
+          "name": "青炉司",
+          "scope": "西关",
+          "status": "鼎盛",
+          "relation": "中立",
+          "currentGoal": "量产火药",
+          "core_person": "司丞",
+          "powerPillars": [
+            "技术"
+          ]
+        },
+        {
+          "name": "血刀门",
+          "scope": "北境三郡",
+          "status": "稳固",
+          "relation": "敌对",
+          "currentGoal": "夺回码头",
+          "core_person": "沈缺",
+          "powerPillars": [
+            "武力",
+            "财源"
+          ]
+        }
+      ],
+      "winds": [
+        {
+          "topic": "渡口封锁",
+          "type": "rumor",
+          "level": 3,
+          "content": "封锁要持续半月",
+          "scope": "北境",
+          "source": "脚夫",
+          "quietRounds": 1
+        }
+      ],
+      "worldTrends": [],
+      "reputation": {
+        "authority": "默默无闻",
+        "common": "万众敬仰",
+        "shadow": "默默无闻",
+        "circuit": "默默无闻",
+        "lastChange": "平息骚乱"
+      },
+      "economy": {
+        "climate": "动荡",
+        "signals": []
+      },
+      "memories": [],
+      "enemies": [
+        {
+          "name": "血刀门少主",
+          "reason": "杀其亲族",
+          "type": "blood",
+          "status": "已终结",
+          "_terminalSince": 2
+        }
+      ],
+      "influenceChain": [
+        {
+          "trigger": "渡口封锁风声",
+          "impact": "商队改道",
+          "fallout": "军需紧张",
+          "_createdRound": 1
+        }
+      ],
+      "regionalIncident": {
+        "active": false,
+        "title": "",
+        "type": "",
+        "scope": "",
+        "impact": "",
+        "cooldown": 0,
+        "_retry": false,
+        "_retryType": "",
+        "duration": 0
+      },
+      "blackbox": {
+        "secretActions": [],
+        "secretAssets": []
+      },
+      "lastEvolveResult": {
+        "events": [
+          {
+            "name": "血刀门复仇",
+            "type": "conflict",
+            "level": 2,
+            "stage": "已爆发",
+            "stageRound": 9,
+            "desc": "渡口火并爆发"
+          }
+        ],
+        "enemies": [
+          {
+            "name": "血刀门少主",
+            "reason": "杀其亲族",
+            "type": "blood",
+            "status": "已终结"
+          }
+        ],
+        "worldTrends": [
+          {
+            "name": "北境军粮短缺",
+            "scope": "北境诸郡",
+            "status": "已结束",
+            "description": "粮道恢复",
+            "source": "战事平息"
+          }
+        ],
+        "world_digest": "渡口血案落幕。",
+        "factions": [],
+        "winds": [],
+        "economy": {
+          "signals": []
+        },
+        "reputation": {},
+        "influenceChain": [],
+        "blackbox": {
+          "secretActions": [],
+          "secretAssets": []
+        }
+      },
+      "lastInjection": null,
+      "lastUpdated": {
+        "chatId": "default",
+        "timestamp": 1700000000000
+      }
+    }
+  }
+]

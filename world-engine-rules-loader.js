@@ -630,7 +630,56 @@ cooldown 由本地维护，API 不得输出或修改此字段。
 
   /** 获取所有模块的 id 与中文名，供 UI 显示开关 */
   function getModuleList() {
-    return RULES.map(r => ({ moduleId: r.moduleId, comment: r.comment }));
+    // 改为从统一描述符派生（单一来源）。输出形状与原 RULES.map 完全一致。
+    return getModuleDescriptors().map(function (d) { return { moduleId: d.id, comment: d.name }; });
+  }
+
+  // ======== 模块描述符构造器（阶段 1 · 纯增量只读 API）========
+  // 把现有 RULES + OUTPUT_SCHEMAS + MODULE_FIELD_MAP + BUILTIN_MECHANICS 合成统一描述符。
+  // 注意：此函数定义在 OUTPUT_SCHEMAS / BUILTIN_MECHANICS 之前出现的位置，但它们是
+  // 同一闭包内的 const/函数，运行时调用即可访问（不在加载期求值），因此安全。
+  function getModuleDescriptors() {
+    return RULES.map(function (r, i) {
+      var schema = (typeof OUTPUT_SCHEMAS !== 'undefined') ? OUTPUT_SCHEMAS[r.moduleId] : null;
+      var mech = (typeof BUILTIN_MECHANICS !== 'undefined') ? BUILTIN_MECHANICS[r.moduleId] : null;
+      var container = schema ? schema.container : 'none';
+      return {
+        id: r.moduleId,
+        name: r.comment,
+        kind: 'builtin',
+        order: i + 1,
+        enabled: true,
+        rules: r.content,
+        container: container,
+        field: MODULE_FIELD_MAP[r.moduleId] || null,
+        itemKey: (mech && mech.itemKey) || (container === 'array' ? 'name' : null),
+        fields: schema ? JSON.parse(JSON.stringify(schema.fields)) : null,
+        mechanics: mech ? JSON.parse(JSON.stringify(mech)) : {},
+        display: null  // builtin 走专属渲染函数；自定义模块才用 display 驱动通用渲染
+      };
+    });
+  }
+
+  // 激活态描述符：套用预设的 disabledModules（enabled）、schemaOverrides（fields）、
+  // moduleLabels（name）。仍为只读，不改变现有注入/渲染流程；供 Phase 1 后续改写时切换。
+  function getActiveModuleDescriptors() {
+    var disabled = getDisabledModules();
+    var list = getModuleDescriptors();
+    for (var i = 0; i < list.length; i++) {
+      var d = list[i];
+      d.enabled = disabled.indexOf(d.id) === -1;
+      if (d.container !== 'none') {
+        var merged = getModuleOutputSchema(d.id);
+        if (merged) { d.fields = merged.fields; d.container = merged.container; }
+      }
+      try {
+        if (window.WORLD_ENGINE_PRESETS && window.WORLD_ENGINE_PRESETS.uiModuleLabel) {
+          var lbl = window.WORLD_ENGINE_PRESETS.uiModuleLabel(d.id);
+          if (lbl) d.name = lbl;
+        }
+      } catch (e) {}
+    }
+    return list;
   }
 
   function getAllRulesText() {
@@ -647,9 +696,9 @@ cooldown 由本地维护，API 不得输出或修改此字段。
     }
 
     // Filter out disabled modules
-    const enabledRules = RULES.filter(r => {
-      if (disabledModules.includes(r.moduleId)) {
-        console.log('[getAllRulesText] 已禁用模块:', r.comment);
+    const enabledRules = getModuleDescriptors().filter(d => {
+      if (disabledModules.includes(d.id)) {
+        console.log('[getAllRulesText] 已禁用模块:', d.name);
         return false;
       }
       return true;
@@ -657,7 +706,7 @@ cooldown 由本地维护，API 不得输出或修改此字段。
 
     if (enabledRules.length === 0) return '【所有模块均已禁用，无可用规则】';
 
-    const orderedRules = enabledRules.map(r => `========== ${r.comment} ==========\n${r.content}`);
+    const orderedRules = enabledRules.map(d => `========== ${d.name} ==========\n${d.rules}`);
     let text = `## 世界推演规则（原文，共${enabledRules.length}条）\n\n${orderedRules.join('\n\n')}`;
 
     // Apply preset term replacements
@@ -781,6 +830,30 @@ cooldown 由本地维护，API 不得输出或修改此字段。
     blackbox: 'blackbox',
     trends: 'worldTrends'
   };
+
+  // ======== 模块描述符层（阶段 1 · 纯增量，不改变任何现有行为）========
+  // BUILTIN_MECHANICS：把盘点表里每个内置模块用到的「特权机制」登记成元数据。
+  // 注意：这里只做「标签 / 形状」描述，不复制 evolution.js 里的常量表（避免双源漂移）；
+  // classic 推演仍然走 evolution.js 原有代码。Phase 2 才把通用引擎接到这些标签上。
+  // 详见 docs/内置模块盘点表.md 与 docs/模块描述符规格.md。
+  const BUILTIN_MECHANICS = {
+    world:      {},
+    contact:    {},
+    events:     { dice:{ mode:'threshold', levelField:'level' }, stages:{ typeField:'type' }, lifecycle:{ terminalRetain:true }, merge:'arrayByKey', itemKey:'name' },
+    factions:   { verdicts:{ axes:['status','relation'] }, merge:'arrayByKey', itemKey:'name' },
+    winds:      { dice:{ mode:'decay', byTypeField:'type' }, merge:'arrayByKey', itemKey:'topic' },
+    influence:  { lifecycle:{ expireRounds:8, cap:12 }, merge:'arrayByKey', itemKey:'trigger' },
+    reputation: { verdicts:{ axes:['authority','common','shadow','circuit'] }, merge:'objectAssign' },
+    economy:    { verdicts:{ axes:['climate'] }, lifecycle:{ signalsCap:8 }, merge:'objectAssign' },
+    enemies:    { lifecycle:{ terminalRetainRounds:20, cap:8 }, merge:'arrayByKey', itemKey:'name' },
+    regional:   { dice:{ mode:'trigger' }, merge:'objectReplaceGated' },
+    blackbox:   { lifecycle:{ cap:12 }, merge:'objectReplace' },
+    trends:     { lifecycle:{ terminalRemove:['已结束'] }, merge:'arrayByKey', itemKey:'name' }
+  };
+
+  function getBuiltinMechanics(moduleId) {
+    return BUILTIN_MECHANICS[moduleId] ? JSON.parse(JSON.stringify(BUILTIN_MECHANICS[moduleId])) : {};
+  }
 
   const OUTPUT_SCHEMAS = {
     events: {
@@ -1004,7 +1077,9 @@ cooldown 由本地维护，API 不得输出或修改此字段。
 
   function getDisabledOutputFields() {
     const disabled = getDisabledModules();
-    return disabled.map(id => MODULE_FIELD_MAP[id]).filter(Boolean);
+    const fieldById = {};
+    getModuleDescriptors().forEach(d => { if (d.field) fieldById[d.id] = d.field; });
+    return disabled.map(id => fieldById[id]).filter(Boolean);
   }
 
   function getAllowedOutputFields() {
@@ -1080,6 +1155,9 @@ cooldown 由本地维护，API 不得输出或修改此字段。
     getCoreRulesSummary,
     getRuleCount,
     getModuleList,
+    getModuleDescriptors,
+    getActiveModuleDescriptors,
+    getBuiltinMechanics,
     getBaseModuleOutputSchema,
     getModuleOutputSchema,
     getActiveOutputSchemas,
