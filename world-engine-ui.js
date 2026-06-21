@@ -762,6 +762,18 @@ window.WORLD_ENGINE_UI = (function() {
       const stampHtml = isTerminal && terminalStamp
         ? `<div class="we-event-stamp" style="border-color:${terminalStamp.color};color:${terminalStamp.color};">${terminalStamp.text}</div>`
         : '';
+      const extraFieldsHtml = renderSchemaExtraFields(e, 'events', {
+        name: true,
+        type: true,
+        level: true,
+        stage: true,
+        stageRound: true,
+        desc: true,
+        stall: true,
+        consecutiveFails: true,
+        evolveResult: true,
+        _terminalSince: true
+      }, 'we-event-meta');
       const actionHtml = isEditing ? '' : `
         <div class="we-event-actions">
           <button class="we-icon-btn we-event-delete" data-event-scope="${scope}" data-event-index="${eventIndex}" title="删除事件"><i class="fa-solid fa-trash-can"></i></button>
@@ -773,6 +785,7 @@ window.WORLD_ENGINE_UI = (function() {
         ${stampHtml}
         <div class="we-event-name"><span style="color:${levelColor};">${u(e.name)}</span> <span class="we-badge" style="background:${levelColor}22;color:${levelColor};">Lv.${e.level||'?'}</span> <span class="we-badge" style="background:${typeColor}22;color:${typeColor};">${typeName}</span>${countdownHtml}${stageBadge}${extras}</div>
         ${metaText ? `<div class="we-event-meta" ${metaStyle}>${metaText}</div>` : ''}
+        ${extraFieldsHtml}
         ${editHtml}
         ${actionHtml}
         ${progressHtml}
@@ -820,6 +833,7 @@ window.WORLD_ENGINE_UI = (function() {
           <label>阶段进度<input class="we-event-edit-round" type="number" min="1" max="9" value="${event.stageRound || 1}"></label>
           <label title="仅正面终局（已爆发/已完成）生效，到期自动清退；非终局留空">剩余轮数<input class="we-event-edit-left" type="number" min="1" placeholder="终局专用" value="${leftValue}"></label>
           <label class="we-event-editor-wide">描述<textarea class="we-event-edit-desc" rows="3">${u(event.desc || '')}</textarea></label>
+          ${renderSchemaExtraEditor(event, 'events', { name:true, type:true, level:true, stage:true, stageRound:true, desc:true, stall:true, consecutiveFails:true, evolveResult:true, _terminalSince:true })}
         </div>
         <div class="we-event-editor-footer">
           <button class="we-btn we-btn-primary we-event-editor-save"><i class="fa-solid fa-floppy-disk"></i> 保存</button>
@@ -827,6 +841,113 @@ window.WORLD_ENGINE_UI = (function() {
       </div>`;
   }
 
+  function getSchemaExtraFields(moduleId, baseFields) {
+    var rulesLoader = window.WORLD_ENGINE_RULES;
+    if (!rulesLoader || !rulesLoader.getModuleOutputSchema) return [];
+    var schema = rulesLoader.getModuleOutputSchema(moduleId);
+    if (!schema || !schema.fields) return [];
+    baseFields = baseFields || {};
+    return Object.keys(schema.fields).filter(function (key) {
+      return !baseFields[key] && (!schema.fields[key] || schema.fields[key].display !== false);
+    }).map(function (key) {
+      var spec = schema.fields[key] || {};
+      return { key: key, label: spec.label || spec.title || key, type: spec.type || 'string', enum: spec.enum || [], display: spec.display !== false };
+    });
+  }
+
+  function formatSchemaDisplayValue(value) {
+    if (value === undefined || value === null || value === '') return '';
+    if (Array.isArray(value)) {
+      return value.map(function (item) {
+        if (item && typeof item === 'object') return JSON.stringify(item);
+        return String(item);
+      }).join(', ');
+    }
+    if (typeof value === 'object') return JSON.stringify(value);
+    return String(value);
+  }
+
+  function renderSchemaExtraFields(item, moduleId, baseFields, rowClass) {
+    if (!item) return '';
+    var fields = getSchemaExtraFields(moduleId, baseFields);
+    rowClass = rowClass || 'we-faction-meta';
+    return fields.map(function (field) {
+      var displayValue = formatSchemaDisplayValue(item[field.key]);
+      if (!displayValue) return '';
+      return '<div class="' + rowClass + '"><span class="we-schema-extra-label">' + u(field.label) + ': </span>' + u(displayValue) + '</div>';
+    }).join('');
+  }
+
+  function formatSchemaEditValue(value) {
+    if (value === undefined || value === null) return '';
+    if (typeof value === 'object') return JSON.stringify(value, null, 2);
+    return String(value);
+  }
+
+  function renderSchemaExtraEditor(item, moduleId, baseFields) {
+    var fields = getSchemaExtraFields(moduleId, baseFields);
+    if (!fields.length) return '';
+    var html = '<div class="we-event-editor-wide we-schema-extra-editor" style="display:grid;grid-template-columns:1fr;gap:6px;margin-top:4px;">' +
+      '<div style="font-size:12px;color:var(--we-text2,#aaa);">自定义字段</div>';
+    fields.forEach(function (field) {
+      var raw = formatSchemaEditValue(item && item[field.key]);
+      var type = String(field.type || 'string');
+      var label = u(field.label || field.key);
+      var common = ' class="we-schema-extra-input" data-schema-extra-field="' + h(field.key) + '" data-schema-extra-type="' + h(type) + '"';
+      if (Array.isArray(field.enum) && field.enum.length) {
+        html += '<label>' + label + '<select' + common + '><option value="">未设置</option>' + field.enum.map(function (opt) {
+          opt = String(opt);
+          return '<option value="' + h(opt) + '"' + (String(raw) === opt ? ' selected' : '') + '>' + h(opt) + '</option>';
+        }).join('') + '</select></label>';
+      } else if (type === 'boolean') {
+        html += '<label>' + label + '<select' + common + '><option value="">未设置</option><option value="true"' + (raw === 'true' ? ' selected' : '') + '>是</option><option value="false"' + (raw === 'false' ? ' selected' : '') + '>否</option></select></label>';
+      } else if (type === 'number') {
+        html += '<label>' + label + '<input type="number"' + common + ' value="' + h(raw) + '"></label>';
+      } else if (type.indexOf('array') === 0 || type === 'object') {
+        html += '<label>' + label + '<textarea rows="2"' + common + ' placeholder="JSON 或逗号分隔值">' + h(raw) + '</textarea></label>';
+      } else {
+        html += '<label>' + label + '<input type="text"' + common + ' value="' + h(raw) + '"></label>';
+      }
+    });
+    html += '</div>';
+    return html;
+  }
+
+  function parseSchemaExtraEditorValue(raw, type, fieldName) {
+    raw = (raw || '').trim();
+    if (!raw) return undefined;
+    type = String(type || 'string');
+    if (type === 'number') {
+      var n = Number(raw);
+      if (!Number.isFinite(n)) throw new Error('字段“' + fieldName + '”需要数字');
+      return n;
+    }
+    if (type === 'boolean') return raw === 'true';
+    if (type.indexOf('array') === 0) {
+      if (raw[0] === '[') return JSON.parse(raw);
+      return raw.split(',').map(function (item) { return item.trim(); }).filter(Boolean);
+    }
+    if (type === 'object') return JSON.parse(raw);
+    return raw;
+  }
+
+  function applySchemaExtraEditor(editor, target) {
+    var inputs = editor.querySelectorAll('.we-schema-extra-input[data-schema-extra-field]');
+    for (var i = 0; i < inputs.length; i++) {
+      var input = inputs[i];
+      var key = input.getAttribute('data-schema-extra-field');
+      var type = input.getAttribute('data-schema-extra-type') || 'string';
+      try {
+        var value = parseSchemaExtraEditorValue(input.value, type, key);
+        if (value === undefined) delete target[key];
+        else target[key] = value;
+      } catch (err) {
+        showToast(err.message || ('自定义字段“' + key + '”格式不正确'), true);
+        return false;
+      }
+    }
+    return true;
+  }
   function renderFactionList(factions, scope) {
     if (!factions || !factions.length) return '<div class="we-empty">暂无势力</div>';
     return renderPagedList(factions, 'factions', (f, factionIndex) => {
@@ -845,6 +966,15 @@ window.WORLD_ENGINE_UI = (function() {
         pillarsHtml = '<div class="we-faction-meta">权力支柱: ' + f.powerPillars.map(p => '<span class="we-pillar-tag">' + u(p) + '</span>').join('') + '</div>';
       }
 
+      const extraFieldsHtml = renderSchemaExtraFields(f, 'factions', {
+        name: true,
+        scope: true,
+        status: true,
+        relation: true,
+        currentGoal: true,
+        core_person: true,
+        powerPillars: true
+      }, 'we-faction-meta');
       const actionHtml = isEditing ? '' : `
         <div class="we-event-actions">
           <button class="we-icon-btn we-faction-delete" data-faction-scope="${scope}" data-faction-index="${factionIndex}" title="删除势力"><i class="fa-solid fa-trash-can"></i></button>
@@ -863,6 +993,7 @@ window.WORLD_ENGINE_UI = (function() {
         ${f.currentGoal ? `<div class="we-faction-goal">${u(f.currentGoal)}</div>` : ''}
         ${f.core_person ? `<div class="we-faction-meta">核心人物: ${u(f.core_person)}</div>` : ''}
         ${pillarsHtml}
+        ${extraFieldsHtml}
         ${actionHtml}
         ${editHtml}
       </div>`;
@@ -888,6 +1019,7 @@ window.WORLD_ENGINE_UI = (function() {
           <label>目标<input class="we-faction-edit-goal" type="text" value="${u(f.currentGoal||'')}"></label>
           <label>核心人物<input class="we-faction-edit-core" type="text" value="${u(f.core_person||'')}"></label>
           ${[0,1,2].map(i => `<label>权力支柱${i+1}<input class="we-faction-edit-pillar" data-pillar-idx="${i}" type="text" value="${u(pillars[i])}" maxlength="4" placeholder="最多4字"></label>`).join('')}
+          ${renderSchemaExtraEditor(f, 'factions', { name:true, scope:true, status:true, relation:true, currentGoal:true, core_person:true, powerPillars:true })}
         </div>
         <div class="we-event-editor-footer">
           <button class="we-btn we-btn-primary we-faction-editor-save"><i class="fa-solid fa-floppy-disk"></i> 保存</button>
@@ -901,6 +1033,13 @@ window.WORLD_ENGINE_UI = (function() {
       const ended = trend.status === '已结束';
       const color = ended ? '#888888' : '#c9a45c';
       const isEditing = editingTrend?.scope === scope && editingTrend?.index === trendIndex;
+      const extraFieldsHtml = renderSchemaExtraFields(trend, 'trends', {
+        name: true,
+        scope: true,
+        status: true,
+        description: true,
+        source: true
+      }, 'we-trend-source');
       const actionHtml = isEditing ? '' : `
         <div class="we-event-actions">
           <button class="we-icon-btn we-trend-delete" data-trend-scope="${scope}" data-trend-index="${trendIndex}" title="删除天下大势"><i class="fa-solid fa-trash-can"></i></button>
@@ -917,6 +1056,7 @@ window.WORLD_ENGINE_UI = (function() {
         <div class="we-trend-scope">${u(trend.scope || '天下')}</div>
         <div class="we-trend-description">${u(trend.description || '?')}</div>
         <div class="we-trend-source"><span>来源</span>${u(trend.source || '?')}</div>
+        ${extraFieldsHtml}
         ${editHtml}
       </div>`;
     });
@@ -934,6 +1074,7 @@ window.WORLD_ENGINE_UI = (function() {
           <label>范围<input class="we-trend-edit-scope" type="text" value="${u(trend.scope||'')}"></label>
           <label>来源<input class="we-trend-edit-source" type="text" value="${u(trend.source||'')}"></label>
           <label class="we-event-editor-wide">描述<textarea class="we-trend-edit-desc" rows="3">${u(trend.description||'')}</textarea></label>
+          ${renderSchemaExtraEditor(trend, 'trends', { name:true, scope:true, status:true, description:true, source:true })}
         </div>
         <div class="we-event-editor-footer">
           <button class="we-btn we-btn-primary we-trend-editor-save"><i class="fa-solid fa-floppy-disk"></i> 保存</button>
@@ -978,6 +1119,7 @@ window.WORLD_ENGINE_UI = (function() {
       html += '<div class="we-wind-field we-wind-content"><span class="we-wind-label">内容</span><span>' + u(w.content || '?') + '</span></div>';
       html += '<div class="we-wind-field"><span class="we-wind-label">范围</span><span>' + u(w.scope || '?') + '</span></div>';
       html += '<div class="we-wind-field"><span class="we-wind-label">来源</span><span>' + u(w.source || '?') + '</span></div>';
+      html += renderSchemaExtraFields(w, 'winds', { topic:true, type:true, level:true, content:true, scope:true, source:true }, 'we-wind-field');
       html += editHtml;
       html += actionHtml;
       html += '</div>';
@@ -1001,6 +1143,7 @@ window.WORLD_ENGINE_UI = (function() {
           <label>范围<input class="we-wind-edit-scope" type="text" value="${u(w.scope||'')}"></label>
           <label>来源<input class="we-wind-edit-source" type="text" value="${u(w.source||'')}"></label>
           <label class="we-event-editor-wide">内容<textarea class="we-wind-edit-content" rows="3">${u(w.content||'')}</textarea></label>
+          ${renderSchemaExtraEditor(w, 'winds', { topic:true, type:true, level:true, content:true, scope:true, source:true })}
         </div>
         <div class="we-event-editor-footer">
           <button class="we-btn we-btn-primary we-wind-editor-save"><i class="fa-solid fa-floppy-disk"></i> 保存</button>
@@ -1067,6 +1210,7 @@ window.WORLD_ENGINE_UI = (function() {
       html += '<span class="we-climate-btn' + (c === climate ? ' we-climate-btn-on' : '') + '" style="' + (c === climate ? ('color:'+(climateColors[c]||'#7a8a9a')+';border-color:'+(climateColors[c]||'#7a8a9a')) : '') + '" data-climate-scope="' + sc + '" data-climate="' + c + '">' + c + '</span>';
     }
     html += '</div></div>';
+    html += renderSchemaExtraFields(econ, 'economy', { climate:true, signals:true }, 'we-wind-field');
     if (econ.signals?.length) {
       html += renderPagedList(econ.signals, 'economy-signals', (s, i) =>
         '<div class="we-signal-item" data-sig-scope="' + sc + '">' +
@@ -1092,11 +1236,13 @@ window.WORLD_ENGINE_UI = (function() {
           <button class="we-icon-btn we-enemy-copy" data-enemy-scope="${scope}" data-enemy-index="${enemyIndex}" title="复制仇敌"><i class="fa-solid fa-copy"></i></button>
           <button class="we-icon-btn we-enemy-edit" data-enemy-scope="${scope}" data-enemy-index="${enemyIndex}" title="编辑仇敌"><i class="fa-solid fa-pen"></i></button>
         </div>`;
+      const extraFieldsHtml = renderSchemaExtraFields(en, 'enemies', { name:true, reason:true, type:true, status:true }, 'we-blood-meta');
       const editHtml = isEditing ? renderEnemyEditor(en, enemyIndex, scope) : '';
       return `<div class="we-blood-item">
         ${actionHtml}
         <div class="we-blood-title">${u(en.name)} <span class="we-badge we-badge-danger">${en.status||'追踪中'}</span><span class="we-badge" style="background:var(--we-purple);font-size:10px;">${en.type==='blood'?'血仇':'恩怨'}</span></div>
         <div class="we-blood-meta">原因: ${u(en.reason||'?')}</div>
+        ${extraFieldsHtml}
         ${editHtml}
       </div>`;
     });
@@ -1115,6 +1261,7 @@ window.WORLD_ENGINE_UI = (function() {
           <label>类型<select class="we-enemy-edit-type">${typeOptions}</select></label>
           <label>状态<select class="we-enemy-edit-status">${statusOptions}</select></label>
           <label class="we-event-editor-wide">原因<textarea class="we-enemy-edit-reason" rows="2">${u(en.reason||'')}</textarea></label>
+          ${renderSchemaExtraEditor(en, 'enemies', { name:true, reason:true, type:true, status:true })}
         </div>
         <div class="we-event-editor-footer">
           <button class="we-btn we-btn-primary we-enemy-editor-save"><i class="fa-solid fa-floppy-disk"></i> 保存</button>
@@ -1132,6 +1279,7 @@ window.WORLD_ENGINE_UI = (function() {
           <button class="we-icon-btn we-influence-copy" data-influence-scope="${scope}" data-influence-index="${infIndex}" title="复制影响链"><i class="fa-solid fa-copy"></i></button>
           <button class="we-icon-btn we-influence-edit" data-influence-scope="${scope}" data-influence-index="${infIndex}" title="编辑影响链"><i class="fa-solid fa-pen"></i></button>
         </div>`;
+      const extraFieldsHtml = renderSchemaExtraFields(item, 'influence', { trigger:true, impact:true, fallout:true }, 'we-influence-step');
       const editHtml = isEditing ? renderInfluenceEditor(item, infIndex, scope) : '';
       return `<div class="we-influence-item">
         ${actionHtml}
@@ -1147,6 +1295,7 @@ window.WORLD_ENGINE_UI = (function() {
           <span class="we-influence-label">后续余波</span>
           <span class="we-influence-text">${u(item.fallout)}</span>
         </div>` : ''}
+        ${extraFieldsHtml}
         ${editHtml}
       </div>`;
     });
@@ -1160,6 +1309,7 @@ window.WORLD_ENGINE_UI = (function() {
           <label class="we-event-editor-wide">触发源<textarea class="we-influence-edit-trigger" rows="2">${u(item.trigger||'')}</textarea></label>
           <label class="we-event-editor-wide">直接影响<textarea class="we-influence-edit-impact" rows="2">${u(item.impact||'')}</textarea></label>
           <label class="we-event-editor-wide">后续余波<textarea class="we-influence-edit-fallout" rows="2">${u(item.fallout||'')}</textarea></label>
+          ${renderSchemaExtraEditor(item, 'influence', { trigger:true, impact:true, fallout:true })}
         </div>
         <div class="we-event-editor-footer">
           <button class="we-btn we-btn-primary we-influence-editor-save"><i class="fa-solid fa-floppy-disk"></i> 保存</button>
@@ -1195,6 +1345,7 @@ window.WORLD_ENGINE_UI = (function() {
         <button class="we-icon-btn we-ri-copy" data-ri-scope="${scope}" title="复制区域事件"><i class="fa-solid fa-copy"></i></button>
         <button class="we-icon-btn we-ri-edit" data-ri-scope="${scope}" title="编辑区域事件"><i class="fa-solid fa-pen"></i></button>
       </div>`;
+    const extraFieldsHtml = renderSchemaExtraFields(ri, 'regional', { active:true, title:true, type:true, scope:true, impact:true, duration:true, cooldown:true }, 'we-faction-meta');
     const editHtml = isEditing ? renderRIEditor(ri, scope) : '';
 
     if (ri.active) {
@@ -1203,6 +1354,7 @@ window.WORLD_ENGINE_UI = (function() {
         ${u(ri.title)}<br>
         <span style="font-size:11px;color:var(--we-text3);">类型: ${u(getRegionalIncidentTypeLabel(ri.type))} | 范围: ${u(ri.scope||'?')} | 剩余: ${ri.duration||0}轮</span><br>
         <span style="font-size:11px;color:var(--we-text2);">${u(ri.impact||'')}</span>
+        ${extraFieldsHtml}
         ${editHtml}
       </div>`;
     }
@@ -1238,6 +1390,7 @@ window.WORLD_ENGINE_UI = (function() {
           <label>剩余轮数<input class="we-ri-edit-duration" type="number" min="0" max="99" value="${ri.duration||0}"></label>
           <label>冷却<input class="we-ri-edit-cooldown" type="number" min="0" max="99" value="${ri.cooldown||0}"></label>
           <label class="we-event-editor-wide">影响<textarea class="we-ri-edit-impact" rows="3">${u(ri.impact||'')}</textarea></label>
+          ${renderSchemaExtraEditor(ri, 'regional', { active:true, title:true, type:true, scope:true, impact:true, duration:true, cooldown:true })}
         </div>
         <div class="we-event-editor-footer">
           <button class="we-btn we-btn-primary we-ri-editor-save"><i class="fa-solid fa-floppy-disk"></i> 保存</button>
@@ -1784,6 +1937,7 @@ window.WORLD_ENGINE_UI = (function() {
         } else {
           delete event._terminalSince;
         }
+        if (!applySchemaExtraEditor(editor, event)) return;
         core.ensureEventFields(event);
         saveScopedState(scope, scopedState);
         editingEvent = null;
@@ -1824,6 +1978,7 @@ window.WORLD_ENGINE_UI = (function() {
           if (v) pillars.push(v);
         });
         faction.powerPillars = pillars;
+        if (!applySchemaExtraEditor(editor, faction)) return;
         saveScopedState(scope, state);
         editingFaction = null;
         showToast('势力修改已保存');
@@ -1885,6 +2040,7 @@ window.WORLD_ENGINE_UI = (function() {
         wind.source = editor.querySelector('.we-wind-edit-source').value.trim();
         wind.content = editor.querySelector('.we-wind-edit-content').value.trim();
         wind.quietRounds = 0;
+        if (!applySchemaExtraEditor(editor, wind)) return;
         saveScopedState(scope, scopedState);
         editingWind = null;
         showToast('风声修改已保存');
@@ -1945,6 +2101,7 @@ window.WORLD_ENGINE_UI = (function() {
         trend.scope = editor.querySelector('.we-trend-edit-scope').value.trim();
         trend.source = editor.querySelector('.we-trend-edit-source').value.trim();
         trend.description = editor.querySelector('.we-trend-edit-desc').value.trim();
+        if (!applySchemaExtraEditor(editor, trend)) return;
         saveScopedState(scope, scopedState);
         editingTrend = null;
         showToast('天下大势修改已保存');
@@ -2003,6 +2160,7 @@ window.WORLD_ENGINE_UI = (function() {
         enemy.type = editor.querySelector('.we-enemy-edit-type').value;
         enemy.status = editor.querySelector('.we-enemy-edit-status').value;
         enemy.reason = editor.querySelector('.we-enemy-edit-reason').value.trim();
+        if (!applySchemaExtraEditor(editor, enemy)) return;
         saveScopedState(scope, state);
         editingEnemy = null;
         showToast('仇敌修改已保存');
@@ -2061,6 +2219,7 @@ window.WORLD_ENGINE_UI = (function() {
         inf.trigger = trigger;
         inf.impact = impact;
         inf.fallout = editor.querySelector('.we-influence-edit-fallout').value.trim();
+        if (!applySchemaExtraEditor(editor, inf)) return;
         saveScopedState(scope, scopedState);
         editingInfluence = null;
         showToast('影响链修改已保存');
@@ -2122,6 +2281,7 @@ window.WORLD_ENGINE_UI = (function() {
         ri.duration = Math.max(0, Number(editor.querySelector('.we-ri-edit-duration').value) || 0);
         ri.cooldown = Math.max(0, Number(editor.querySelector('.we-ri-edit-cooldown').value) || 0);
         ri.impact = editor.querySelector('.we-ri-edit-impact').value.trim();
+        if (!applySchemaExtraEditor(editor, ri)) return;
         saveScopedState(scope, state);
         editingRI = null;
         showToast('区域事件修改已保存');

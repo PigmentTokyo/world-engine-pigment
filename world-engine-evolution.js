@@ -639,6 +639,9 @@ type：${picked.type}
   async function callEvolutionAPI(state, userMsg, aiMsg, extraInstruction = '', dialogueText = '') {
     const rulesLoader = window.WORLD_ENGINE_RULES;
     const fullRules = rulesLoader ? rulesLoader.getAllRulesText() : '【规则加载失败】';
+    const outputInstructions = (rulesLoader && typeof rulesLoader.buildOutputInstructionsText === 'function')
+      ? rulesLoader.buildOutputInstructionsText()
+      : OUTPUT_INSTRUCTIONS + '\n' + JSON_EXAMPLE;
     const worldbookSection = await window.WORLD_ENGINE_WORLDBOOK?.buildPromptSection?.() || '';
     const tonePrompt = ((api.getSettings ? api.getSettings() : {}).tonePrompt || '').trim();
     const toneSection = tonePrompt
@@ -668,8 +671,8 @@ ${worldbookSection}
 ## 当前世界状态（第${state.round}轮）
 ${JSON.stringify({
   round: state.round,
-  events: (state.events || []).map(e => ({ name: e.name, type: e.type || 'conflict', stage: e.stage, stageRound: e.stageRound, level: e.level, desc: e.desc, evolveResult: e.evolveResult, stall: e.stall })),
-  factions: (state.factions || []).map(f => ({ name: f.name, scope: f.scope, status: f.status, relation: f.relation, currentGoal: f.currentGoal, core_person: f.core_person, powerPillars: f.powerPillars })),
+  events: (state.events || []).map(e => ({ ...e })),
+  factions: (state.factions || []).map(f => ({ ...f })),
   worldTrends: state.worldTrends || [],
   winds: (state.winds || []).map(({ quietRounds, ...wind }) => wind),
   reputation: state.reputation,
@@ -681,9 +684,29 @@ ${JSON.stringify({
 
 ## 近期对话
 ${dialogueText ? dialogueText : `用户：${userMsg || ''}\nAI：${aiMsg || ''}`}
-
-${OUTPUT_INSTRUCTIONS}
-${JSON_EXAMPLE}
+${(() => {
+  const persona = core.getUserPersona ? core.getUserPersona() : '';
+  return persona
+    ? `\n## {{user}} 身份设定\n以下是 {{user}} 的角色背景设定，推演时请将其作为 {{user}} 的身份、社会地位、职业、能力等背景信息来考量，并据此影响势力态度、声誉判定、NPC 反应等：\n${persona}\n`
+    : '';
+})()}${(() => {
+  // 构建禁用模块提示：告诉 LLM 不要输出已禁用模块对应的字段
+  const MODULE_FIELD_MAP = {
+    events: 'events', factions: 'factions', winds: 'winds',
+    influence: 'influenceChain', reputation: 'reputation',
+    economy: 'economy', enemies: 'enemies', regional: 'regionalIncident',
+    blackbox: 'blackbox', trends: 'worldTrends'
+  };
+  let disabled = [];
+  if (window.WORLD_ENGINE_PRESETS && window.WORLD_ENGINE_PRESETS.getActivePreset) {
+    const preset = window.WORLD_ENGINE_PRESETS.getActivePreset();
+    if (Array.isArray(preset.disabledModules)) disabled = preset.disabledModules;
+  }
+  const skippedFields = disabled.map(id => MODULE_FIELD_MAP[id]).filter(Boolean);
+  if (skippedFields.length === 0) return '';
+  return `\n## 已禁用的模块\n以下模块已被用户禁用，请不要在输出 JSON 中包含这些字段：${skippedFields.join('、')}。\n`;
+})()}
+${outputInstructions}
 ${extraInstruction ? '\n' + extraInstruction : ''}${toneSection}`;
 
     const rawResult = await api.callApi(prompt, 8000, 0.7, _abortController.signal);
@@ -693,10 +716,12 @@ ${extraInstruction ? '\n' + extraInstruction : ''}${toneSection}`;
     if (!update || typeof update !== 'object' || Array.isArray(update)) {
       throw new Error('API 返回无法解析为有效 JSON，已保留重 roll 前的当前状态');
     }
-    const knownFields = [
-      'events', 'factions', 'worldTrends', 'winds', 'economy', 'reputation',
-      'world_digest', 'enemies', 'influenceChain', 'regionalIncident', 'blackbox'
-    ];
+    const knownFields = (rulesLoader && typeof rulesLoader.getAllowedOutputFields === 'function')
+      ? rulesLoader.getAllowedOutputFields()
+      : [
+        'events', 'factions', 'worldTrends', 'winds', 'economy', 'reputation',
+        'world_digest', 'enemies', 'influenceChain', 'regionalIncident', 'blackbox'
+      ];
     if (!knownFields.some(field => Object.prototype.hasOwnProperty.call(update, field))) {
       throw new Error('API 返回不包含任何世界状态字段，已保留重 roll 前的当前状态');
     }

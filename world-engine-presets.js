@@ -880,6 +880,56 @@
     return result.length ? result : deepClone(fallback || []);
   }
 
+  function normalizeSchemaFieldSpec(value) {
+    if (!isPlainObject(value)) return null;
+    var result = {
+      type: normalizeText(value.type, 'string'),
+      description: normalizeText(value.description || value.desc, '')
+    };
+    if (value.label != null) result.label = normalizeText(value.label, '');
+    if (Object.prototype.hasOwnProperty.call(value, 'display')) result.display = value.display !== false;
+    if (Array.isArray(value.enum)) {
+      result.enum = value.enum.map(function (item) { return normalizeText(item, ''); }).filter(Boolean);
+    }
+    if (Object.prototype.hasOwnProperty.call(value, 'example')) result.example = deepClone(value.example);
+    return result;
+  }
+
+  function normalizeSchemaFieldMap(value) {
+    var result = {};
+    if (!isPlainObject(value)) return result;
+    Object.keys(value).forEach(function (fieldName) {
+      var safeName = normalizeText(fieldName, '');
+      if (!safeName) return;
+      var spec = normalizeSchemaFieldSpec(value[fieldName]);
+      if (spec) result[safeName] = spec;
+    });
+    return result;
+  }
+
+  function normalizeSchemaOverrides(value) {
+    var result = {};
+    if (!isPlainObject(value)) return result;
+    Object.keys(value).forEach(function (moduleId) {
+      var safeModuleId = normalizeText(moduleId, '');
+      var raw = value[moduleId];
+      if (!safeModuleId || !isPlainObject(raw)) return;
+      var entry = {};
+      if (raw.title != null) entry.title = normalizeText(raw.title, '');
+      if (raw.description != null) entry.description = normalizeText(raw.description, '');
+      if (Array.isArray(raw.hiddenFields)) {
+        entry.hiddenFields = raw.hiddenFields.map(function (field) { return normalizeText(field, ''); }).filter(Boolean);
+      }
+      var fields = normalizeSchemaFieldMap(raw.fields);
+      var addFields = normalizeSchemaFieldMap(raw.addFields);
+      var overrideFields = normalizeSchemaFieldMap(raw.overrideFields);
+      if (Object.keys(fields).length) entry.fields = fields;
+      if (Object.keys(addFields).length) entry.addFields = addFields;
+      if (Object.keys(overrideFields).length) entry.overrideFields = overrideFields;
+      if (Object.keys(entry).length) result[safeModuleId] = entry;
+    });
+    return result;
+  }
   function normalizePreset(raw, options) {
     options = options || {};
     var source = isPlainObject(raw) ? raw : {};
@@ -914,7 +964,11 @@
       },
       termMap: termMap,
       ui: normalizeUI(source.ui),
-      customRules: normalizeText(source.customRules, '')
+      customRules: normalizeText(source.customRules, ''),
+      schemaOverrides: normalizeSchemaOverrides(source.schemaOverrides),
+      disabledModules: Array.isArray(source.disabledModules)
+        ? source.disabledModules.filter(function (m) { return typeof m === 'string' && m; })
+        : []
     };
     return preset;
   }
@@ -1322,6 +1376,20 @@
       + '      { "type": "英文标识", "label": "中文名称", "weight": 10, "guide": "该事件的详细示例场景描述" }\n'
       + '    ]\n'
       + '  },\n'
+      + '  "schemaOverrides": {\n'
+      + '    "factions": {\n'
+      + '      "addFields": {\n'
+      + '        "resources": { "type": "array<string>", "description": "该势力真正掌握、会影响行动能力的世界专属资源", "example": ["净水站", "弹药库"], "display": true },\n'
+      + '        "threatLevel": { "type": "number", "description": "该势力对主角或当前局势造成的可追踪威胁等级，1-5", "example": 4, "display": true }\n'
+      + '      }\n'
+      + '    },\n'
+      + '    "events": {\n'
+      + '      "addFields": {\n'
+      + '        "riskOwner": { "type": "string", "description": "最直接推动或承担该事件风险的势力、人物或机制", "example": "边境军需官", "display": true },\n'
+      + '        "pressure": { "type": "enum", "enum": ["低", "中", "高", "临界"], "description": "事件对世界局势形成的压力等级", "example": "高", "display": true }\n'
+      + '      }\n'
+      + '    }\n'
+      + '  },\n'
       + '  "termMap": {\n'
       + '    "朝堂之上": "对应的新术语", "市井之间": "...", "草莽之中": "...", "同道之间": "...",\n'
       + '    "天怒人怨": "...", "声名狼藉": "...", "默默无闻": "...", "受人尊敬": "...", "万众敬仰": "...",\n'
@@ -1352,7 +1420,15 @@
       + '- regionalIncidents.types 需要约12种，weight 总和约为100。\n'
       + '- ui.labels 把界面上的词替换成本世界观的说法：key 必须原样使用上面给出的中文词，value 是新叫法（例如赛博朋克可把“世界核心”改为“系统核心”、“账本”改为“事件日志”）。\n'
       + '- ui.moods 的 key 必须用固定的五档（天下太平/暗流浮动/局势紧张/动荡失序/崩坏边缘），value 是该世界观下对应稳定度档位的一句氛围短语（替换古风诗句）。\n'
-      + '- 只返回JSON，不要有额外文字';
+      + '- 只返回JSON，不要有额外文字'
+      + '\n- schemaOverrides 设计原则：只为“世界运转真正重要、会反复追踪、会影响推演判断”的概念新增字段；不要把长设定、背景介绍、一次性描述塞进字段。'
+      + '\n- schemaOverrides 字段数量必须克制：优先每个相关模块新增 1-3 个关键字段；如果世界书没有强需求，可以返回空对象 {}。'
+      + '\n- schemaOverrides 类型优先级：能枚举就用 enum，能量化就用 number，能判断开关就用 boolean；普通 string 只用于名称、归属、短说明；array/object 只用于确实需要多个条目或结构化数据。'
+      + '\n- schemaOverrides 每个新增字段必须包含 type、description、example、display；display=true 表示适合在主面板卡片展示，display=false 表示只用于推演结构或高级数据，不直接展示。'
+      + '\n- schemaOverrides 可用模块：events、factions、trends、winds、economy、reputation、enemies、influence、regional、blackbox。优先修改最贴合世界核心玩法的模块，不要每个模块都硬加字段。'
+      + '\n- schemaOverrides 字段名用英文 camelCase，例如 threatLevel、magicDensity、courtFavor；字段说明和值使用当前世界观语言。'
+      + '\n- 世界类型建议：末世优先考虑 resources、dangerLevel、baseStatus、scarcityIndex；宫廷优先考虑 stance、favor、leverage、secretDebt；科幻优先考虑 fleetPower、techTier、colonyStatus、supplyLine；魔法优先考虑 magicDensity、school、tabooRisk、manaReserve。只选择真正适合当前世界的字段。'
+      + '\n- schemaOverrides 不要删除基础字段，除非世界书明确说明该概念完全不适用；隐藏字段用 hiddenFields，修改字段说明或枚举用 overrideFields，新增字段用 addFields。';
 
     // 4. Call the API
     if (!window.WORLD_ENGINE_API || typeof window.WORLD_ENGINE_API.callApi !== 'function') {
@@ -1399,6 +1475,7 @@
       regionalIncidents: parsed.regionalIncidents || ANCIENT_CHINESE.regionalIncidents,
       termMap: parsed.termMap || {},
       ui: parsed.ui || {},
+      schemaOverrides: parsed.schemaOverrides || {},
       customRules: ''
     };
 

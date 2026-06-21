@@ -73,6 +73,21 @@ window.WORLD_ENGINE_CORE = (function() {
     return '用户';
   }
 
+  /** 获取当前用户 persona 描述文本（来自 SillyTavern 用户设定管理） */
+  function getUserPersona() {
+    try {
+      const ctx = SillyTavern.getContext();
+      // SillyTavern 通过 powerUserSettings 暴露 power_user 对象
+      // persona_description 是当前激活 persona 的描述文本
+      if (ctx?.powerUserSettings?.persona_description) {
+        return ctx.powerUserSettings.persona_description.trim();
+      }
+    } catch(e) {
+      console.warn('[世界引擎] 读取用户 persona 失败', e);
+    }
+    return '';
+  }
+
   /** UI 渲染：替换文本中的 {{user}} 为当前角色名 */
   function renderUserName(text) {
     if (!text || typeof text !== 'string') return text;
@@ -88,6 +103,22 @@ window.WORLD_ENGINE_CORE = (function() {
     return 'default';
   }
 
+  function getFactionSchemaEnum(field, fallback) {
+    try {
+      const rules = window.WORLD_ENGINE_RULES;
+      const schema = rules && typeof rules.getModuleOutputSchema === 'function'
+        ? rules.getModuleOutputSchema('factions')
+        : null;
+      const values = schema && schema.fields && schema.fields[field] && schema.fields[field].enum;
+      return Array.isArray(values) && values.length ? values : fallback;
+    } catch (e) {
+      return fallback;
+    }
+  }
+
+  function getEnumDefault(values, fallback) {
+    return values.includes(fallback) ? fallback : values[0];
+  }
   function ensureArrays(state) {
     state.memories = state.memories || [];
     state.events = state.events || [];
@@ -118,13 +149,13 @@ window.WORLD_ENGINE_CORE = (function() {
       }
     }
     state.factions = state.factions || [];
-    const FACTION_RELATIONS = ['血盟', '盟友', '友好', '中立', '冷淡', '敌对', '世仇'];
-    const FACTION_STATUSES = ['鼎盛', '稳固', '倾轧', '困顿', '衰落', '瓦解'];
+    const FACTION_RELATIONS = getFactionSchemaEnum('relation', ['血盟', '盟友', '友好', '中立', '冷淡', '敌对', '世仇']);
+    const FACTION_STATUSES = getFactionSchemaEnum('status', ['鼎盛', '稳固', '倾轧', '困顿', '衰落', '瓦解']);
     for (const f of state.factions) {
-      f.status = FACTION_STATUSES.includes(f.status) ? f.status : '稳固';
+      f.status = FACTION_STATUSES.includes(f.status) ? f.status : getEnumDefault(FACTION_STATUSES, '稳固');
       // 八级→七级迁移：旧存档的"紧张"归并到"冷淡"
       if (f.relation === '紧张') f.relation = '冷淡';
-      f.relation = FACTION_RELATIONS.includes(f.relation) ? f.relation : '中立';
+      f.relation = FACTION_RELATIONS.includes(f.relation) ? f.relation : getEnumDefault(FACTION_RELATIONS, '中立');
       f.scope = f.scope || '';
       if (!Array.isArray(f.powerPillars)) f.powerPillars = [];
       else f.powerPillars = f.powerPillars.map(p => {
@@ -460,11 +491,11 @@ window.WORLD_ENGINE_CORE = (function() {
 
   function addFaction(state, faction) {
     if (!state.factions) state.factions = [];
-    const FACTION_RELATIONS = ['血盟', '盟友', '友好', '中立', '冷淡', '敌对', '世仇'];
-    const FACTION_STATUSES = ['鼎盛', '稳固', '倾轧', '困顿', '衰落', '瓦解'];
-    if (!FACTION_STATUSES.includes(faction.status)) faction.status = '稳固';
+    const FACTION_RELATIONS = getFactionSchemaEnum('relation', ['血盟', '盟友', '友好', '中立', '冷淡', '敌对', '世仇']);
+    const FACTION_STATUSES = getFactionSchemaEnum('status', ['鼎盛', '稳固', '倾轧', '困顿', '衰落', '瓦解']);
+    if (!FACTION_STATUSES.includes(faction.status)) faction.status = getEnumDefault(FACTION_STATUSES, '稳固');
     if (faction.relation === '紧张') faction.relation = '冷淡';
-    if (!FACTION_RELATIONS.includes(faction.relation)) faction.relation = '中立';
+    if (!FACTION_RELATIONS.includes(faction.relation)) faction.relation = getEnumDefault(FACTION_RELATIONS, '中立');
     faction.scope = faction.scope || '';
     if (!Array.isArray(faction.powerPillars)) faction.powerPillars = [];
     else faction.powerPillars = faction.powerPillars.map(p => {
@@ -565,7 +596,7 @@ window.WORLD_ENGINE_CORE = (function() {
   return {
     getDefaultState, getChatId, loadState, hasState, saveState, clearState, saveStateWithLayer,
     addMemory, addEvent, addFaction, addWorldTrend, addWind,
-    ensureEventFields, getUserName, renderUserName,
+    ensureEventFields, getUserName, getUserPersona, renderUserName,
     saveCheckpoint, restoreCheckpoint, clearCheckpoint, getAnchorLayer, setAnchorLayer,
     getChatLayer, getChatFingerprint, saveFingerprint, loadFingerprint, isNewRound,
     getCleanExport, importState,
