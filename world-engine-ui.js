@@ -473,6 +473,7 @@ window.WORLD_ENGINE_UI = (function() {
       name: name || ('配置 ' + (index + 1)),
       apiUrl,
       apiKey,
+      model: String(profile.model || ''),
       updatedAt: Number(profile.updatedAt) || 0
     };
   }
@@ -1850,10 +1851,14 @@ window.WORLD_ENGINE_UI = (function() {
 
   function bindEvents(state) {
     function readApiFields() {
-      return {
+      const fields = {
         apiUrl: (document.getElementById('we-api-url')?.value || '').trim(),
         apiKey: document.getElementById('we-api-key')?.value || ''
       };
+      // 同时捕获当前「模型」输入，避免保存/更新配置档时把未保存的模型改动覆盖回旧值
+      const modelEl = document.getElementById('we-model');
+      if (modelEl) fields.model = modelEl.value || '';
+      return fields;
     }
 
     function persistApiFields(activeId) {
@@ -1880,6 +1885,8 @@ window.WORLD_ENGINE_UI = (function() {
       if (urlInput) urlInput.value = profile.apiUrl || '';
       if (keyInput) keyInput.value = profile.apiKey || '';
       if (nameInput) nameInput.value = profile.name || '';
+      const modelInput = document.getElementById('we-model');
+      if (modelInput && profile.model) modelInput.value = profile.model;
       if (select) select.value = profile.id;
       persistApiFields(profile.id);
       showToast('已切换到配置档：' + profile.name);
@@ -1924,11 +1931,12 @@ window.WORLD_ENGINE_UI = (function() {
         if (sameName) {
           sameName.apiUrl = fields.apiUrl;
           sameName.apiKey = fields.apiKey;
+          sameName.model = fields.model || '';
           sameName.updatedAt = now;
           savedId = sameName.id;
         } else {
           savedId = 'api_profile_' + now + '_' + Math.random().toString(36).slice(2, 8);
-          profiles.push({ id: savedId, name, apiUrl: fields.apiUrl, apiKey: fields.apiKey, updatedAt: now });
+          profiles.push({ id: savedId, name, apiUrl: fields.apiUrl, apiKey: fields.apiKey, model: fields.model || '', updatedAt: now });
         }
         saveApiProfiles(profiles);
         persistApiFields(savedId);
@@ -1949,6 +1957,7 @@ window.WORLD_ENGINE_UI = (function() {
         target.name = name;
         target.apiUrl = fields.apiUrl;
         target.apiKey = fields.apiKey;
+        target.model = fields.model || '';
         target.updatedAt = Date.now();
         saveApiProfiles(profiles);
         persistApiFields(target.id);
