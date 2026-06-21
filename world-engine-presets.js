@@ -1758,6 +1758,7 @@
     return {
       labels: normalizeStringMap(src.labels, {}),
       moods: normalizeStringMap(src.moods, {}),
+      moduleLabels: normalizeStringMap(src.moduleLabels, {}),
       poems: normalizeStringMap(src.poems, {}),
       mottos: normalizeStringMap(src.mottos, {}),
       summaryEmpty: normalizeText(src.summaryEmpty, '')
@@ -1774,6 +1775,7 @@
     return {
       labels: Object.assign({}, base.labels, ov.labels || {}),
       moods: Object.assign({}, base.moods, ov.moods || {}),
+      moduleLabels: Object.assign({}, base.moduleLabels, ov.moduleLabels || {}),
       poems: hasOv ? Object.assign({}, ov.poems || {}) : Object.assign({}, base.poems),
       mottos: hasOv ? Object.assign({}, ov.mottos || {}) : Object.assign({}, base.mottos),
       summaryEmpty: ov.summaryEmpty || base.summaryEmpty
@@ -1786,6 +1788,7 @@
     if (p && p.ui && (
         (p.ui.labels && Object.keys(p.ui.labels).length) ||
         (p.ui.moods && Object.keys(p.ui.moods).length) ||
+        (p.ui.moduleLabels && Object.keys(p.ui.moduleLabels).length) ||
         p.ui.summaryEmpty)) {
       ov = p.ui;
     } else if (p && PRESET_UI_OVERRIDES[p.id]) {
@@ -1802,6 +1805,11 @@
   function uiMood(tier) {            // '' => caller keeps its own default
     var u = getActiveUI();
     return (u.moods && u.moods[tier]) || '';
+  }
+  function uiModuleLabel(moduleId) { // '' => caller falls back to default module name
+    if (!moduleId) return '';
+    var u = getActiveUI();
+    return (u.moduleLabels && u.moduleLabels[moduleId]) || '';
   }
   function uiPoem(view) {            // '' => caller hides the poem line
     var u = getActiveUI();
@@ -1833,6 +1841,7 @@
     applyPromptTerms:   applyPromptTerms,
     uiLabel:            uiLabel,
     uiMood:             uiMood,
+    uiModuleLabel:      uiModuleLabel,
     uiPoem:             uiPoem,
     uiMotto:            uiMotto,
     uiSummaryEmpty:     uiSummaryEmpty,

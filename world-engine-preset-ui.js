@@ -511,14 +511,36 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
       ? '<div class="we-hint" style="margin-bottom:6px;color:var(--we-warning,#fdcb6e);">当前为内置预设，保存后会自动创建自定义副本。</div>'
       : '';
 
+    // 把内置模块名（"模块X：原始词"）替换成当前世界预设的对应叫法。
+    // 优先级：预设显式 ui.moduleLabels[moduleId] > 用 ui.labels 主题化后缀词 > 默认 comment。
+    // 后缀别名表：模块名后缀与 ui.labels 的 key 不完全一致时在此映射。
+    var MODULE_LABEL_ALIAS = {
+      '世界运转': '世界核心',
+      '区域突发事件': '区域事件',
+      '信息黑盒': '秘密'
+    };
+    function resolveModuleLabel(m) {
+      var base = m.comment || m.moduleId;
+      var explicit = P.uiModuleLabel ? P.uiModuleLabel(m.moduleId) : '';
+      if (explicit) return explicit;
+      var parts = String(base).split('：');
+      if (parts.length === 2 && P.uiLabel) {
+        var key = MODULE_LABEL_ALIAS[parts[1]] || parts[1];
+        var themed = P.uiLabel(key);
+        if (themed && themed !== key) return parts[0] + '：' + themed;
+      }
+      return base;
+    }
+
     var rows = '';
     for (var i = 0; i < modules.length; i++) {
       var m = modules[i];
       var checked = disabled.indexOf(m.moduleId) === -1;
+      var label = resolveModuleLabel(m);
       rows +=
         '<label class="we-module-toggle-row" style="display:flex;align-items:center;gap:8px;padding:4px 0;cursor:pointer;">' +
           '<input type="checkbox" class="we-module-toggle-cb" data-module-id="' + esc(m.moduleId) + '"' + (checked ? ' checked' : '') + '>' +
-          '<span style="' + (checked ? '' : 'opacity:0.5;text-decoration:line-through;') + '">' + esc(m.comment || m.moduleId) + '</span>' +
+          '<span style="' + (checked ? '' : 'opacity:0.5;text-decoration:line-through;') + '">' + esc(label) + '</span>' +
         '</label>';
     }
 
