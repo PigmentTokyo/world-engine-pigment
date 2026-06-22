@@ -995,8 +995,223 @@ type：${picked.type}
     if (update.reputation && Object.keys(update.reputation).length) Object.assign(state.reputation, update.reputation);
   }
 
+  const GenericMechanics = {
+    getMechanics(descriptor) {
+      return (descriptor && descriptor.mechanics && typeof descriptor.mechanics === 'object') ? descriptor.mechanics : {};
+    },
+
+    getStageConfig(descriptor) {
+      const stages = GenericMechanics.getMechanics(descriptor).stages;
+      if (!stages || typeof stages !== 'object') return null;
+      const order = stages.order || stages.states;
+      if (!order) return null;
+      const defaultType = stages.defaultType || (Array.isArray(order) ? 'default' : Object.keys(order)[0]);
+      const normalizedOrder = Array.isArray(order) ? { [defaultType]: order.slice() } : { ...order };
+      const terminalStages = stages.terminalStages || stages.terminalStates || {};
+      const finalStage = stages.finalStage || stages.finalStates || {};
+      const firstOrder = normalizedOrder[defaultType] || normalizedOrder[Object.keys(normalizedOrder)[0]] || [];
+      const singleType = !stages.typeField && Object.keys(normalizedOrder).length === 1;
+      const normalizedFinalStage = Array.isArray(finalStage) ? { [defaultType]: finalStage[finalStage.length - 1] } : (typeof finalStage === 'string' ? { [defaultType]: finalStage } : { ...finalStage });
+      const normalizedTerminalStages = Array.isArray(terminalStages) ? { [defaultType]: terminalStages.slice() } : { ...terminalStages };
+      Object.keys(normalizedOrder).forEach(type => {
+        if (!normalizedFinalStage[type]) normalizedFinalStage[type] = normalizedOrder[type][normalizedOrder[type].length - 1];
+        if (!normalizedTerminalStages[type]) normalizedTerminalStages[type] = normalizedFinalStage[type] ? [normalizedFinalStage[type]] : [];
+      });
+      return {
+        typeField: stages.typeField || 'type',
+        defaultType,
+        order: normalizedOrder,
+        finalStage: normalizedFinalStage,
+        terminalStages: normalizedTerminalStages,
+        progressField: stages.progressField || 'stageRound',
+        progressMax: Number.isFinite(Number(stages.progressMax)) ? Number(stages.progressMax) : 9,
+        _singleType: singleType,
+        _firstOrder: firstOrder
+      };
+    },
+
+    normalizeStage(descriptor, item) {
+      const config = GenericMechanics.getStageConfig(descriptor);
+      if (!config || !item || typeof item !== 'object') return item;
+      if (config._singleType) {
+        const order = config._firstOrder || [];
+        if (item[config.progressField] === undefined) item[config.progressField] = 1;
+        if (!item.stage || order.indexOf(item.stage) === -1) item.stage = order[0];
+        return item;
+      }
+      return StageMachine.normalize(config, item);
+    },
+
+    getVerdictLevels(descriptor, axis) {
+      const verdicts = GenericMechanics.getMechanics(descriptor).verdicts;
+      if (!verdicts || typeof verdicts !== 'object') return [];
+      if (Array.isArray(verdicts.levels)) return verdicts.levels;
+      return (verdicts.levels && verdicts.levels[axis]) || [];
+    },
+
+    normalizeVerdictValues(descriptor, item, fallback) {
+      const verdicts = GenericMechanics.getMechanics(descriptor).verdicts;
+      if (!verdicts || !Array.isArray(verdicts.axes) || !item || typeof item !== 'object') return item;
+      const termMap = verdicts.termMap || {};
+      verdicts.axes.forEach(axis => {
+        const levels = GenericMechanics.getVerdictLevels(descriptor, axis);
+        if (!levels.length || item[axis] == null || levels.indexOf(item[axis]) !== -1) return;
+        const mapped = Object.keys(termMap).find(key => termMap[key] === item[axis]);
+        if (mapped && levels.indexOf(mapped) !== -1) item[axis] = mapped;
+        else if (fallback && fallback[axis] != null) item[axis] = fallback[axis];
+        else item[axis] = levels[0];
+      });
+      return item;
+    },
+
+    normalizeVerdictTexts(descriptor, value, fallback, termMap) {
+      const verdicts = GenericMechanics.getMechanics(descriptor).verdicts;
+      const engine = window.WORLD_ENGINE_PRESETS && window.WORLD_ENGINE_PRESETS._VERDICT_ENGINE;
+      if (!verdicts || !engine) return value;
+      const config = { axes: verdicts.axes || ['value'], levels: verdicts.levels || [] };
+      if ((config.axes || []).length > 1 && typeof engine.normalizeAxes === 'function') {
+        return engine.normalizeAxes(config, value, fallback, termMap || verdicts.termMap);
+      }
+      if (typeof engine.normalizeSingleAxis === 'function') {
+        return engine.normalizeSingleAxis(config, value, fallback, termMap || verdicts.termMap);
+      }
+      return value;
+    },
+
+    prepareItem(descriptor, item, fallback) {
+      if (!item || typeof item !== 'object') return item;
+      GenericMechanics.normalizeStage(descriptor, item);
+      GenericMechanics.normalizeVerdictValues(descriptor, item, fallback);
+      return item;
+    },
+
+    getDiceConfig(descriptor) {
+      const mechanics = GenericMechanics.getMechanics(descriptor);
+      const dice = mechanics.dice;
+      if (!dice || typeof dice !== 'object' || !dice.mode) return null;
+      const config = { ...dice };
+      const stageConfig = GenericMechanics.getStageConfig(descriptor);
+      if (stageConfig) {
+        if (!config.typeField) config.typeField = stageConfig.typeField;
+        if (!config.defaultType) config.defaultType = stageConfig.defaultType;
+        if (!config.progressField) config.progressField = stageConfig.progressField;
+        if (!config.progressMax) config.progressMax = stageConfig.progressMax;
+      }
+      return config;
+    },
+
+    rollDice(descriptor, item, randomFn = Math.random) {
+      const config = GenericMechanics.getDiceConfig(descriptor);
+      if (!config) return null;
+      if (config.mode === 'threshold') return DiceEngine.rollThreshold(config, item || {}, randomFn);
+      if (config.mode === 'decay') return DiceEngine.rollDecay(config, item || {}, randomFn);
+      if (config.mode === 'trigger') return DiceEngine.rollTrigger(config, item || {}, randomFn);
+      return null;
+    },
+
+    applyDiceResult(descriptor, item, roll) {
+      if (!item || typeof item !== 'object' || !roll) return item;
+      const config = GenericMechanics.getStageConfig(descriptor);
+      const diceConfig = GenericMechanics.getDiceConfig(descriptor);
+      const mode = diceConfig && diceConfig.mode;
+      if (mode === 'trigger' && roll.patch && typeof roll.patch === 'object') Object.assign(item, roll.patch);
+      if (mode === 'decay' && roll.decayed) item._decayed = true;
+      if (mode === 'threshold' && config && !config._singleType) {
+        if (roll.kind === 'success') StageMachine.advance(config, item);
+        else if (roll.kind === 'setback') StageMachine.recede(config, item);
+      } else if (mode === 'threshold' && config && config._singleType) {
+        if (roll.kind === 'success') {
+          item[config.progressField] = (parseInt(item[config.progressField]) || 1) + 1;
+          const order = config._firstOrder || [];
+          if (item[config.progressField] >= config.progressMax) {
+            const idx = order.indexOf(item.stage);
+            if (idx !== -1 && idx < order.length - 1) {
+              item.stage = order[idx + 1];
+              item[config.progressField] = 1;
+            }
+          }
+        } else if (roll.kind === 'setback') {
+          item[config.progressField] = Math.max(1, (parseInt(item[config.progressField]) || 1) - 1);
+        }
+      }
+      return item;
+    }
+  };
+  const GenericMerge = {
+    getField(descriptor) {
+      return descriptor && (descriptor.field || descriptor.id);
+    },
+
+    getItemKey(descriptor) {
+      return (descriptor && (descriptor.itemKey || (descriptor.mechanics && descriptor.mechanics.itemKey))) || 'name';
+    },
+
+    mergeArray(state, update, descriptor) {
+      const field = GenericMerge.getField(descriptor);
+      if (!field || !Array.isArray(update && update[field])) return false;
+      if (!Array.isArray(state[field])) state[field] = [];
+      const itemKey = GenericMerge.getItemKey(descriptor);
+      update[field].forEach(item => {
+        if (!item || typeof item !== 'object') return;
+        const keyValue = itemKey ? item[itemKey] : null;
+        const idx = keyValue == null ? -1 : state[field].findIndex(existing => existing && existing[itemKey] === keyValue);
+        const prepared = GenericMechanics.prepareItem(descriptor, { ...item }, idx !== -1 ? state[field][idx] : null);
+        if (idx !== -1) state[field][idx] = { ...state[field][idx], ...prepared };
+        else state[field].push(prepared);
+      });
+      return true;
+    },
+
+    mergeObject(state, update, descriptor) {
+      const field = GenericMerge.getField(descriptor);
+      if (!field || !update || !update[field] || typeof update[field] !== 'object' || Array.isArray(update[field])) return false;
+      const current = state[field] && typeof state[field] === 'object' && !Array.isArray(state[field]) ? state[field] : {};
+      const prepared = GenericMechanics.prepareItem(descriptor, { ...update[field] }, current);
+      state[field] = { ...current, ...prepared };
+      return true;
+    },
+
+    mergeScalar(state, update, descriptor) {
+      const field = GenericMerge.getField(descriptor);
+      if (!field || !update || !Object.prototype.hasOwnProperty.call(update, field)) return false;
+      state[field] = update[field];
+      return true;
+    },
+
+    merge(state, update, descriptor) {
+      if (!descriptor || descriptor.enabled === false) return false;
+      if (descriptor.container === 'array') return GenericMerge.mergeArray(state, update, descriptor);
+      if (descriptor.container === 'object') return GenericMerge.mergeObject(state, update, descriptor);
+      if (descriptor.container === 'scalar') return GenericMerge.mergeScalar(state, update, descriptor);
+      return false;
+    },
+
+    mergeAll(state, update, descriptors) {
+      let changed = false;
+      (Array.isArray(descriptors) ? descriptors : []).forEach(descriptor => {
+        changed = GenericMerge.merge(state, update, descriptor) || changed;
+      });
+      return changed;
+    }
+  };
+
   // 内置模块合并分发表（moduleId → 处理器）。evolve() 当前仍按固定顺序显式调用以保 classic 零回归；
   // 此表供 Phase 3 自由/混合模式按描述符查表分发内置处理器之用。
+  function getActiveCustomModuleDescriptors() {
+    const rules = window.WORLD_ENGINE_RULES;
+    if (!rules || typeof rules.getActiveModuleDescriptors !== 'function') return [];
+    try {
+      return rules.getActiveModuleDescriptors().filter(function (descriptor) {
+        return descriptor && descriptor.kind === 'custom' && descriptor.enabled !== false && descriptor.container !== 'none';
+      });
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function mergeCustomModules(state, update) {
+    return GenericMerge.mergeAll(state, update, getActiveCustomModuleDescriptors());
+  }
   const BUILTIN_MERGE = {
     events: mergeEvents,
     factions: mergeFactions,
@@ -1193,6 +1408,8 @@ ${extraInstruction ? '\n' + extraInstruction : ''}${toneSection}`;
 
       mergeBlackbox(state, update);
 
+      mergeCustomModules(state, update);
+
       // 自动清理：已消散/已失败的事件链 & 已结束的天下大势
       // - 负面终局（已消散/已失败）：下一轮即删
       // - 正面终局（已爆发/已完成）：进入终局起保留 2+level*2 轮（Lv1=4/Lv2=6/Lv3=8/Lv4=10），
@@ -1266,5 +1483,5 @@ ${extraInstruction ? '\n' + extraInstruction : ''}${toneSection}`;
     state: () => core.loadState()
   };
 
-  return { evolve, getLastDebug, abort, isRunning, getLastError, getBuiltinMergeIds, _BUILTIN_MERGE: BUILTIN_MERGE, _DICE_ENGINE: DiceEngine, _STAGE_MACHINE: StageMachine, _EVENT_STAGE_MACHINE_CONFIG: EVENT_STAGE_MACHINE_CONFIG, _LIFECYCLE: Lifecycle, _LIFECYCLE_CONFIGS: LIFECYCLE_CONFIGS };
+  return { evolve, getLastDebug, abort, isRunning, getLastError, getBuiltinMergeIds, _BUILTIN_MERGE: BUILTIN_MERGE, _DICE_ENGINE: DiceEngine, _STAGE_MACHINE: StageMachine, _EVENT_STAGE_MACHINE_CONFIG: EVENT_STAGE_MACHINE_CONFIG, _LIFECYCLE: Lifecycle, _LIFECYCLE_CONFIGS: LIFECYCLE_CONFIGS, _GENERIC_MECHANICS: GenericMechanics, _GENERIC_MERGE: GenericMerge };
 })();

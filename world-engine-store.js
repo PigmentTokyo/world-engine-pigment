@@ -62,6 +62,7 @@ window.WORLD_ENGINE_STORE = (function() {
     if (key === statePrefix + '_checkpoint') return 'checkpoint';
     if (key === statePrefix + '_anchorLayer') return 'anchorLayer';
     if (key === statePrefix + '_fingerprint') return 'fingerprint';
+    if (key === statePrefix + '_customModuleState') return 'customModuleState';
     if (key === 'world_engine_worldbook_selection_' + chatId) return 'worldbookSelection';
     if (key === 'world_engine_tone_prompt_' + chatId) return 'tonePrompt';
     return null;

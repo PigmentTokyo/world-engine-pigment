@@ -660,69 +660,178 @@ cooldown 由本地维护，API 不得输出或修改此字段。
     });
   }
 
-  // 激活态描述符：套用预设的 disabledModules（enabled）、schemaOverrides（fields）、
-  // moduleLabels（name）。仍为只读，不改变现有注入/渲染流程；供 Phase 1 后续改写时切换。
-  function getActiveModuleDescriptors() {
-    var disabled = getDisabledModules();
-    var list = getModuleDescriptors();
-    for (var i = 0; i < list.length; i++) {
-      var d = list[i];
-      d.enabled = disabled.indexOf(d.id) === -1;
-      if (d.container !== 'none') {
-        var merged = getModuleOutputSchema(d.id);
-        if (merged) { d.fields = merged.fields; d.container = merged.container; }
-      }
-      try {
-        if (window.WORLD_ENGINE_PRESETS && window.WORLD_ENGINE_PRESETS.uiModuleLabel) {
-          var lbl = window.WORLD_ENGINE_PRESETS.uiModuleLabel(d.id);
-          if (lbl) d.name = lbl;
-        }
-      } catch (e) {}
+  let _lastActiveModuleDescriptorWarnings = [];
+
+  function cloneDescriptor(descriptor) {
+    return descriptor ? JSON.parse(JSON.stringify(descriptor)) : null;
+  }
+
+  function getActivePresetObject() {
+    if (!window.WORLD_ENGINE_PRESETS || !window.WORLD_ENGINE_PRESETS.getActivePreset) return null;
+    try { return window.WORLD_ENGINE_PRESETS.getActivePreset(); }
+    catch (e) { return null; }
+  }
+
+  function getActivePresetMode() {
+    const preset = getActivePresetObject();
+    return preset && preset.mode === 'free' ? 'free' : 'classic';
+  }
+
+  function applyActiveBuiltinOverrides(descriptor, ref) {
+    const d = cloneDescriptor(descriptor);
+    if (!d) return null;
+    const disabled = getDisabledModules();
+    d.enabled = (!ref || ref.enabled !== false) && disabled.indexOf(d.id) === -1;
+    if (ref && Number.isFinite(Number(ref.order))) d.order = Number(ref.order);
+    if (ref && ref.name) d.name = ref.name;
+    if (d.container !== 'none') {
+      const merged = getModuleOutputSchema(d.id);
+      if (merged) { d.fields = merged.fields; d.container = merged.container; d.description = merged.description || d.description || ''; }
     }
+    try {
+      if (window.WORLD_ENGINE_PRESETS && window.WORLD_ENGINE_PRESETS.uiModuleLabel) {
+        const lbl = window.WORLD_ENGINE_PRESETS.uiModuleLabel(d.id);
+        if (lbl) d.name = lbl;
+      }
+    } catch (e) {}
+    return d;
+  }
+
+  function getClassicActiveModuleDescriptors() {
+    return getModuleDescriptors().map(function (descriptor) { return applyActiveBuiltinOverrides(descriptor); });
+  }
+
+  function isStrictIdentifier(value) {
+    return /^[A-Za-z_][A-Za-z0-9_]*$/.test(value || '');
+  }
+
+  function getReservedOutputFields() {
+    const reserved = new Set(['world_digest']);
+    getModuleDescriptors().forEach(function (d) { if (d.field) reserved.add(d.field); });
+    return reserved;
+  }
+
+  function normalizeCustomActiveDescriptor(raw, index) {
+    if (!raw || raw.kind !== 'custom') return null;
+    const id = raw.id || '';
+    if (!isStrictIdentifier(id)) return null;
+    const container = raw.container || 'array';
+    if (['none', 'scalar', 'object', 'array'].indexOf(container) === -1) return null;
+    const field = container === 'none' ? null : (raw.field || id);
+    if (field && !isStrictIdentifier(field)) return null;
+    const d = cloneDescriptor(raw);
+    d.kind = 'custom';
+    d.enabled = raw.enabled !== false && getDisabledModules().indexOf(id) === -1;
+    d.order = Number.isFinite(Number(raw.order)) ? Number(raw.order) : index + 1;
+    d.name = d.name || id;
+    d.rules = d.rules || '';
+    d.container = container;
+    d.field = field;
+    if (container === 'array' && !d.itemKey) d.itemKey = 'name';
+    if ((container === 'array' || container === 'object') && !isPlainObject(d.fields)) d.fields = {};
+    if (!isPlainObject(d.mechanics)) d.mechanics = {};
+    if (!isPlainObject(d.display)) d.display = null;
+    return d;
+  }
+
+  function getFreeActiveModuleDescriptors(preset) {
+    const builtinById = {};
+    getModuleDescriptors().forEach(function (descriptor) { builtinById[descriptor.id] = descriptor; });
+    const modules = Array.isArray(preset && preset.modules) ? preset.modules : [];
+    const list = [];
+    const seenIds = new Set();
+    const seenFields = new Set();
+    const warnings = [];
+    modules.forEach(function (raw, index) {
+      if (typeof raw === 'string') raw = { id: raw, kind: 'builtin', order: index + 1 };
+      if (!raw || !raw.id) return;
+      const id = raw.id;
+      if (seenIds.has(id)) { warnings.push('重复模块 id 已跳过：' + id); return; }
+      const base = builtinById[id];
+      let descriptor = null;
+      if ((raw.kind === 'builtin' || base) && base) {
+        descriptor = applyActiveBuiltinOverrides(base, { ...raw, order: Number.isFinite(Number(raw.order)) ? Number(raw.order) : index + 1 });
+      } else {
+        descriptor = normalizeCustomActiveDescriptor(raw, index);
+      }
+      if (!descriptor) { warnings.push('模块描述符无效，已跳过：' + id); return; }
+      const field = descriptor.field || (descriptor.container !== 'none' ? descriptor.id : null);
+      if (field) {
+        if (seenFields.has(field)) { warnings.push('模块字段名重复，已跳过：' + field); return; }
+        if (descriptor.kind === 'custom' && getReservedOutputFields().has(field)) { warnings.push('自定义模块字段名与内置字段冲突，已跳过：' + field); return; }
+        seenFields.add(field);
+      }
+      seenIds.add(id);
+      list.push(descriptor);
+    });
+    _lastActiveModuleDescriptorWarnings = warnings;
     return list;
   }
 
-  function getAllRulesText() {
-    console.log('[getAllRulesText] RULES:', RULES.length);
-    if (RULES.length === 0) return '【世界规则加载失败，所有规则不可用】';
-
-    // Read disabled modules from active preset
-    let disabledModules = [];
-    if (window.WORLD_ENGINE_PRESETS && window.WORLD_ENGINE_PRESETS.getActivePreset) {
-      const preset = window.WORLD_ENGINE_PRESETS.getActivePreset();
-      if (preset && Array.isArray(preset.disabledModules)) {
-        disabledModules = preset.disabledModules;
-      }
+  // 激活态描述符：classic 维持内置 12 模块；free/mixed 从 preset.modules[] 解析。
+  function getActiveModuleDescriptors() {
+    const preset = getActivePresetObject();
+    if (!preset || preset.mode !== 'free') {
+      _lastActiveModuleDescriptorWarnings = [];
+      return getClassicActiveModuleDescriptors();
     }
+    return getFreeActiveModuleDescriptors(preset);
+  }
 
-    // Filter out disabled modules
-    const enabledRules = getModuleDescriptors().filter(d => {
-      if (disabledModules.includes(d.id)) {
-        console.log('[getAllRulesText] 已禁用模块:', d.name);
-        return false;
-      }
-      return true;
+  function getActiveModuleDescriptorWarnings() {
+    getActiveModuleDescriptors();
+    return _lastActiveModuleDescriptorWarnings.slice();
+  }
+
+  function buildRulesTextFromDescriptors(descriptors, options) {
+    options = options || {};
+    var list = Array.isArray(descriptors) ? descriptors.slice() : [];
+    var enabledRules = list.filter(function (d) {
+      return d && d.enabled !== false && typeof d.rules === 'string' && d.rules.trim();
     });
 
-    if (enabledRules.length === 0) return '【所有模块均已禁用，无可用规则】';
+    if (enabledRules.length === 0) {
+      return options.emptyText || '【所有模块均已禁用，无可用规则】';
+    }
 
-    const orderedRules = enabledRules.map(d => `========== ${d.name} ==========\n${d.rules}`);
-    let text = `## 世界推演规则（原文，共${enabledRules.length}条）\n\n${orderedRules.join('\n\n')}`;
+    enabledRules.sort(function (a, b) {
+      var ao = Number(a.order);
+      var bo = Number(b.order);
+      if (!Number.isFinite(ao)) ao = 9999;
+      if (!Number.isFinite(bo)) bo = 9999;
+      return ao - bo;
+    });
 
-    // Apply preset term replacements
-    if (window.WORLD_ENGINE_PRESETS && window.WORLD_ENGINE_PRESETS.applyTermMap) {
+    const orderedRules = enabledRules.map(function (d) {
+      var name = d.name || d.id || '未命名模块';
+      return '========== ' + name + ' ==========' + '\n' + String(d.rules || '').trim();
+    });
+    let text = '## 世界推演规则（原文，共' + enabledRules.length + '条）\n\n' + orderedRules.join('\n\n');
+
+    if (options.applyTerms !== false && window.WORLD_ENGINE_PRESETS && window.WORLD_ENGINE_PRESETS.applyTermMap) {
       text = window.WORLD_ENGINE_PRESETS.applyTermMap(text);
     }
 
-    // Append user custom rules
-    if (window.WORLD_ENGINE_PRESETS && window.WORLD_ENGINE_PRESETS.getActivePreset) {
+    if (options.appendCustomRules !== false && window.WORLD_ENGINE_PRESETS && window.WORLD_ENGINE_PRESETS.getActivePreset) {
       const preset = window.WORLD_ENGINE_PRESETS.getActivePreset();
       if (preset && preset.customRules && preset.customRules.trim()) {
-        text += '\n\n========== 用户自定义规则 ==========\n' + preset.customRules.trim();
+        text += '\n\n========== 用户自定义规则 ==========' + '\n' + preset.customRules.trim();
       }
     }
 
     return text;
+  }
+
+  function getAllRulesText() {
+    const descriptors = getActiveModuleDescriptors();
+    console.log('[getAllRulesText] RULES:', descriptors.length);
+    if (!descriptors.length) return '【世界规则加载失败，所有规则不可用】';
+
+    descriptors.forEach(function (d) {
+      if (d && d.enabled === false) console.log('[getAllRulesText] 已禁用模块:', d.name || d.id);
+    });
+
+    return buildRulesTextFromDescriptors(descriptors);
   }
 
   function getCoreRulesSummary() {
@@ -1067,15 +1176,61 @@ cooldown 由本地维护，API 不得输出或修改此字段。
     return mergeOutputSchema(base, overrides[moduleId]);
   }
 
+  function buildOutputSchemaFromDescriptor(descriptor) {
+    if (!descriptor || descriptor.enabled === false) return null;
+    if (descriptor.kind === 'builtin' && descriptor.id && OUTPUT_SCHEMAS[descriptor.id]) {
+      return getModuleOutputSchema(descriptor.id);
+    }
+    const container = descriptor.container || 'none';
+    if (container === 'none') return null;
+    const field = descriptor.field || descriptor.id;
+    if (!field || !isSafeFieldName(field)) return null;
+    const schema = {
+      moduleId: descriptor.id || field,
+      field: field,
+      title: descriptor.title || field,
+      container: container,
+      description: descriptor.description || '',
+      fields: isPlainObject(descriptor.fields) ? cloneSchemaValue(descriptor.fields) : {}
+    };
+    if (container === 'scalar') {
+      schema.scalarType = descriptor.scalarType || descriptor.type || 'string';
+      if (Object.prototype.hasOwnProperty.call(descriptor, 'example')) schema.example = cloneSchemaValue(descriptor.example);
+    }
+    return schema;
+  }
+
+  function compareOutputDescriptorOrder(a, b) {
+    if (getActivePresetMode() === 'free') {
+      const aoFree = Number(a && a.order);
+      const boFree = Number(b && b.order);
+      return (Number.isFinite(aoFree) ? aoFree : 9999) - (Number.isFinite(boFree) ? boFree : 9999);
+    }
+    const outputIds = Object.keys(OUTPUT_SCHEMAS);
+    const ai = outputIds.indexOf(a && a.id);
+    const bi = outputIds.indexOf(b && b.id);
+    if (ai !== -1 && bi !== -1) return ai - bi;
+    if (ai !== -1) return -1;
+    if (bi !== -1) return 1;
+    const ao = Number(a && a.order);
+    const bo = Number(b && b.order);
+    return (Number.isFinite(ao) ? ao : 9999) - (Number.isFinite(bo) ? bo : 9999);
+  }
+
   function getActiveOutputSchemas() {
-    const disabled = getDisabledModules();
-    return Object.keys(OUTPUT_SCHEMAS)
-      .filter(moduleId => disabled.indexOf(moduleId) === -1)
-      .map(moduleId => getModuleOutputSchema(moduleId))
+    return getActiveModuleDescriptors()
+      .filter(function (descriptor) { return descriptor && descriptor.enabled !== false && descriptor.container !== 'none'; })
+      .sort(compareOutputDescriptorOrder)
+      .map(buildOutputSchemaFromDescriptor)
       .filter(Boolean);
   }
 
   function getDisabledOutputFields() {
+    if (getActivePresetMode() === 'free') {
+      return getActiveModuleDescriptors()
+        .filter(function (d) { return d && d.enabled === false && d.field; })
+        .map(function (d) { return d.field; });
+    }
     const disabled = getDisabledModules();
     const fieldById = {};
     getModuleDescriptors().forEach(d => { if (d.field) fieldById[d.id] = d.field; });
@@ -1099,6 +1254,9 @@ cooldown 由本地维护，API 不得输出或修改此字段。
   }
 
   function buildSchemaExample(schema) {
+    if (schema.container === 'scalar') {
+      return formatExampleValue({ type: schema.scalarType || 'string', example: schema.example });
+    }
     const item = {};
     Object.keys(schema.fields || {}).forEach(field => {
       item[field] = formatExampleValue(schema.fields[field]);
@@ -1124,8 +1282,13 @@ cooldown 由本地维护，API 不得输出或修改此字段。
     ];
 
     getActiveOutputSchemas().forEach(schema => {
-      lines.push('', '### ' + schema.field + '（' + (schema.container === 'array' ? '数组' : '对象') + '）');
+      const containerLabel = schema.container === 'array' ? '数组' : (schema.container === 'scalar' ? '标量' : '对象');
+      lines.push('', '### ' + schema.field + '（' + containerLabel + '）');
       if (schema.description) lines.push(schema.description);
+      if (schema.container === 'scalar') {
+        lines.push('- value [' + (schema.scalarType || 'string') + ']: 直接返回该字段的值。');
+        return;
+      }
       Object.keys(schema.fields || {}).forEach(field => {
         const spec = schema.fields[field] || {};
         const type = spec.type ? ' [' + spec.type + ']' : '';
@@ -1157,9 +1320,12 @@ cooldown 由本地维护，API 不得输出或修改此字段。
     getModuleList,
     getModuleDescriptors,
     getActiveModuleDescriptors,
+    getActiveModuleDescriptorWarnings,
+    buildRulesTextFromDescriptors,
     getBuiltinMechanics,
     getBaseModuleOutputSchema,
     getModuleOutputSchema,
+    buildOutputSchemaFromDescriptor,
     getActiveOutputSchemas,
     getDisabledOutputFields,
     getAllowedOutputFields,

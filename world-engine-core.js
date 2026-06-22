@@ -103,6 +103,140 @@ window.WORLD_ENGINE_CORE = (function() {
     return 'default';
   }
 
+  function getCustomModuleStateKey(chatId) {
+    return STORAGE_PREFIX + (chatId || getChatId()) + '_customModuleState';
+  }
+
+  function readActiveModuleDescriptors() {
+    try {
+      const rules = window.WORLD_ENGINE_RULES;
+      if (rules && typeof rules.getActiveModuleDescriptors === 'function') {
+        const descriptors = rules.getActiveModuleDescriptors();
+        return Array.isArray(descriptors) ? descriptors : [];
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  function getReservedStateFields() {
+    const reserved = new Set(Object.keys(getDefaultState()));
+    reserved.add('world_digest');
+    reserved.add('_terminalEventsThisRound');
+    return reserved;
+  }
+
+  function isSafeCustomStateField(field) {
+    return typeof field === 'string' && /^[A-Za-z_][A-Za-z0-9_]*$/.test(field);
+  }
+
+  function getCustomModuleStatePlan(descriptors) {
+    if (!Array.isArray(descriptors)) return { available: false, valid: [], warnings: [] };
+    const reserved = getReservedStateFields();
+    const seen = new Set();
+    const valid = [];
+    const warnings = [];
+    descriptors.forEach(descriptor => {
+      if (!descriptor || descriptor.kind !== 'custom' || descriptor.enabled === false || descriptor.container === 'none') return;
+      const field = descriptor.field || descriptor.id;
+      const name = descriptor.name || descriptor.id || field || 'custom';
+      if (!isSafeCustomStateField(field)) {
+        warnings.push('自定义模块「' + name + '」的 state 字段名非法：' + (field || '(空)'));
+        return;
+      }
+      if (reserved.has(field)) {
+        warnings.push('自定义模块「' + name + '」的 state 字段名与内置字段冲突：' + field);
+        return;
+      }
+      if (seen.has(field)) {
+        warnings.push('自定义模块「' + name + '」的 state 字段名重复：' + field);
+        return;
+      }
+      seen.add(field);
+      valid.push({ descriptor, field });
+    });
+    return { available: true, valid, warnings };
+  }
+
+  function validateCustomModuleStateFields(descriptors) {
+    return getCustomModuleStatePlan(descriptors).warnings;
+  }
+
+  function defaultCustomModuleValue(descriptor) {
+    if (descriptor.container === 'array') return [];
+    if (descriptor.container === 'object') return {};
+    return null;
+  }
+
+  function ensureCustomModuleState(state, descriptors) {
+    const plan = getCustomModuleStatePlan(descriptors || readActiveModuleDescriptors());
+    if (!plan.available) return state;
+    plan.valid.forEach(entry => {
+      const descriptor = entry.descriptor;
+      const field = entry.field;
+      if (descriptor.container === 'array') {
+        if (!Array.isArray(state[field])) state[field] = [];
+      } else if (descriptor.container === 'object') {
+        if (!state[field] || typeof state[field] !== 'object' || Array.isArray(state[field])) state[field] = {};
+      } else if (!Object.prototype.hasOwnProperty.call(state, field)) {
+        state[field] = defaultCustomModuleValue(descriptor);
+      }
+    });
+    return state;
+  }
+
+  function readStoredCustomModuleState(descriptors) {
+    const plan = getCustomModuleStatePlan(descriptors || readActiveModuleDescriptors());
+    if (!plan.available || !plan.valid.length) return null;
+    const raw = window.WORLD_ENGINE_STORE.getItem(getCustomModuleStateKey());
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+    } catch (e) {
+      console.warn('[WorldEngine] Failed to parse custom module state', e);
+      return null;
+    }
+  }
+
+  function pruneStoredCustomModuleState(stored, plan) {
+    if (!stored || typeof stored !== 'object' || Array.isArray(stored) || !plan || !plan.valid) return stored;
+    const allowed = new Set(plan.valid.map(entry => entry.field));
+    const pruned = {};
+    Object.keys(stored).forEach(field => {
+      if (allowed.has(field)) pruned[field] = stored[field];
+    });
+    const changed = Object.keys(stored).length !== Object.keys(pruned).length;
+    if (changed) {
+      const key = getCustomModuleStateKey();
+      if (Object.keys(pruned).length) window.WORLD_ENGINE_STORE.setItem(key, JSON.stringify(pruned));
+      else window.WORLD_ENGINE_STORE.removeItem(key);
+    }
+    return pruned;
+  }
+
+  function mergeStoredCustomModuleState(state, descriptors) {
+    const plan = getCustomModuleStatePlan(descriptors || readActiveModuleDescriptors());
+    if (!plan.available || !plan.valid.length) return state;
+    const storedRaw = readStoredCustomModuleState(plan.valid.map(entry => entry.descriptor));
+    const stored = pruneStoredCustomModuleState(storedRaw, plan);
+    if (!stored) return state;
+    plan.valid.forEach(entry => {
+      if (Object.prototype.hasOwnProperty.call(stored, entry.field)) state[entry.field] = stored[entry.field];
+    });
+    return ensureCustomModuleState(state, plan.valid.map(entry => entry.descriptor));
+  }
+
+  function saveCustomModuleState(state, descriptors) {
+    const plan = getCustomModuleStatePlan(descriptors || readActiveModuleDescriptors());
+    if (!plan.available) return;
+    const payload = {};
+    plan.valid.forEach(entry => {
+      if (Object.prototype.hasOwnProperty.call(state, entry.field)) payload[entry.field] = state[entry.field];
+    });
+    const key = getCustomModuleStateKey();
+    if (Object.keys(payload).length) window.WORLD_ENGINE_STORE.setItem(key, JSON.stringify(payload));
+    else window.WORLD_ENGINE_STORE.removeItem(key);
+  }
   function getFactionSchemaEnum(field, fallback) {
     try {
       const rules = window.WORLD_ENGINE_RULES;
@@ -207,6 +341,7 @@ window.WORLD_ENGINE_CORE = (function() {
       state.blackbox.secretAssets = state.blackbox.secretAssets || [];
     }
     state.lastInjection = state.lastInjection || null;
+    ensureCustomModuleState(state);
     return state;
   }
 
@@ -221,10 +356,14 @@ window.WORLD_ENGINE_CORE = (function() {
         const merged = { ...def, ...saved };
         merged.memories = saved.memories || [];
         merged.lastInjection = saved.lastInjection || null;
-        return ensureArrays(merged);
+        const ensured = ensureArrays(merged);
+        mergeStoredCustomModuleState(ensured);
+        return ensureArrays(ensured);
       } catch(e) { console.warn('[世界引擎] 加载状态失败', e); }
     }
-    return ensureArrays(getDefaultState());
+    const def = ensureArrays(getDefaultState());
+    mergeStoredCustomModuleState(def);
+    return ensureArrays(def);
   }
 
   /** 是否存在真实落盘的当前状态；loadState() 在不存在时只返回临时默认状态。 */
@@ -236,6 +375,7 @@ window.WORLD_ENGINE_CORE = (function() {
     const chatId = getChatId();
     const key = STORAGE_PREFIX + chatId;
     ensureArrays(state);
+    saveCustomModuleState(state);
     state.lastUpdated = { chatId, timestamp: Date.now() };
     window.WORLD_ENGINE_STORE.setItem(key, JSON.stringify(state));
   }
@@ -595,6 +735,7 @@ window.WORLD_ENGINE_CORE = (function() {
 
   return {
     getDefaultState, getChatId, loadState, hasState, saveState, clearState, saveStateWithLayer,
+    validateCustomModuleStateFields, getCustomModuleStateKey, pruneStoredCustomModuleState,
     addMemory, addEvent, addFaction, addWorldTrend, addWind,
     ensureEventFields, getUserName, getUserPersona, renderUserName,
     saveCheckpoint, restoreCheckpoint, clearCheckpoint, getAnchorLayer, setAnchorLayer,

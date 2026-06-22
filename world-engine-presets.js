@@ -14,6 +14,8 @@
   const STORAGE_KEY_ACTIVE = 'world_engine_active_preset';
   const STORAGE_KEY_CUSTOM = 'world_engine_custom_presets';
   const DEFAULT_PRESET_ID = 'ancient_chinese';
+  const PRESET_SCHEMA_VERSION = 2;
+  const PRESET_EXPORT_TYPE = 'worldEnginePresetExport';
 
   // ─────────────────────────────────────────────
   // Helper — deep clone
@@ -1018,14 +1020,151 @@
     return warnings;
   }
 
+  function isStrictIdentifier(value) {
+    return /^[A-Za-z_][A-Za-z0-9_]*$/.test(value || '');
+  }
+
+  function isBuiltinModuleId(id) {
+    return Array.isArray(BUILTIN_MODULE_IDS) && BUILTIN_MODULE_IDS.indexOf(id) !== -1;
+  }
+
+  function normalizeDisplayConfig(value) {
+    if (!isPlainObject(value)) return null;
+    var style = normalizeText(value.style, 'cards');
+    if (['cards', 'table', 'keyvalue', 'list'].indexOf(style) === -1) style = 'cards';
+    var result = { style: style };
+    ['titleField', 'subtitleField', 'emptyText'].forEach(function (key) {
+      if (value[key] != null) result[key] = normalizeText(value[key], '');
+    });
+    ['badgeFields', 'bodyFields', 'fields', 'columns', 'hiddenInPanel'].forEach(function (key) {
+      if (Array.isArray(value[key])) result[key] = value[key].map(function (item) { return normalizeText(item, ''); }).filter(Boolean);
+    });
+    if (Number.isFinite(Number(value.perPage)) && Number(value.perPage) > 0) result.perPage = Math.floor(Number(value.perPage));
+    if (Object.prototype.hasOwnProperty.call(value, 'paged')) result.paged = value.paged !== false;
+    return result;
+  }
+
+  function normalizeMechanicsConfig(value) {
+    return isPlainObject(value) ? deepClone(value) : {};
+  }
+
+  function normalizeModuleDescriptor(raw, index) {
+    if (typeof raw === 'string') raw = { id: raw, kind: 'builtin' };
+    if (!isPlainObject(raw)) return null;
+    var id = normalizeText(raw.id || raw.moduleId, '');
+    if (!id || !isStrictIdentifier(id)) return null;
+    var rawKind = normalizeText(raw.kind, '');
+    var kind = (rawKind === 'builtin' || isBuiltinModuleId(id)) && rawKind !== 'custom' ? 'builtin' : 'custom';
+    var order = Number(raw.order);
+    var base = {
+      id: id,
+      kind: kind,
+      enabled: raw.enabled !== false,
+      order: Number.isFinite(order) ? order : index + 1
+    };
+    if (raw.name != null) base.name = normalizeText(raw.name, '');
+
+    if (kind === 'builtin') {
+      return base;
+    }
+
+    var container = normalizeText(raw.container, 'array');
+    if (['none', 'scalar', 'object', 'array'].indexOf(container) === -1) container = 'array';
+    var field = normalizeText(raw.field, id);
+    if (!isStrictIdentifier(field)) field = id;
+    base.name = base.name || id;
+    base.rules = normalizeText(raw.rules, '');
+    base.container = container;
+    base.field = container === 'none' ? null : field;
+    if (raw.description != null) base.description = normalizeText(raw.description, '');
+    if (raw.title != null) base.title = normalizeText(raw.title, '');
+    if (container === 'array') base.itemKey = normalizeText(raw.itemKey, 'name');
+    if (container === 'scalar') {
+      base.scalarType = normalizeText(raw.scalarType || raw.type, 'string');
+      if (Object.prototype.hasOwnProperty.call(raw, 'example')) base.example = deepClone(raw.example);
+    }
+    if (container === 'array' || container === 'object') base.fields = normalizeSchemaFieldMap(raw.fields);
+    var display = normalizeDisplayConfig(raw.display);
+    if (display) base.display = display;
+    base.mechanics = normalizeMechanicsConfig(raw.mechanics);
+    return base;
+  }
+
+  function migratePreset(raw) {
+    var source = isPlainObject(raw) ? deepClone(raw) : {};
+    var version = Math.max(0, Math.round(Number(source.schemaVersion || 0)) || 0);
+    if (!source.mode) source.mode = 'classic';
+    if (!Array.isArray(source.modules)) source.modules = [];
+    if (source.mode !== 'free') source.modules = [];
+    source.schemaVersion = version || 1;
+    return source;
+  }
+
+  function collectPresetImportWarnings(raw, normalized) {
+    var warnings = [];
+    var source = isPlainObject(raw) ? raw : {};
+    if (!source.schemaVersion) warnings.push('旧版预设已迁移到 schemaVersion ' + PRESET_SCHEMA_VERSION);
+    if (source.mode && source.mode !== 'classic' && source.mode !== 'free') warnings.push('未知 mode 已回退为 classic: ' + source.mode);
+    if (normalized.mode === 'free') {
+      if (!Array.isArray(source.modules) || !source.modules.length) warnings.push('free 预设缺少 modules[]，已导入为空自由预设');
+      var normalizedCount = Array.isArray(normalized.modules) ? normalized.modules.length : 0;
+      var sourceCount = Array.isArray(source.modules) ? source.modules.length : 0;
+      if (sourceCount && normalizedCount < sourceCount) warnings.push('部分 modules[] 条目未通过校验，已跳过');
+    }
+    return warnings;
+  }
+
+  function readCurrentCustomModuleState() {
+    try {
+      var core = window.WORLD_ENGINE_CORE;
+      var store = getStore();
+      if (!core || typeof core.getCustomModuleStateKey !== 'function' || !store || typeof store.getItem !== 'function') return null;
+      var raw = store.getItem(core.getCustomModuleStateKey());
+      if (!raw) return null;
+      var parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+    } catch (e) {
+      console.warn('[WorldEngine Presets] Failed to read custom module state for export', e);
+      return null;
+    }
+  }
+
+  function restoreCustomModuleState(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    try {
+      var core = window.WORLD_ENGINE_CORE;
+      var store = getStore();
+      if (!core || typeof core.getCustomModuleStateKey !== 'function' || !store || typeof store.setItem !== 'function') return false;
+      store.setItem(core.getCustomModuleStateKey(), JSON.stringify(value));
+      return true;
+    } catch (e) {
+      console.warn('[WorldEngine Presets] Failed to restore custom module state from import', e);
+      return false;
+    }
+  }
+  function normalizeModuleDescriptors(value) {
+    if (!Array.isArray(value)) return [];
+    var seen = {};
+    var result = [];
+    value.forEach(function (item, index) {
+      var descriptor = normalizeModuleDescriptor(item, index);
+      if (!descriptor || seen[descriptor.id]) return;
+      seen[descriptor.id] = true;
+      result.push(descriptor);
+    });
+    return result;
+  }
   function normalizePreset(raw, options) {
     options = options || {};
-    var source = isPlainObject(raw) ? raw : {};
+    var source = migratePreset(raw);
     var base = ANCIENT_CHINESE;
     var id = normalizeText(source.id, options.fallbackId || ('custom_' + Date.now()));
     var termMap = normalizeStringMap(source.termMap, {});
+    var mode = source.mode === 'free' ? 'free' : 'classic';
     var preset = {
       id: id,
+      schemaVersion: PRESET_SCHEMA_VERSION,
+      mode: mode,
       name: normalizeText(source.name, '自定义预设'),
       description: normalizeText(source.description, base.description),
       builtin: options.builtin === true ? true : source.builtin === true,
@@ -1056,7 +1195,8 @@
       schemaOverrides: normalizeSchemaOverrides(source.schemaOverrides),
       disabledModules: Array.isArray(source.disabledModules)
         ? source.disabledModules.filter(function (m) { return typeof m === 'string' && m; })
-        : []
+        : [],
+      modules: mode === 'free' ? normalizeModuleDescriptors(source.modules) : []
     };
     return preset;
   }
@@ -1349,7 +1489,13 @@
       console.error('[WorldEngine Presets] Cannot export: preset not found: ' + id);
       return null;
     }
-    return JSON.stringify(preset, null, 2);
+    var payload = deepClone(preset);
+    payload.schemaVersion = PRESET_SCHEMA_VERSION;
+    if (payload.mode === 'free') {
+      var customState = readCurrentCustomModuleState();
+      if (customState && Object.keys(customState).length) payload.customModuleState = customState;
+    }
+    return JSON.stringify(payload, null, 2);
   }
 
   /**
@@ -1360,7 +1506,9 @@
    */
   function importPreset(jsonString) {
     try {
-      var preset = JSON.parse(jsonString);
+      var parsed = JSON.parse(jsonString);
+      var customModuleState = parsed && parsed.customModuleState;
+      var preset = parsed && parsed.type === PRESET_EXPORT_TYPE && parsed.preset ? parsed.preset : parsed;
       if (!preset || !preset.id || !preset.name) {
         console.error('[WorldEngine Presets] Import failed: JSON must contain id and name');
         return null;
@@ -1372,9 +1520,14 @@
         preset.id = preset.id + '_imported_' + Date.now();
         console.warn('[WorldEngine Presets] ID conflicted with built-in preset, new ID: ' + preset.id);
       }
-      preset = normalizePreset(preset, { builtin: false });
-      saveCustomPreset(preset);
-      return deepClone(preset);
+      var normalized = normalizePreset(preset, { builtin: false });
+      var warnings = collectPresetImportWarnings(preset, normalized);
+      if (warnings.length) console.warn('[WorldEngine Presets] Import warnings: ' + warnings.join('; '));
+      saveCustomPreset(normalized);
+      if (customModuleState) restoreCustomModuleState(customModuleState);
+      var result = deepClone(normalized);
+      if (warnings.length) result.importWarnings = warnings;
+      return result;
     } catch (e) {
       console.error('[WorldEngine Presets] Import failed:', e);
       return null;
@@ -1383,7 +1536,239 @@
 
   // ═════════════════════════════════════════════
 
+  var BUILTIN_MODULE_IDS = [
+    'world', 'events', 'factions', 'winds', 'influence', 'contact',
+    'reputation', 'economy', 'enemies', 'regional', 'blackbox', 'trends'
+  ];
 
+  var BUILTIN_MODULE_NAMES = {
+    world: '世界运转',
+    events: '事件链',
+    factions: '势力',
+    winds: '风声',
+    influence: '影响链',
+    contact: '主动接触与信息传播',
+    reputation: '声誉',
+    economy: '经济',
+    enemies: '仇敌录',
+    regional: '区域突发事件',
+    blackbox: '信息黑盒',
+    trends: '天下大势'
+  };
+
+  function normalizeGeneratedDisabledModules(value) {
+    if (!Array.isArray(value)) return [];
+    var known = new Set(BUILTIN_MODULE_IDS);
+    var seen = new Set();
+    var result = [];
+    value.forEach(function (id) {
+      id = typeof id === 'string' ? id.trim() : '';
+      if (!known.has(id) || seen.has(id)) return;
+      seen.add(id);
+      result.push(id);
+    });
+    return result;
+  }
+
+  function normalizeGenerationModuleSelection(options) {
+    options = options || {};
+    var fixed = options.moduleCountMode === 'fixed';
+    var count = Math.round(Number(options.moduleCount));
+    if (!Number.isFinite(count)) count = BUILTIN_MODULE_IDS.length;
+    count = Math.max(1, Math.min(BUILTIN_MODULE_IDS.length, count));
+    return {
+      autoCrop: options.autoCropModules === true,
+      mode: fixed ? 'fixed' : 'auto',
+      count: count,
+      enabled: options.autoCropModules === true || fixed
+    };
+  }
+
+  function buildModuleSelectionPrompt(selection) {
+    if (!selection || !selection.enabled) return '';
+    var lines = [];
+    var moduleList = BUILTIN_MODULE_IDS.map(function (id) {
+      return '- ' + id + ' = ' + BUILTIN_MODULE_NAMES[id];
+    }).join('\n');
+    lines.push('## 模块裁剪');
+    lines.push('本次仍生成 classic 十二模块预设，但你必须判断哪些内置模块适合这个世界。');
+    lines.push('可用模块 ID：\n' + moduleList);
+    lines.push('请在顶层 JSON 返回 `disabledModules` 数组，数组内容只能使用以上 moduleId。被列入 disabledModules 的模块会在推演规则、输出字段和面板中关闭。');
+    if (selection.mode === 'fixed') {
+      lines.push('用户指定最终启用模块数量必须恰好为 ' + selection.count + ' 个，因此 disabledModules 必须恰好包含 ' + (BUILTIN_MODULE_IDS.length - selection.count) + ' 个不同模块 ID。');
+    } else {
+      lines.push('请只关闭与世界观明显不相关或会造成噪音的模块；如果十二模块都适合，返回空数组。');
+    }
+    return lines.join('\n') + '\n\n';
+  }
+
+  function validateGeneratedDisabledModules(disabledModules, selection) {
+    var disabled = normalizeGeneratedDisabledModules(disabledModules);
+    if (!selection || !selection.enabled) return [];
+    if (selection.mode === 'fixed') {
+      var enabledCount = BUILTIN_MODULE_IDS.length - disabled.length;
+      if (enabledCount !== selection.count) {
+        throw new Error('[WorldEngine Presets] AI 返回的模块数量不一致：要求启用 ' + selection.count + ' 个，实际启用 ' + enabledCount + ' 个。请重试生成，或调整模块数量为委任 AI 决定。');
+      }
+    }
+    return disabled;
+  }
+
+  function normalizeGenerationMode(options) {
+    options = options || {};
+    return options.generationMode === 'free' || options.mode === 'free' || options.freeMode === true ? 'free' : 'classic';
+  }
+
+  function buildBuiltinModuleReferenceText() {
+    return BUILTIN_MODULE_IDS.map(function (id) {
+      return '- ' + id + ' = ' + BUILTIN_MODULE_NAMES[id];
+    }).join('\n');
+  }
+
+  function parseGenerationJson(response) {
+    if (!response) throw new Error('[WorldEngine Presets] API returned empty response');
+    var jsonStr = response;
+    var jsonMatch = response.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (jsonMatch) {
+      jsonStr = jsonMatch[1].trim();
+    } else {
+      var braceStart = response.indexOf('{');
+      var braceEnd = response.lastIndexOf('}');
+      if (braceStart !== -1 && braceEnd !== -1 && braceEnd > braceStart) {
+        jsonStr = response.substring(braceStart, braceEnd + 1);
+      }
+    }
+    try {
+      return JSON.parse(jsonStr);
+    } catch (e) {
+      throw new Error('[WorldEngine Presets] Failed to parse API response as JSON: ' + e.message + '\nRaw response:\n' + response.substring(0, 500));
+    }
+  }
+
+  function validateGeneratedFreeModules(value, selection) {
+    var modules = normalizeModuleDescriptors(value);
+    if (!modules.length) throw new Error('[WorldEngine Presets] AI did not return any free modules.');
+    var reservedFields = {
+      events: true,
+      factions: true,
+      worldTrends: true,
+      winds: true,
+      economy: true,
+      reputation: true,
+      enemies: true,
+      influenceChain: true,
+      regionalIncident: true,
+      blackbox: true,
+      world_digest: true
+    };
+    var seenFields = {};
+    modules.forEach(function (module) {
+      if (!module || module.enabled === false || module.kind === 'builtin') return;
+      if (!module.field && module.container !== 'none') throw new Error('[WorldEngine Presets] Custom free module missing field: ' + module.id);
+      if (module.field && reservedFields[module.field]) throw new Error('[WorldEngine Presets] Custom free module field conflicts with built-in field: ' + module.field);
+      if (module.field && seenFields[module.field]) throw new Error('[WorldEngine Presets] Duplicate custom free module field: ' + module.field);
+      if (module.field) seenFields[module.field] = true;
+      if ((module.container === 'array' || module.container === 'object') && !Object.keys(module.fields || {}).length) {
+        throw new Error('[WorldEngine Presets] Custom free module needs fields: ' + module.id);
+      }
+      if (module.container === 'array' && module.itemKey && module.fields && !module.fields[module.itemKey]) {
+        throw new Error('[WorldEngine Presets] Custom free module itemKey must match a field: ' + module.id + '.' + module.itemKey);
+      }
+    });
+    var enabledCount = modules.filter(function (module) { return module.enabled !== false; }).length;
+    if (!enabledCount) {
+      throw new Error('[WorldEngine Presets] AI returned only disabled free modules.');
+    }
+    if (selection && selection.mode === 'fixed' && enabledCount !== selection.count) {
+      throw new Error('[WorldEngine Presets] AI returned ' + enabledCount + ' free modules, but ' + selection.count + ' were requested. Please retry generation or switch module count back to AI choice.');
+    }
+    return modules;
+  }
+
+  function buildFreeGenerationPrompt(source, options) {
+    options = options || {};
+    var builtinRefs = buildBuiltinModuleReferenceText();
+    var selection = normalizeGenerationModuleSelection(options);
+    var countPrompt = '';
+    if (selection.mode === 'fixed') {
+      countPrompt = '- 用户指定 modules[] 中启用模块总数必须恰好为 ' + selection.count + ' 个；内置引用和自定义模块合计计数，disabled:false/未写 enabled 都算启用。\n';
+    } else if (selection.autoCrop) {
+      countPrompt = '- 用户开启了 AI 自动裁剪；请只保留对该世界观真正有用的模块，不要为了凑数加入无关模块。\n';
+    }
+    var systemPrompt = '你是一个世界观结构设计专家。用户会给你世界书条目和/或角色卡描述。你需要自行判断这个世界真正需要被追踪的机制，并输出世界引擎自由模式预设。';
+    var userPrompt = '请分析以下设定内容，生成一个自由模式世界引擎预设。\n\n'
+      + source.sections + '\n\n'
+      + '## 自由模式要求\n\n'
+      + '- 不要套用固定十二模块；请按世界观自行决定需要哪些模块。\n'
+      + countPrompt
+      + '- 可以生成纯自定义模块，也可以混合引用少量内置模块。\n'
+      + '- 若引用内置模块，modules[] 条目只写 `{ "id": "events", "kind": "builtin", "enabled": true, "order": 1 }` 这种形状。可引用内置模块：\n' + builtinRefs + '\n'
+      + '- 自定义模块 id 和 field 必须是英文标识符，使用 camelCase 或 snake_case；不要使用内置 state 字段：events/factions/worldTrends/winds/economy/reputation/enemies/influenceChain/regionalIncident/blackbox/world_digest。\n'
+      + '- 自定义模块 container 只能是 array/object/scalar/none；array/object 必须提供 fields；array 必须提供 itemKey 且 itemKey 必须存在于 fields。\n'
+      + '- fields 的每个字段至少写 type、description、example、display；type 可用 string/number/boolean/enum/array<string>/object。\n'
+      + '- rules 写给推演 AI 的模块规则，说明什么时候新增、更新、删除或保持该模块数据。\n'
+      + '- display 说明 UI 展示方式：style 可用 cards/table/keyvalue/list，titleField/badgeFields/bodyFields 只能引用 fields。\n'
+      + '- mechanics 可选，只在需要时配置：dice 支持 mode=threshold/decay/trigger；stages 支持 states 或 order；verdicts 支持 axes 和 levels。\n\n'
+      + '请严格按以下 JSON 返回，只返回 JSON：\n\n'
+      + '```json\n'
+      + '{\n'
+      + '  "name": "预设显示名称",\n'
+      + '  "description": "一句话描述这个自由世界预设",\n'
+      + '  "mode": "free",\n'
+      + '  "modules": [\n'
+      + '    { "id": "events", "kind": "builtin", "enabled": true, "order": 1 },\n'
+      + '    {\n'
+      + '      "id": "customModuleId",\n'
+      + '      "name": "模块显示名",\n'
+      + '      "kind": "custom",\n'
+      + '      "enabled": true,\n'
+      + '      "order": 2,\n'
+      + '      "container": "array",\n'
+      + '      "field": "customModuleId",\n'
+      + '      "itemKey": "name",\n'
+      + '      "rules": "用中文写清楚该模块如何根据剧情更新。",\n'
+      + '      "fields": {\n'
+      + '        "name": { "type": "string", "description": "条目名称", "example": "示例名称", "display": true },\n'
+      + '        "status": { "type": "enum", "enum": ["低", "中", "高"], "description": "状态", "example": "中", "display": true }\n'
+      + '      },\n'
+      + '      "display": { "style": "cards", "titleField": "name", "badgeFields": ["status"], "bodyFields": [], "emptyText": "暂无记录" },\n'
+      + '      "mechanics": {}\n'
+      + '    }\n'
+      + '  ],\n'
+      + '  "customRules": "可选：整个自由预设的额外总规则",\n'
+      + '  "ui": { "labels": {}, "moods": {}, "summaryEmpty": "世界尚未开始时显示的一句话" }\n'
+      + '}\n'
+      + '```\n\n'
+      + '注意：modules[] 至少 1 个启用模块；不要返回解释文字；所有说明和值使用中文，但 id/field/字段名使用英文标识符。';
+    return { systemPrompt: systemPrompt, userPrompt: userPrompt };
+  }
+
+  async function generateFreePresetFromSource(source, options) {
+    if (!window.WORLD_ENGINE_API || typeof window.WORLD_ENGINE_API.callApi !== 'function') {
+      throw new Error('[WorldEngine Presets] window.WORLD_ENGINE_API.callApi is not available');
+    }
+    var prompt = buildFreeGenerationPrompt(source, options);
+    var response = await window.WORLD_ENGINE_API.callApi(prompt.systemPrompt + '\n\n' + prompt.userPrompt, 8000, 0.7);
+    var parsed = parseGenerationJson(response);
+    var timestamp = Date.now();
+    var preset = {
+      id: 'worldbook_free_' + timestamp,
+      mode: 'free',
+      name: parsed.name || '世界书自由预设',
+      description: parsed.description || '基于设定自动生成的自由模式预设',
+      builtin: false,
+      modules: validateGeneratedFreeModules(parsed.modules, normalizeGenerationModuleSelection(options)),
+      disabledModules: [],
+      schemaOverrides: parsed.schemaOverrides || {},
+      customRules: parsed.customRules || '',
+      ui: parsed.ui || {},
+      termMap: {}
+    };
+    saveCustomPreset(preset);
+    console.log('[WorldEngine Presets] Generated and saved free preset from worldbook: ' + preset.name + ' (' + preset.id + ')');
+    var stored = findPresetById(preset.id);
+    return stored || deepClone(preset);
+  }
   function truncateGenerationText(text, maxLength, label) {
     text = String(text || '').trim();
     if (!text || text.length <= maxLength) return text;
@@ -1521,12 +1906,17 @@
   async function generateFromWorldbook(options) {
     options = options || {};
     var includeCharacterDescription = options.includeCharacterDescription === true;
+    var moduleSelection = normalizeGenerationModuleSelection(options);
+    var moduleSelectionPrompt = buildModuleSelectionPrompt(moduleSelection);
 
     var source = await buildGenerationSource({
       includeCharacterDescription: includeCharacterDescription,
       includeUserPersona: options.includeUserPersona !== false,
       worldbookEntryIds: Array.isArray(options.worldbookEntryIds) ? options.worldbookEntryIds : null
     });
+    if (normalizeGenerationMode(options) === 'free') {
+      return generateFreePresetFromSource(source, options);
+    }
     var worldbookText = source.worldbookText;
     var characterSection = source.characterText
       ? '## \u5f53\u524d\u89d2\u8272\u5361\u63cf\u8ff0\n\n' + source.characterText + '\n\n'
@@ -1542,12 +1932,14 @@
       + '## 世界书内容\n\n' + (worldbookText || '（未提供世界书条目）') + '\n\n'
       + characterSection
       + personaSection
+      + moduleSelectionPrompt
       + '## 要求\n\n'
       + '请严格按以下JSON格式返回结果（只返回JSON，不要返回其他内容）：\n\n'
       + '```json\n'
       + '{\n'
       + '  "name": "预设显示名称",\n'
       + '  "description": "对这个世界观的一句话描述",\n'
+      + '  "disabledModules": [],\n'
       + '  "reputation": {\n'
       + '    "dimensions": {\n'
       + '      "authority": { "name": "权力维度名称", "description": "描述" },\n'
@@ -1619,7 +2011,8 @@
       + '- ui.labels 直接定义界面显示文案：key 必须原样使用上面给出的中文词，value 是当前世界观下自然的叫法（例如赛博朋克可把“世界核心”改为“系统核心”、“账本”改为“事件日志”）。\n'
       + '- ui.moods 的 key 必须用固定的五档（天下太平/暗流浮动/局势紧张/动荡失序/崩坏边缘），value 是该世界观下对应稳定度档位的一句氛围短语（替换古风诗句）。\n'
       + '- ui.moduleLabels 定义12个推演模块在“模块开关”面板里的显示名：key 必须原样使用上面给出的英文 moduleId（world/events/factions/winds/influence/contact/reputation/economy/enemies/regional/blackbox/trends），value 保留“模块X：”前缀、只把冒号后的词替换成当前世界观的叫法（例如赛博朋克“模块三：势力”→“模块三：企业”，“模块十一：信息黑盒”→“模块十一：暗网档案”）。必须12个模块全部给出，不要遗漏。\n'
-      + '- 只返回JSON，不要有额外文字'
+      + '- 只返回JSON，不要有额外文字\n'
+      + '- 如果本次要求返回 disabledModules，必须放在顶层，且只能包含这些英文 moduleId：' + BUILTIN_MODULE_IDS.join(', ')
       + '\n- schemaOverrides 设计原则：只为“世界运转真正重要、会反复追踪、会影响推演判断”的概念新增字段；不要把长设定、背景介绍、一次性描述塞进字段。'
       + '\n- schemaOverrides 字段数量必须克制：优先每个相关模块新增 1-3 个关键字段；如果世界书没有强需求，可以返回空对象 {}。'
       + '\n- schemaOverrides 类型优先级：能枚举就用 enum，能量化就用 number，能判断开关就用 boolean；普通 string 只用于名称、归属、短说明；array/object 只用于确实需要多个条目或结构化数据。'
@@ -1640,26 +2033,7 @@
     }
 
     // 5. Parse the result
-    // Try to extract JSON from the response (it might be wrapped in markdown code blocks)
-    var jsonStr = response;
-    var jsonMatch = response.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (jsonMatch) {
-      jsonStr = jsonMatch[1].trim();
-    } else {
-      // Try to find the first { ... } block
-      var braceStart = response.indexOf('{');
-      var braceEnd = response.lastIndexOf('}');
-      if (braceStart !== -1 && braceEnd !== -1 && braceEnd > braceStart) {
-        jsonStr = response.substring(braceStart, braceEnd + 1);
-      }
-    }
-
-    var parsed;
-    try {
-      parsed = JSON.parse(jsonStr);
-    } catch (e) {
-      throw new Error('[WorldEngine Presets] Failed to parse API response as JSON: ' + e.message + '\nRaw response:\n' + response.substring(0, 500));
-    }
+    var parsed = parseGenerationJson(response);
 
     // 6. Build a valid preset from the parsed data
     var timestamp = Date.now();
@@ -1675,6 +2049,7 @@
       termMap: {},
       ui: parsed.ui || {},
       schemaOverrides: parsed.schemaOverrides || {},
+      disabledModules: validateGeneratedDisabledModules(parsed.disabledModules, moduleSelection),
       customRules: ''
     };
 
@@ -1919,15 +2294,18 @@
     uiMotto:            uiMotto,
     uiSummaryEmpty:     uiSummaryEmpty,
     normalizePreset:    normalizePreset,
+    migratePreset:      migratePreset,
     getInternalSchema:  function () { return deepClone(INTERNAL_SCHEMA); },
     _VERDICT_ENGINE: VerdictEngine,
     _VERDICT_CONFIGS: VERDICT_CONFIGS,
     generateFromWorldbook: generateFromWorldbook,
     _buildGenerationSource: buildGenerationSource,
+    _buildFreeGenerationPrompt: buildFreeGenerationPrompt,
     generateTonePrompt: generateTonePrompt,
     exportPreset:       exportPreset,
     importPreset:       importPreset,
-    validateSchemaOverrides: validateSchemaOverrides
+    validateSchemaOverrides: validateSchemaOverrides,
+    _normalizeModuleDescriptors: normalizeModuleDescriptors
   };
 
   console.log('[WorldEngine Presets] Module loaded. Built-in presets: ' + BUILTIN_PRESETS.map(function (p) { return p.name; }).join(', '));

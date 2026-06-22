@@ -23,6 +23,11 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
   var _generateEntriesError = '';
   var _generateSelectedIds = null;
   var GENERATE_WITH_CHARACTER_KEY = 'world_engine_generate_with_character_profile';
+  var GENERATE_MODE_KEY = 'world_engine_generate_mode';
+  var GENERATE_AUTO_CROP_KEY = 'world_engine_generate_auto_crop';
+  var GENERATE_COUNT_MODE_KEY = 'world_engine_generate_count_mode';
+  var GENERATE_COUNT_KEY = 'world_engine_generate_count';
+  var GENERATE_ENTRY_IDS_KEY = 'world_engine_generate_entry_ids';
 
   function getGenerateWithCharacter() {
     var store = window.WORLD_ENGINE_STORE;
@@ -35,6 +40,71 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
     if (store && store.setItem) store.setItem(GENERATE_WITH_CHARACTER_KEY, value ? 'true' : 'false');
   }
 
+  function getGenerateMode() {
+    var store = window.WORLD_ENGINE_STORE;
+    var raw = store && store.getItem ? store.getItem(GENERATE_MODE_KEY) : null;
+    return raw === 'free' ? 'free' : 'classic';
+  }
+
+  function saveGenerateMode(value) {
+    var store = window.WORLD_ENGINE_STORE;
+    if (store && store.setItem) store.setItem(GENERATE_MODE_KEY, value === 'free' ? 'free' : 'classic');
+  }
+
+  function getGenerateAutoCrop() {
+    var store = window.WORLD_ENGINE_STORE;
+    var raw = store && store.getItem ? store.getItem(GENERATE_AUTO_CROP_KEY) : null;
+    return raw === 'true';
+  }
+
+  function saveGenerateAutoCrop(value) {
+    var store = window.WORLD_ENGINE_STORE;
+    if (store && store.setItem) store.setItem(GENERATE_AUTO_CROP_KEY, value ? 'true' : 'false');
+  }
+
+  function getGenerateCountMode() {
+    var store = window.WORLD_ENGINE_STORE;
+    var raw = store && store.getItem ? store.getItem(GENERATE_COUNT_MODE_KEY) : null;
+    return raw === 'fixed' ? 'fixed' : 'auto';
+  }
+
+  function saveGenerateCountMode(value) {
+    var store = window.WORLD_ENGINE_STORE;
+    if (store && store.setItem) store.setItem(GENERATE_COUNT_MODE_KEY, value === 'fixed' ? 'fixed' : 'auto');
+  }
+
+  function getGenerateCount() {
+    var store = window.WORLD_ENGINE_STORE;
+    var raw = store && store.getItem ? store.getItem(GENERATE_COUNT_KEY) : null;
+    var count = Math.round(Number(raw));
+    return Number.isFinite(count) ? Math.max(1, Math.min(12, count)) : 5;
+  }
+
+  function saveGenerateCount(value) {
+    var store = window.WORLD_ENGINE_STORE;
+    var count = Math.round(Number(value));
+    if (!Number.isFinite(count)) count = 5;
+    count = Math.max(1, Math.min(12, count));
+    if (store && store.setItem) store.setItem(GENERATE_COUNT_KEY, String(count));
+  }
+
+  function loadGenerateEntryIds() {
+    var store = window.WORLD_ENGINE_STORE;
+    var raw = store && store.getItem ? store.getItem(GENERATE_ENTRY_IDS_KEY) : null;
+    if (!raw) return null;
+    try {
+      var parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.filter(function (id) { return typeof id === 'string' && id; }) : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function saveGenerateEntryIds(ids) {
+    var store = window.WORLD_ENGINE_STORE;
+    if (store && store.setItem) store.setItem(GENERATE_ENTRY_IDS_KEY, JSON.stringify(Array.isArray(ids) ? ids : []));
+  }
+
 
   // Collapsible section state (persisted in memory only)
   var _collapsed = {
@@ -42,7 +112,8 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
     moduleToggles: true,
     schemaOverrides: true,
     termMap: true,
-    details: true
+    details: true,
+    freeModules: true
   };
 
   // ─────────────────────────────────────────────
@@ -149,6 +220,13 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
       '.we-generate-toolbar .we-btn {',
       '  padding: 3px 7px;',
       '  font-size: 11px;',
+      '}',
+      '.we-generate-mode-row {',
+      '  display:flex;',
+      '  flex-wrap:wrap;',
+      '  gap:10px;',
+      '  align-items:center;',
+      '  margin:6px 0;',
       '}',
       '.we-generate-entry-list {',
       '  max-height: 260px;',
@@ -365,6 +443,72 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
       '  color: var(--we-text1, #eee);',
       '}',
 
+      '.we-mode-row, .we-free-toolbar {',
+      '  display:flex;',
+      '  flex-wrap:wrap;',
+      '  gap:8px;',
+      '  align-items:center;',
+      '  margin:8px 0;',
+      '}',
+      '.we-free-module-card {',
+      '  border:1px solid var(--we-border,#333);',
+      '  border-radius:6px;',
+      '  padding:8px;',
+      '  margin:8px 0;',
+      '  background:var(--we-bg2,#1e1e2e);',
+      '}',
+      '.we-free-module-head {',
+      '  display:grid;',
+      '  grid-template-columns:auto 110px minmax(120px,1fr) 70px 32px 32px 32px;',
+      '  gap:6px;',
+      '  align-items:center;',
+      '  margin-bottom:8px;',
+      '}',
+      '.we-free-module-grid {',
+      '  display:grid;',
+      '  grid-template-columns:repeat(auto-fit,minmax(140px,1fr));',
+      '  gap:6px;',
+      '  margin:6px 0;',
+      '}',
+      '.we-free-module-grid label, .we-free-block-label {',
+      '  display:block;',
+      '  font-size:11px;',
+      '  color:var(--we-text3,#777);',
+      '}',
+      '.we-free-module-grid input, .we-free-module-grid select, .we-free-module-head input, .we-free-module-head select, #we-free-builtin-select {',
+      '  width:100%;',
+      '  background:var(--we-bg1,#151520);',
+      '  border:1px solid var(--we-border,#333);',
+      '  border-radius:3px;',
+      '  color:var(--we-text1,#eee);',
+      '  padding:4px 6px;',
+      '  box-sizing:border-box;',
+      '}',
+      '.we-free-block-label textarea, .we-free-mech-json {',
+      '  width:100%;',
+      '  min-height:70px;',
+      '  background:var(--we-bg1,#151520);',
+      '  border:1px solid var(--we-border,#333);',
+      '  border-radius:3px;',
+      '  color:var(--we-text1,#eee);',
+      '  padding:6px;',
+      '  box-sizing:border-box;',
+      '  font-family:var(--mono-font,monospace);',
+      '  font-size:11px;',
+      '}',
+      '.we-free-subtitle {',
+      '  margin:8px 0 4px;',
+      '  font-size:12px;',
+      '  font-weight:700;',
+      '  color:var(--we-text2,#aaa);',
+      '}',
+      '.we-free-mechanics-toolbar {',
+      '  display:flex;',
+      '  flex-wrap:wrap;',
+      '  gap:6px;',
+      '  align-items:center;',
+      '  margin:4px 0;',
+      '}',
       '/* ── Separator ── */',
       '.we-preset-separator {',
       '  border: none;',
@@ -478,7 +622,8 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
   function getGenerateSelectedSet() {
     if (!_generateSelectedIds) {
       var backendIds = getBackendWorldbookSelectedIds();
-      _generateSelectedIds = hasBackendWorldbookSelection() ? backendIds.slice() : getEnabledGenerateEntryIds();
+      var savedIds = loadGenerateEntryIds();
+      _generateSelectedIds = hasBackendWorldbookSelection() ? backendIds.slice() : (savedIds || getEnabledGenerateEntryIds());
     }
     return new Set(_generateSelectedIds || []);
   }
@@ -490,6 +635,7 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
       if (boxes[i].checked && !boxes[i].disabled) ids.push(boxes[i].getAttribute('data-entry-id'));
     }
     _generateSelectedIds = ids;
+    saveGenerateEntryIds(ids);
     return ids;
   }
 
@@ -508,7 +654,9 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
       _generateEntries = Array.isArray(entries) ? entries : [];
       if (syncBackend || !_generateSelectedIds) {
         var backendIds = getBackendWorldbookSelectedIds();
-        _generateSelectedIds = hasBackendWorldbookSelection() ? backendIds.slice() : getEnabledGenerateEntryIds();
+        var savedIds = loadGenerateEntryIds();
+        _generateSelectedIds = hasBackendWorldbookSelection() ? backendIds.slice() : (savedIds || getEnabledGenerateEntryIds());
+        saveGenerateEntryIds(_generateSelectedIds);
       } else {
         var available = new Set(_generateEntries.map(function (entry) { return entry.id; }));
         _generateSelectedIds = (_generateSelectedIds || []).filter(function (id) { return available.has(id); });
@@ -578,6 +726,10 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
     var summary = _generateEntriesLoading
       ? '读取世界书条目中'
       : ('已选 ' + selectedCount + ' / ' + enabledEntries.length + ' 个可用条目');
+    var generationMode = getGenerateMode();
+    var autoCropModules = getGenerateAutoCrop();
+    var moduleCountMode = getGenerateCountMode();
+    var moduleCount = getGenerateCount();
 
     var listHtml = '';
     if (_generateEntriesLoading) {
@@ -623,6 +775,15 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
           '<button class="we-btn" data-we-generate-select-all>全选可用</button>' +
           '<button class="we-btn" data-we-generate-clear>清空</button>' +
           '<button class="we-btn" data-we-generate-refresh>刷新条目</button>' +
+        '</div>' +
+        '<div class="we-generate-mode-row">' +
+          '<label class="we-hint" style="display:flex;align-items:center;gap:6px;margin:0;"><input type="radio" name="we-preset-generate-mode" value="classic"' + (generationMode === 'classic' ? ' checked' : '') + '> 十二模块生成</label>' +
+          '<label class="we-hint" style="display:flex;align-items:center;gap:6px;margin:0;"><input type="radio" name="we-preset-generate-mode" value="free"' + (generationMode === 'free' ? ' checked' : '') + '> 自由生成</label>' +
+        '</div>' +
+        '<div class="we-generate-mode-row">' +
+          '<label class="we-hint" style="display:flex;align-items:center;gap:6px;margin:0;"><input type="checkbox" id="we-preset-generate-auto-crop"' + (autoCropModules ? ' checked' : '') + '> AI 自动裁剪</label>' +
+          '<label class="we-hint" style="display:flex;align-items:center;gap:6px;margin:0;">模块数量 <select id="we-preset-generate-count-mode"><option value="auto"' + (moduleCountMode === 'auto' ? ' selected' : '') + '>委任 AI 决定</option><option value="fixed"' + (moduleCountMode === 'fixed' ? ' selected' : '') + '>用户指定</option></select></label>' +
+          '<input id="we-preset-generate-count" type="number" min="1" max="12" value="' + esc(moduleCount) + '" title="模块数量" style="width:58px;">' +
         '</div>' +
         listHtml +
         '<div class="we-generate-footer">' +
@@ -684,6 +845,157 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
       '</div>';
   }
 
+  function isStrictIdentifier(value) {
+    return /^[A-Za-z_][A-Za-z0-9_]*$/.test(value || '');
+  }
+
+  function ensureCustomPresetForEdit(preset, reason) {
+    var P = getPresets();
+    if (!P || !preset) return null;
+    if (!preset.builtin) return preset;
+    var copy = deepClone(preset);
+    copy.id = generateId();
+    copy.name = preset.name + ' (自定义)';
+    copy.builtin = false;
+    P.saveCustomPreset(copy);
+    P.setActivePreset(copy.id);
+    toast(reason || ('已创建自定义副本: ' + copy.name));
+    return P.getActivePreset();
+  }
+
+  function cloneBuiltinModuleRef(moduleId, order) {
+    return { id: moduleId, kind: 'builtin', enabled: true, order: Number.isFinite(Number(order)) ? Number(order) : 1 };
+  }
+
+  function seedFreeModulesFromClassic(preset) {
+    var rulesLoader = window.WORLD_ENGINE_RULES;
+    var modules = rulesLoader && rulesLoader.getModuleList ? rulesLoader.getModuleList() : [];
+    var disabled = Array.isArray(preset && preset.disabledModules) ? preset.disabledModules : [];
+    var result = [];
+    for (var i = 0; i < modules.length; i++) {
+      if (disabled.indexOf(modules[i].moduleId) === -1) result.push(cloneBuiltinModuleRef(modules[i].moduleId, i + 1));
+    }
+    return result;
+  }
+
+  function getBuiltinModuleOptions(selectedId) {
+    var rulesLoader = window.WORLD_ENGINE_RULES;
+    var modules = rulesLoader && rulesLoader.getModuleList ? rulesLoader.getModuleList() : [];
+    var html = '';
+    for (var i = 0; i < modules.length; i++) {
+      html += '<option value="' + esc(modules[i].moduleId) + '"' + (modules[i].moduleId === selectedId ? ' selected' : '') + '>' + esc(modules[i].comment || modules[i].moduleId) + '</option>';
+    }
+    return html;
+  }
+
+  function buildFreeModuleFieldRows(fields) {
+    fields = fields || {};
+    var rows = '';
+    Object.keys(fields).forEach(function (field) {
+      rows += buildNewSchemaRowHTML('', field, fields[field] || {});
+    });
+    rows += buildNewSchemaRowHTML('', '', {});
+    return rows;
+  }
+
+  function stringifyConfig(value) {
+    if (!value || (typeof value === 'object' && !Array.isArray(value) && !Object.keys(value).length)) return '';
+    try { return JSON.stringify(value, null, 2); } catch (e) { return ''; }
+  }
+
+  function buildFreeModuleCardHTML(module, index) {
+    module = module || {};
+    var kind = module.kind === 'builtin' ? 'builtin' : 'custom';
+    var container = module.container || (kind === 'builtin' ? 'none' : 'array');
+    var enabled = module.enabled !== false;
+    var mechanics = module.mechanics || {};
+    var display = module.display || {};
+    var fields = module.fields || {};
+    var header = kind === 'builtin'
+      ? '<select class="we-free-module-builtin-id">' + getBuiltinModuleOptions(module.id) + '</select>'
+      : '<input class="we-free-module-id" type="text" value="' + esc(module.id || '') + '" placeholder="moduleId">';
+    var customBody = kind === 'custom' ?
+      '<div class="we-free-module-grid">' +
+        '<label>名称<input class="we-free-module-name" type="text" value="' + esc(module.name || '') + '"></label>' +
+        '<label>字段<input class="we-free-module-field" type="text" value="' + esc(module.field || module.id || '') + '"></label>' +
+        '<label>容器<select class="we-free-module-container">' + ['array','object','scalar','none'].map(function (c) { return '<option value="' + c + '"' + (c === container ? ' selected' : '') + '>' + c + '</option>'; }).join('') + '</select></label>' +
+        '<label>数组键<input class="we-free-module-item-key" type="text" value="' + esc(module.itemKey || 'name') + '"></label>' +
+      '</div>' +
+      '<label class="we-free-block-label">规则<textarea class="we-free-module-rules" spellcheck="false">' + esc(module.rules || '') + '</textarea></label>' +
+      '<div class="we-free-subtitle">字段</div>' +
+      '<div class="we-free-module-fields">' + buildFreeModuleFieldRows(fields) + '</div>' +
+      '<button class="we-btn we-free-add-field" type="button">新增字段</button>' +
+      '<div class="we-free-subtitle">显示</div>' +
+      '<div class="we-free-module-grid">' +
+        '<label>样式<select class="we-free-display-style">' + ['cards','table','keyvalue','list'].map(function (s) { return '<option value="' + s + '"' + (s === (display.style || 'cards') ? ' selected' : '') + '>' + s + '</option>'; }).join('') + '</select></label>' +
+        '<label>标题字段<input class="we-free-display-title" type="text" value="' + esc(display.titleField || '') + '"></label>' +
+        '<label>徽标字段<input class="we-free-display-badges" type="text" value="' + esc((display.badgeFields || []).join(', ')) + '"></label>' +
+        '<label>正文字段<input class="we-free-display-body" type="text" value="' + esc((display.bodyFields || display.fields || []).join(', ')) + '"></label>' +
+        '<label>空状态<input class="we-free-display-empty" type="text" value="' + esc(display.emptyText || '') + '"></label>' +
+      '</div>' +
+      '<div class="we-free-subtitle">机制</div>' +
+      '<div class="we-free-mechanics-toolbar">' +
+        '<label><input class="we-free-mech-enabled" data-mech="dice" type="checkbox"' + (mechanics.dice ? ' checked' : '') + '> dice</label>' +
+        '<button class="we-btn" type="button" data-we-mech-template="dice">模板</button>' +
+        '<label><input class="we-free-mech-enabled" data-mech="stages" type="checkbox"' + (mechanics.stages ? ' checked' : '') + '> stages</label>' +
+        '<button class="we-btn" type="button" data-we-mech-template="stages">模板</button>' +
+        '<label><input class="we-free-mech-enabled" data-mech="verdicts" type="checkbox"' + (mechanics.verdicts ? ' checked' : '') + '> verdicts</label>' +
+        '<button class="we-btn" type="button" data-we-mech-template="verdicts">模板</button>' +
+      '</div>' +
+      '<textarea class="we-free-mech-json" data-mech="dice" placeholder="dice JSON">' + esc(stringifyConfig(mechanics.dice)) + '</textarea>' +
+      '<textarea class="we-free-mech-json" data-mech="stages" placeholder="stages JSON">' + esc(stringifyConfig(mechanics.stages)) + '</textarea>' +
+      '<textarea class="we-free-mech-json" data-mech="verdicts" placeholder="verdicts JSON">' + esc(stringifyConfig(mechanics.verdicts)) + '</textarea>'
+      : '<div class="we-hint">内置模块会复用原规则、schema、机制和专属渲染。</div>';
+    return '' +
+      '<div class="we-free-module-card" data-free-module-index="' + index + '" data-free-kind="' + kind + '">' +
+        '<div class="we-free-module-head">' +
+          '<label class="we-free-enabled"><input class="we-free-module-enabled" type="checkbox"' + (enabled ? ' checked' : '') + '>启用</label>' +
+          '<select class="we-free-module-kind"><option value="custom"' + (kind === 'custom' ? ' selected' : '') + '>自定义</option><option value="builtin"' + (kind === 'builtin' ? ' selected' : '') + '>内置引用</option></select>' +
+          header +
+          '<input class="we-free-module-order" type="number" value="' + esc(module.order == null ? (index + 1) : module.order) + '" title="排序">' +
+          '<button class="we-icon-btn we-free-module-up" type="button" title="上移"><i class="fa-solid fa-arrow-up"></i></button>' +
+          '<button class="we-icon-btn we-free-module-down" type="button" title="下移"><i class="fa-solid fa-arrow-down"></i></button>' +
+          '<button class="we-icon-btn we-free-module-delete" type="button" title="删除"><i class="fa-solid fa-trash-can"></i></button>' +
+        '</div>' +
+        customBody +
+      '</div>';
+  }
+
+  function buildModeModulesHTML() {
+    var P = getPresets();
+    if (!P) return '';
+    var preset = P.getActivePreset();
+    var mode = preset.mode === 'free' ? 'free' : 'classic';
+    var isBuiltin = preset.builtin;
+    var arrowClass = _collapsed.freeModules ? '' : ' open';
+    var bodyClass = _collapsed.freeModules ? ' collapsed' : '';
+    var modules = Array.isArray(preset.modules) ? preset.modules : [];
+    var rows = modules.length ? modules.map(buildFreeModuleCardHTML).join('') : '<div class="we-empty">暂无自由模块</div>';
+    return '' +
+      '<hr class="we-preset-separator">' +
+      '<div class="we-section">' +
+        '<div class="we-collapsible-header" data-we-toggle="freeModules">' +
+          '<span class="we-section-title" style="margin:0;">模式与自由模块</span>' +
+          '<span class="we-collapsible-arrow' + arrowClass + '">&#9654;</span>' +
+        '</div>' +
+        '<div class="we-collapsible-body' + bodyClass + '" data-we-body="freeModules" style="max-height:1600px;">' +
+          (isBuiltin ? '<div class="we-hint" style="margin-bottom:6px;color:var(--we-warning,#fdcb6e);">当前为内置预设，保存模式或模块时会自动创建自定义副本。</div>' : '') +
+          '<div class="we-mode-row">' +
+            '<label><input type="radio" name="we-preset-mode" value="classic"' + (mode === 'classic' ? ' checked' : '') + '> classic</label>' +
+            '<label><input type="radio" name="we-preset-mode" value="free"' + (mode === 'free' ? ' checked' : '') + '> free</label>' +
+            '<button class="we-btn we-btn-primary" id="we-preset-save-mode" type="button">保存模式</button>' +
+          '</div>' +
+          (mode === 'classic' ? '<div class="we-hint">classic 模式使用内置十二模块；下方模块开关仍可控制启用项。</div>' :
+            '<div class="we-free-toolbar">' +
+              '<button class="we-btn" id="we-free-add-custom" type="button">新增自定义模块</button>' +
+              '<select id="we-free-builtin-select">' + getBuiltinModuleOptions('events') + '</select>' +
+              '<button class="we-btn" id="we-free-add-builtin" type="button">从内置引入</button>' +
+              '<button class="we-btn we-btn-primary" id="we-free-save-modules" type="button">保存自由模块</button>' +
+            '</div>' +
+            '<div id="we-free-modules-list">' + rows + '</div>') +
+        '</div>' +
+      '</div>';
+  }
   // ─────────────────────────────────────────────
   // Section 2: 规则编辑器 (Rules Editor)
   // ─────────────────────────────────────────────
@@ -1463,6 +1775,7 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
 
     return '' +
       buildPresetSelectorHTML() +
+      buildModeModulesHTML() +
       buildRulesEditorHTML() +
       buildModuleTogglesHTML() +
       buildSchemaOverridesHTML() +
@@ -1561,12 +1874,14 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
 
     if (target.closest('[data-we-generate-select-all]')) {
       _generateSelectedIds = getEnabledGenerateEntryIds();
+      saveGenerateEntryIds(_generateSelectedIds);
       refreshPresetSection();
       return;
     }
 
     if (target.closest('[data-we-generate-clear]')) {
       _generateSelectedIds = [];
+      saveGenerateEntryIds(_generateSelectedIds);
       refreshPresetSection();
       return;
     }
@@ -1600,6 +1915,53 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
       return;
     }
 
+    if (target.id === 'we-preset-save-mode' || target.closest('#we-preset-save-mode')) {
+      handleSaveMode();
+      return;
+    }
+
+    if (target.id === 'we-free-add-custom' || target.closest('#we-free-add-custom')) {
+      handleAddFreeCustomModule();
+      return;
+    }
+
+    if (target.id === 'we-free-add-builtin' || target.closest('#we-free-add-builtin')) {
+      handleAddFreeBuiltinModule();
+      return;
+    }
+
+    if (target.id === 'we-free-save-modules' || target.closest('#we-free-save-modules')) {
+      handleSaveFreeModules();
+      return;
+    }
+
+    if (target.closest('.we-free-module-up')) {
+      moveFreeModuleCard(target.closest('.we-free-module-up'), -1);
+      return;
+    }
+
+    if (target.closest('.we-free-module-down')) {
+      moveFreeModuleCard(target.closest('.we-free-module-down'), 1);
+      return;
+    }
+
+    if (target.closest('.we-free-module-delete')) {
+      var freeCard = target.closest('.we-free-module-card');
+      if (freeCard && freeCard.parentNode) freeCard.parentNode.removeChild(freeCard);
+      return;
+    }
+
+    if (target.closest('.we-free-add-field')) {
+      var freeModuleCard = target.closest('.we-free-module-card');
+      var freeFields = freeModuleCard && freeModuleCard.querySelector('.we-free-module-fields');
+      if (freeFields) freeFields.appendChild(createSchemaNewRowElement(''));
+      return;
+    }
+
+    if (target.closest('[data-we-mech-template]')) {
+      applyMechanicsTemplate(target.closest('[data-we-mech-template]'));
+      return;
+    }
     // ── Save custom rules ──
     if (target.id === 'we-preset-save-rules' || target.closest('#we-preset-save-rules')) {
       handleSaveRules();
@@ -1750,6 +2112,22 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
       return;
     }
 
+    if (target.classList && target.classList.contains('we-free-module-kind')) {
+      var card = target.closest('.we-free-module-card');
+      if (card && card.parentNode) {
+        var index = Array.prototype.indexOf.call(card.parentNode.querySelectorAll('.we-free-module-card'), card);
+        var next;
+        if (target.value === 'builtin') {
+          var first = (document.getElementById('we-free-builtin-select') || {}).value || 'events';
+          next = buildFreeModuleCardHTML(cloneBuiltinModuleRef(first, index + 1), index);
+        } else {
+          next = buildFreeModuleCardHTML({ id: 'customModule' + (index + 1), name: '自定义模块', kind: 'custom', enabled: true, order: index + 1, container: 'array', field: 'customModule' + (index + 1), itemKey: 'name', fields: { name: { type: 'string', description: '名称', example: '条目' } }, display: { style: 'cards', titleField: 'name' }, mechanics: {} }, index);
+        }
+        card.insertAdjacentHTML('afterend', next);
+        card.parentNode.removeChild(card);
+      }
+      return;
+    }
     // ── File input for import ──
     if (target.id === 'we-preset-file-input') {
       handleFileImport(target);
@@ -1785,6 +2163,18 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
     if (_generating) return;
 
     var includeCharacterDescription = !!(document.getElementById('we-preset-generate-character') || {}).checked;
+    var modeInput = document.querySelector('input[name="we-preset-generate-mode"]:checked');
+    var generationMode = modeInput ? modeInput.value : getGenerateMode();
+    var autoCropInput = document.getElementById('we-preset-generate-auto-crop');
+    var countModeInput = document.getElementById('we-preset-generate-count-mode');
+    var countInput = document.getElementById('we-preset-generate-count');
+    var autoCropModules = autoCropInput ? !!autoCropInput.checked : getGenerateAutoCrop();
+    var moduleCountMode = countModeInput ? countModeInput.value : getGenerateCountMode();
+    var moduleCount = countInput ? countInput.value : getGenerateCount();
+    saveGenerateMode(generationMode);
+    saveGenerateAutoCrop(autoCropModules);
+    saveGenerateCountMode(moduleCountMode);
+    saveGenerateCount(moduleCount);
     var selectedWorldbookIds = _generateMenuOpen ? readGenerateSelectedIdsFromDOM() : null;
     if (_generateMenuOpen && (!selectedWorldbookIds || !selectedWorldbookIds.length) && !includeCharacterDescription) {
       toastError('请至少选择一个世界书条目，或勾选角色卡描述');
@@ -1802,7 +2192,11 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
       saveGenerateWithCharacter(includeCharacterDescription);
       var newPreset = await P.generateFromWorldbook({
         includeCharacterDescription: includeCharacterDescription,
-        worldbookEntryIds: selectedWorldbookIds
+        worldbookEntryIds: selectedWorldbookIds,
+        generationMode: generationMode,
+        autoCropModules: autoCropModules,
+        moduleCountMode: moduleCountMode,
+        moduleCount: moduleCount
       });
       if (newPreset) {
         // Switch to the newly generated preset
@@ -1947,6 +2341,268 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
   function handleRemoveSchemaFieldRow(button) {
     var row = button && button.closest('.we-schema-row[data-schema-new="1"]');
     if (row && row.parentNode) row.parentNode.removeChild(row);
+  }
+  function splitCsvValue(text) {
+    return String(text || '').split(',').map(function (item) { return item.trim(); }).filter(Boolean);
+  }
+
+  function parseFreeJson(text, label, errors) {
+    text = String(text || '').trim();
+    if (!text) return null;
+    try {
+      var parsed = JSON.parse(text);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error(label + ' 必须是对象');
+      return parsed;
+    } catch (err) {
+      errors.push(label + ' JSON 无法解析：' + (err && err.message ? err.message : err));
+      return null;
+    }
+  }
+
+
+  function isPlainConfigObject(value) {
+    return !!value && typeof value === 'object' && !Array.isArray(value);
+  }
+
+  function isNonEmptyStringArray(value) {
+    return Array.isArray(value) && value.some(function (item) { return String(item || '').trim(); });
+  }
+
+  function hasStageOrderConfig(config) {
+    if (isNonEmptyStringArray(config.states) || isNonEmptyStringArray(config.order)) return true;
+    if (!isPlainConfigObject(config.order)) return false;
+    return Object.keys(config.order).some(function (type) { return isNonEmptyStringArray(config.order[type]); });
+  }
+
+  function hasVerdictLevelsConfig(config) {
+    if (isNonEmptyStringArray(config.levels)) return true;
+    if (!isPlainConfigObject(config.levels)) return false;
+    return Object.keys(config.levels).some(function (axis) { return isNonEmptyStringArray(config.levels[axis]); });
+  }
+
+  function validateFreeDiceConfig(config, errors, moduleId) {
+    if (!isPlainConfigObject(config)) {
+      errors.push('Module ' + moduleId + ' dice config must be an object');
+      return;
+    }
+    if (['threshold', 'decay', 'trigger'].indexOf(config.mode) === -1) {
+      errors.push('Module ' + moduleId + ' dice.mode must be threshold, decay, or trigger');
+      return;
+    }
+    if (config.mode === 'decay' && !isPlainConfigObject(config.table)) errors.push('Module ' + moduleId + ' decay dice needs table');
+    if (config.mode === 'trigger' && !isNonEmptyStringArray((config.typeWeights || []).map(function (item) { return item && item.type; }))) {
+      errors.push('Module ' + moduleId + ' trigger dice needs typeWeights with type');
+    }
+    ['chance', 'durationRounds', 'cooldownRounds', 'defaultBase', 'setbackRatio', 'progressMax'].forEach(function (key) {
+      if (config[key] != null && !Number.isFinite(Number(config[key]))) errors.push('Module ' + moduleId + ' dice.' + key + ' must be numeric');
+    });
+  }
+
+  function validateFreeStagesConfig(config, errors, moduleId) {
+    if (!isPlainConfigObject(config)) {
+      errors.push('Module ' + moduleId + ' stages config must be an object');
+      return;
+    }
+    if (!hasStageOrderConfig(config)) errors.push('Module ' + moduleId + ' stages needs states or order');
+    if (config.progressMax != null && (!Number.isFinite(Number(config.progressMax)) || Number(config.progressMax) <= 0)) {
+      errors.push('Module ' + moduleId + ' stages.progressMax must be greater than 0');
+    }
+  }
+
+  function validateFreeVerdictsConfig(config, errors, moduleId) {
+    if (!isPlainConfigObject(config)) {
+      errors.push('Module ' + moduleId + ' verdicts config must be an object');
+      return;
+    }
+    if (!isNonEmptyStringArray(config.axes)) errors.push('Module ' + moduleId + ' verdicts needs axes');
+    if (!hasVerdictLevelsConfig(config)) errors.push('Module ' + moduleId + ' verdicts needs levels');
+  }
+
+  function collectFreeFields(card, errors, moduleId) {
+    var rows = card.querySelectorAll('.we-free-module-fields .we-schema-row[data-schema-new="1"]');
+    var fields = {}, seen = {};
+    for (var i = 0; i < rows.length; i++) {
+      var nameInput = rows[i].querySelector('.we-schema-field-name');
+      var name = nameInput ? nameInput.value.trim() : '';
+      var hasContent = Array.from(rows[i].querySelectorAll('input,select')).some(function (el) {
+        if (el.classList && el.classList.contains('we-schema-field-name')) return false;
+        if (el.type === 'checkbox') return false;
+        return String(el.value || '').trim() && String(el.value || '').trim() !== 'string';
+      });
+      if (!name) {
+        if (hasContent) errors.push('模块 ' + moduleId + ' 有字段未填写字段名');
+        continue;
+      }
+      if (!isStrictIdentifier(name)) errors.push('模块 ' + moduleId + ' 字段名非法：' + name);
+      if (seen[name]) errors.push('模块 ' + moduleId + ' 字段重复：' + name);
+      seen[name] = true;
+      fields[name] = buildSchemaFieldSpecFromRow(rows[i]);
+    }
+    return fields;
+  }
+
+  function collectFreeMechanics(card, errors, moduleId) {
+    var mechanics = {};
+    var checks = card.querySelectorAll('.we-free-mech-enabled[data-mech]');
+    for (var i = 0; i < checks.length; i++) {
+      var key = checks[i].getAttribute('data-mech');
+      if (!checks[i].checked) continue;
+      var textarea = card.querySelector('.we-free-mech-json[data-mech="' + key + '"]');
+      var parsed = parseFreeJson(textarea ? textarea.value : '', moduleId + '.' + key, errors) || {};
+      if (key === 'dice') validateFreeDiceConfig(parsed, errors, moduleId);
+      if (key === 'stages') validateFreeStagesConfig(parsed, errors, moduleId);
+      if (key === 'verdicts') validateFreeVerdictsConfig(parsed, errors, moduleId);
+      mechanics[key] = parsed;
+    }
+    return mechanics;
+  }
+
+  function getReservedBuiltinFields() {
+    var rulesLoader = window.WORLD_ENGINE_RULES;
+    var reserved = { world_digest: true };
+    if (rulesLoader && rulesLoader.getModuleDescriptors) {
+      var descriptors = rulesLoader.getModuleDescriptors();
+      for (var i = 0; i < descriptors.length; i++) if (descriptors[i].field) reserved[descriptors[i].field] = true;
+    }
+    return reserved;
+  }
+
+  function collectFreeModulesFromForm() {
+    var cards = document.querySelectorAll('.we-free-module-card[data-free-module-index]');
+    var modules = [], errors = [], seenIds = {}, seenFields = {}, reserved = getReservedBuiltinFields();
+    for (var i = 0; i < cards.length; i++) {
+      var card = cards[i];
+      var kindSel = card.querySelector('.we-free-module-kind');
+      var kind = kindSel && kindSel.value === 'builtin' ? 'builtin' : 'custom';
+      var enabled = !(card.querySelector('.we-free-module-enabled') && !card.querySelector('.we-free-module-enabled').checked);
+      var orderInput = card.querySelector('.we-free-module-order');
+      var order = Number(orderInput && orderInput.value);
+      if (kind === 'builtin') {
+        var builtinSel = card.querySelector('.we-free-module-builtin-id');
+        var bid = builtinSel ? builtinSel.value : '';
+        if (!bid) { errors.push('内置引用缺少模块 id'); continue; }
+        if (seenIds[bid]) errors.push('模块 id 重复：' + bid);
+        seenIds[bid] = true;
+        modules.push({ id: bid, kind: 'builtin', enabled: enabled, order: Number.isFinite(order) ? order : i + 1 });
+        continue;
+      }
+      var idInput = card.querySelector('.we-free-module-id');
+      var id = idInput ? idInput.value.trim() : '';
+      if (!isStrictIdentifier(id)) errors.push('自定义模块 id 非法：' + (id || '(空)'));
+      if (seenIds[id]) errors.push('模块 id 重复：' + id);
+      seenIds[id] = true;
+      var nameInput = card.querySelector('.we-free-module-name');
+      var fieldInput = card.querySelector('.we-free-module-field');
+      var field = (fieldInput && fieldInput.value.trim()) || id;
+      if (!isStrictIdentifier(field)) errors.push('模块 ' + id + ' state 字段名非法：' + field);
+      if (reserved[field]) errors.push('模块 ' + id + ' 字段名与内置字段冲突：' + field);
+      if (seenFields[field]) errors.push('模块字段名重复：' + field);
+      seenFields[field] = true;
+      var container = (card.querySelector('.we-free-module-container') || {}).value || 'array';
+      var descriptor = {
+        id: id,
+        name: (nameInput && nameInput.value.trim()) || id,
+        kind: 'custom',
+        enabled: enabled,
+        order: Number.isFinite(order) ? order : i + 1,
+        container: container,
+        field: container === 'none' ? null : field,
+        rules: ((card.querySelector('.we-free-module-rules') || {}).value || '').trim(),
+        fields: collectFreeFields(card, errors, id),
+        display: {
+          style: ((card.querySelector('.we-free-display-style') || {}).value || 'cards'),
+          titleField: ((card.querySelector('.we-free-display-title') || {}).value || '').trim(),
+          badgeFields: splitCsvValue((card.querySelector('.we-free-display-badges') || {}).value),
+          bodyFields: splitCsvValue((card.querySelector('.we-free-display-body') || {}).value),
+          emptyText: ((card.querySelector('.we-free-display-empty') || {}).value || '').trim()
+        },
+        mechanics: collectFreeMechanics(card, errors, id)
+      };
+      if (['array', 'object', 'scalar', 'none'].indexOf(container) === -1) errors.push('Module ' + id + ' container is invalid: ' + container);
+      if (container === 'array') descriptor.itemKey = ((card.querySelector('.we-free-module-item-key') || {}).value || 'name').trim() || 'name';
+      if ((container === 'array' || container === 'object') && !Object.keys(descriptor.fields || {}).length) errors.push('Module ' + id + ' needs at least one field');
+      if (container === 'array' && descriptor.itemKey && descriptor.fields && !descriptor.fields[descriptor.itemKey]) errors.push('Module ' + id + ' itemKey must match a field: ' + descriptor.itemKey);
+      if (container === 'scalar') delete descriptor.fields;
+      if (container === 'none') { descriptor.field = null; delete descriptor.fields; }
+      modules.push(descriptor);
+    }
+    return { modules: modules, errors: errors };
+  }
+
+  function savePresetAfterFreeEdit(preset, message) {
+    var P = getPresets();
+    if (!P || !preset) return;
+    P.saveCustomPreset(preset);
+    P.setActivePreset(preset.id);
+    toast(message || '自由模块已保存');
+    refreshPresetSection();
+    if (window.WORLD_ENGINE_UI && typeof window.WORLD_ENGINE_UI.refresh === 'function') window.WORLD_ENGINE_UI.refresh(false);
+  }
+
+  function handleSaveMode() {
+    var P = getPresets();
+    if (!P) return;
+    var preset = ensureCustomPresetForEdit(P.getActivePreset(), '已创建自定义副本用于切换模式');
+    if (!preset) return;
+    var selected = document.querySelector('input[name="we-preset-mode"]:checked');
+    var mode = selected ? selected.value : 'classic';
+    preset.mode = mode === 'free' ? 'free' : 'classic';
+    if (preset.mode === 'free' && (!Array.isArray(preset.modules) || !preset.modules.length)) preset.modules = seedFreeModulesFromClassic(preset);
+    if (preset.mode === 'classic') preset.modules = [];
+    savePresetAfterFreeEdit(preset, '模式已保存：' + preset.mode);
+  }
+
+  function handleAddFreeCustomModule() {
+    var list = document.getElementById('we-free-modules-list');
+    if (!list) return;
+    var count = list.querySelectorAll('.we-free-module-card').length;
+    var id = 'customModule' + (count + 1);
+    var html = buildFreeModuleCardHTML({ id: id, name: '自定义模块', kind: 'custom', enabled: true, order: count + 1, container: 'array', field: id, itemKey: 'name', fields: { name: { type: 'string', description: '名称', example: '条目' } }, display: { style: 'cards', titleField: 'name' }, mechanics: {} }, count);
+    if (list.querySelector('.we-empty')) list.innerHTML = '';
+    list.insertAdjacentHTML('beforeend', html);
+  }
+
+  function handleAddFreeBuiltinModule() {
+    var list = document.getElementById('we-free-modules-list');
+    var sel = document.getElementById('we-free-builtin-select');
+    if (!list || !sel || !sel.value) return;
+    var count = list.querySelectorAll('.we-free-module-card').length;
+    if (list.querySelector('.we-empty')) list.innerHTML = '';
+    list.insertAdjacentHTML('beforeend', buildFreeModuleCardHTML(cloneBuiltinModuleRef(sel.value, count + 1), count));
+  }
+
+  function handleSaveFreeModules() {
+    var P = getPresets();
+    if (!P) return;
+    var preset = ensureCustomPresetForEdit(P.getActivePreset(), '已创建自定义副本用于编辑自由模块');
+    if (!preset) return;
+    var collected = collectFreeModulesFromForm();
+    if (collected.errors.length) { toastError(collected.errors[0]); return; }
+    preset.mode = 'free';
+    preset.modules = collected.modules;
+    savePresetAfterFreeEdit(preset, '自由模块已保存');
+  }
+
+  function moveFreeModuleCard(button, dir) {
+    var card = button && button.closest('.we-free-module-card');
+    if (!card || !card.parentNode) return;
+    if (dir < 0 && card.previousElementSibling) card.parentNode.insertBefore(card, card.previousElementSibling);
+    if (dir > 0 && card.nextElementSibling) card.parentNode.insertBefore(card.nextElementSibling, card);
+  }
+
+  function applyMechanicsTemplate(button) {
+    var key = button && button.getAttribute('data-we-mech-template');
+    var card = button && button.closest('.we-free-module-card');
+    if (!key || !card) return;
+    var templates = {
+      dice: { mode: 'threshold', defaultBase: 85, setbackRatio: 0.4 },
+      stages: { states: ['萌芽', '推进', '完成'], progressField: 'progress', progressMax: 3 },
+      verdicts: { axes: ['status'], levels: ['低', '中', '高'] }
+    };
+    var textarea = card.querySelector('.we-free-mech-json[data-mech="' + key + '"]');
+    var checkbox = card.querySelector('.we-free-mech-enabled[data-mech="' + key + '"]');
+    if (textarea) textarea.value = JSON.stringify(templates[key], null, 2);
+    if (checkbox) checkbox.checked = true;
   }
   function handleSaveModules() {
     var P = getPresets();

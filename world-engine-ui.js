@@ -376,6 +376,104 @@ window.WORLD_ENGINE_UI = (function() {
       + '<div class="we-section" id="we-sec-digest"><div class="we-section-title">' + UL('世界摘要') + '</div><div class="we-digest">' + digestHtml(s) + '</div></div>';
   }
 
+  function genericValueText(value) {
+    if (value == null || value === '') return '';
+    if (Array.isArray(value)) return value.map(genericValueText).filter(Boolean).join('、');
+    if (typeof value === 'object') return Object.keys(value).map(k => k + ': ' + genericValueText(value[k])).join('；');
+    return String(value);
+  }
+
+  function genericFieldLabel(descriptor, field) {
+    const spec = descriptor && descriptor.fields && descriptor.fields[field];
+    return (spec && (spec.label || spec.description && field)) || field;
+  }
+
+  function genericVisibleFields(descriptor, item, preferred) {
+    const fields = [];
+    (preferred || []).forEach(f => { if (f && fields.indexOf(f) === -1) fields.push(f); });
+    Object.keys((descriptor && descriptor.fields) || {}).forEach(f => {
+      const spec = descriptor.fields[f] || {};
+      if (spec.display === false) return;
+      if (fields.indexOf(f) === -1) fields.push(f);
+    });
+    Object.keys(item || {}).forEach(f => { if (fields.indexOf(f) === -1) fields.push(f); });
+    return fields;
+  }
+
+  function renderGenericKeyValue(descriptor, item) {
+    const data = (item && typeof item === 'object' && !Array.isArray(item)) ? item : { value: item };
+    const display = descriptor.display || {};
+    const fields = genericVisibleFields(descriptor, data, display.fields || display.bodyFields);
+    if (!fields.length) return '<div class="we-empty">暂无内容</div>';
+    return '<div class="we-generic-kv">' + fields.map(field => {
+      const value = genericValueText(data[field]);
+      if (!value) return '';
+      return '<div class="we-wind-field"><span>' + u(genericFieldLabel(descriptor, field)) + '</span>' + u(value) + '</div>';
+    }).join('') + '</div>';
+  }
+
+  function renderGenericCards(descriptor, value, scope) {
+    const display = descriptor.display || {};
+    const items = Array.isArray(value) ? value : [value];
+    const titleField = display.titleField || descriptor.itemKey || 'name';
+    const subtitleField = display.subtitleField || '';
+    const badgeFields = display.badgeFields || [];
+    const bodyFields = display.bodyFields || display.fields || [];
+    return renderPagedList(items, 'generic-' + (descriptor.id || descriptor.field || scope || 'module'), item => {
+      const data = (item && typeof item === 'object' && !Array.isArray(item)) ? item : { value: item };
+      const title = genericValueText(data[titleField] || data.name || data.value || descriptor.name || descriptor.id);
+      const badges = badgeFields.map(field => genericValueText(data[field])).filter(Boolean)
+        .map(text => '<span class="we-badge">' + u(text) + '</span>').join('');
+      const subtitle = subtitleField && data[subtitleField] ? '<div class="we-trend-scope">' + u(genericValueText(data[subtitleField])) + '</div>' : '';
+      const fields = genericVisibleFields(descriptor, data, bodyFields).filter(field => field !== titleField && field !== subtitleField && badgeFields.indexOf(field) === -1);
+      const body = fields.map(field => {
+        const text = genericValueText(data[field]);
+        return text ? '<div class="we-wind-field"><span>' + u(genericFieldLabel(descriptor, field)) + '</span>' + u(text) + '</div>' : '';
+      }).join('');
+      return '<div class="we-trend-item"><div class="we-trend-header"><span class="we-trend-name">' + u(title) + '</span>' + badges + '</div>' + subtitle + body + '</div>';
+    }, display.perPage || 4);
+  }
+
+  function renderGenericTable(descriptor, value) {
+    const items = Array.isArray(value) ? value : [value];
+    const display = descriptor.display || {};
+    const columns = genericVisibleFields(descriptor, items[0] || {}, display.columns || display.fields);
+    if (!items.length || !columns.length) return '<div class="we-empty">暂无内容</div>';
+    const head = '<thead><tr>' + columns.map(field => '<th>' + u(genericFieldLabel(descriptor, field)) + '</th>').join('') + '</tr></thead>';
+    const body = '<tbody>' + items.map(item => {
+      const data = (item && typeof item === 'object' && !Array.isArray(item)) ? item : { value: item };
+      return '<tr>' + columns.map(field => '<td>' + u(genericValueText(data[field])) + '</td>').join('') + '</tr>';
+    }).join('') + '</tbody>';
+    return '<table class="we-term-table we-generic-table">' + head + body + '</table>';
+  }
+
+  function renderGenericList(descriptor, value, scope) {
+    const display = descriptor.display || {};
+    const items = Array.isArray(value) ? value : [value];
+    const titleField = display.titleField || descriptor.itemKey || 'name';
+    return renderPagedList(items, 'generic-list-' + (descriptor.id || descriptor.field || scope || 'module'), item => {
+      const data = (item && typeof item === 'object' && !Array.isArray(item)) ? item : { value: item };
+      const title = genericValueText(data[titleField] || data.value || item);
+      return '<div class="we-signal-item"><span class="we-signal-summary">' + u(title) + '</span></div>';
+    }, display.perPage || 6);
+  }
+
+  function renderGenericModule(descriptor, state, scope) {
+    if (!descriptor || descriptor.enabled === false || descriptor.container === 'none') return '';
+    const field = descriptor.field || descriptor.id;
+    const value = state && Object.prototype.hasOwnProperty.call(state, field) ? state[field] : undefined;
+    const display = descriptor.display || {};
+    const emptyText = display.emptyText || '暂无内容';
+    if (value == null || (Array.isArray(value) && !value.length) || (typeof value === 'object' && !Array.isArray(value) && !Object.keys(value).length)) {
+      return '<div class="we-empty">' + u(emptyText) + '</div>';
+    }
+    const style = display.style || (descriptor.container === 'array' ? 'cards' : 'keyvalue');
+    if (style === 'table') return renderGenericTable(descriptor, value, scope);
+    if (style === 'keyvalue') return renderGenericKeyValue(descriptor, value, scope);
+    if (style === 'list') return renderGenericList(descriptor, value, scope);
+    return renderGenericCards(descriptor, value, scope);
+  }
+
   // 内置模块渲染分发表（moduleId → {title, field, fn}），与 evolution 的 BUILTIN_MERGE 对应。
   // 视图按 id 查表渲染；为 Phase 3 自由/混合模式的通用渲染分发铺垫。函数声明已 hoist，引用安全。
   const BUILTIN_RENDER = {
@@ -402,17 +500,45 @@ window.WORLD_ENGINE_UI = (function() {
     return renderSection(def.title, (idPrefix || '') + moduleId, def.fn(s[def.field], scope));
   }
 
+  function isFreePresetMode() {
+    try {
+      const preset = window.WORLD_ENGINE_PRESETS && window.WORLD_ENGINE_PRESETS.getActivePreset && window.WORLD_ENGINE_PRESETS.getActivePreset();
+      return !!(preset && preset.mode === 'free');
+    } catch (e) { return false; }
+  }
+
+  function getActiveRenderDescriptors() {
+    try {
+      const rules = window.WORLD_ENGINE_RULES;
+      if (rules && typeof rules.getActiveModuleDescriptors === 'function') return rules.getActiveModuleDescriptors();
+    } catch (e) {}
+    return [];
+  }
+
+  function renderDescriptorSection(descriptor, s, scope, idPrefix) {
+    if (!descriptor || descriptor.enabled === false || descriptor.container === 'none') return '';
+    const builtin = descriptor.kind === 'builtin' && BUILTIN_RENDER[descriptor.id];
+    if (builtin) return renderModuleSection(descriptor.id, s, scope, idPrefix);
+    return renderSection(descriptor.name || descriptor.id, (idPrefix || '') + (descriptor.id || descriptor.field), renderGenericModule(descriptor, s, scope));
+  }
+
+  function renderActiveDescriptorSections(s, scope, idPrefix) {
+    return getActiveRenderDescriptors().map(descriptor => renderDescriptorSection(descriptor, s, scope, idPrefix || '')).join('');
+  }
+
   /** 展开模式主页：世界核心 + 世界摘要 + 所有 section 平铺（如存档点） */
   function renderHomeViewExpanded(s, layer, scope) {
     const order = ['trends', 'regional', 'events', 'winds', 'influence', 'reputation', 'factions', 'enemies', 'economy', 'blackbox'];
     return renderWorldCore(s)
       + '<div class="we-section" id="we-sec-digest"><div class="we-section-title">' + UL('世界摘要') + '</div><div class="we-digest">' + digestHtml(s) + '</div></div>'
-      + order.map(id => renderModuleSection(id, s, scope, '')).join('')
+      + (isFreePresetMode() ? renderActiveDescriptorSections(s, scope, '') : order.map(id => renderModuleSection(id, s, scope, '')).join(''))
       + renderSection('事件账本', 'ledger', renderLedger(s.memories));
   }
 
   function renderSubView(viewKey, s, layer, scope) {
-    let content = (SUBVIEW_MODULES[viewKey] || []).map(id => renderModuleSection(id, s, scope, '')).join('');
+    let content = (isFreePresetMode() && viewKey === 'situation')
+      ? renderActiveDescriptorSections(s, scope, '')
+      : (SUBVIEW_MODULES[viewKey] || []).map(id => renderModuleSection(id, s, scope, '')).join('');
     if (viewKey === 'situation') {
       content += renderSection('事件账本', 'ledger', renderLedger(s.memories));
     }
@@ -456,7 +582,7 @@ window.WORLD_ENGINE_UI = (function() {
 
   function renderCheckpointSections(s, layer) {
     const order = ['trends', 'events', 'factions', 'winds', 'reputation', 'economy', 'enemies', 'influence', 'regional', 'blackbox'];
-    return order.map(id => renderModuleSection(id, s, 'checkpoint', 'cp-')).join('')
+    return (isFreePresetMode() ? renderActiveDescriptorSections(s, 'checkpoint', 'cp-') : order.map(id => renderModuleSection(id, s, 'checkpoint', 'cp-')).join(''))
       + renderSection('事件账本', 'cp-ledger', renderLedger(s.memories));
   }
 
@@ -3788,7 +3914,7 @@ window.WORLD_ENGINE_UI = (function() {
     renderIds: function () { return Object.keys(BUILTIN_RENDER); },
     renderWorldCore, renderEventList, renderFactionList, renderWorldTrends, renderWindList,
     renderReputation, renderEconomy, renderEnemies, renderInfluenceChain, renderRegionalIncident,
-    renderBlackbox, renderHomeViewExpanded, renderSubView, renderCheckpointSections
+    renderBlackbox, renderGenericModule, renderDescriptorSection, renderHomeViewExpanded, renderSubView, renderCheckpointSections
   };
 
   return { buildPanel, buildInputButton, showPanel, hidePanel, togglePanel, refresh, setStatus, setEvolvingUI, setInjectedScope, __test };
