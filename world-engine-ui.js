@@ -318,6 +318,28 @@ window.WORLD_ENGINE_UI = (function() {
     天下太平: '海静不扬波', 暗流浮动: '暗水带花流', 局势紧张: '云急风更恶',
     动荡失序: '乾坤含疮痍', 崩坏边缘: '坤轴欹将折'
   };
+  const FREE_STABILITY_TIER_LABEL = {
+    天下太平: '稳定', 暗流浮动: '轻微波动', 局势紧张: '压力上升',
+    动荡失序: '高压失序', 崩坏边缘: '临界崩坏'
+  };
+
+  const FREE_STABILITY_TIER_MOOD = {
+    天下太平: '运行稳定', 暗流浮动: '局部波动', 局势紧张: '风险升高',
+    动荡失序: '秩序承压', 崩坏边缘: '临界警报'
+  };
+
+  function stabilityTierText(tier) {
+    return isFreePresetMode() ? (FREE_STABILITY_TIER_LABEL[tier] || tier) : UL(tier);
+  }
+
+  function stabilityMoodText(tier) {
+    const fallback = isFreePresetMode() ? FREE_STABILITY_TIER_MOOD[tier] : STABILITY_TIER_MOOD[tier];
+    return UMOOD(tier, fallback || '');
+  }
+
+  function worldCoreTitleText() {
+    return isFreePresetMode() ? UL('世界概览') : UL('世界核心');
+  }
 
   /** 刷新头部的「第X轮 + 稳定度小字」 */
   function updatePanelHeader(state, layer) {
@@ -330,7 +352,7 @@ window.WORLD_ENGINE_UI = (function() {
     if (moodEl) {
       const stab = computeWorldStability(state || {});
       const color = STABILITY_TIER_COLOR[stab.tier] || '#58b8a9';
-      const text = UMOOD(stab.tier, STABILITY_TIER_MOOD[stab.tier] || '');
+      const text = stabilityMoodText(stab.tier);
       const dot = moodEl.querySelector('.we-header-dot');
       const txt = moodEl.querySelector('.we-header-mood-text');
       if (dot) { dot.style.background = color; dot.style.boxShadow = '0 0 6px ' + color; }
@@ -346,7 +368,78 @@ window.WORLD_ENGINE_UI = (function() {
     return '<div class="we-section" id="we-sec-' + id + '"><div class="we-section-title">' + sectionHeader(title, id) + '</div>' + sectionBody(id, content) + '</div>';
   }
 
+  function getHomeDescriptors() {
+    return getActiveRenderDescriptors().filter(function (descriptor) {
+      return descriptor && descriptor.enabled !== false && descriptor.container !== 'none';
+    });
+  }
+
+  function descriptorHomeTitle(descriptor) {
+    const builtin = descriptor && descriptor.kind === 'builtin' && BUILTIN_RENDER[descriptor.id];
+    return builtin ? UL(builtin.title) : (descriptor.name || descriptor.title || descriptor.id || descriptor.field || '模块');
+  }
+
+  function descriptorHomeSub(descriptor) {
+    if (!descriptor) return '';
+    const display = descriptor.display || {};
+    const fields = []
+      .concat(display.badgeFields || [])
+      .concat(display.bodyFields || display.fields || [])
+      .concat(display.columns || [])
+      .filter(Boolean);
+    const unique = fields.filter(function (field, index) { return fields.indexOf(field) === index; }).slice(0, 3);
+    if (unique.length) return unique.map(function (field) { return genericFieldLabel(descriptor, field); }).join(' · ');
+    return descriptor.field || descriptor.container || descriptor.id || '';
+  }
+
+  function descriptorHomeCount(descriptor, state) {
+    if (!descriptor || !state) return 0;
+    const builtin = descriptor.kind === 'builtin' && BUILTIN_RENDER[descriptor.id];
+    const field = builtin ? builtin.field : (descriptor.field || descriptor.id);
+    const value = state[field];
+    if (Array.isArray(value)) return value.length;
+    if (value && typeof value === 'object') {
+      const nestedArrayCount = Object.keys(value).reduce(function (sum, key) {
+        return sum + (Array.isArray(value[key]) ? value[key].length : 0);
+      }, 0);
+      return nestedArrayCount || (Object.keys(value).length ? 1 : 0);
+    }
+    return value == null || value === '' ? 0 : 1;
+  }
+
+  function getFreeCoreStats(s) {
+    const stats = getHomeDescriptors().slice(0, 4).map(function (descriptor) {
+      return [descriptorHomeTitle(descriptor), descriptorHomeCount(descriptor, s)];
+    });
+    while (stats.length < 4) stats.push(['模块', 0]);
+    return stats;
+  }
+
+  function renderFreeHomeView(s, layer, scope) {
+    const stab = computeWorldStability(s);
+    const tierColor = STABILITY_TIER_COLOR[stab.tier] || '#58b8a9';
+    const descriptors = getHomeDescriptors();
+    const navRows = descriptors.length ? descriptors.map(function (descriptor, i) {
+      const topLine = i === 0 ? '<div class="we-nav-line we-nav-line-hidden"></div>' : '<div class="we-nav-line"></div>';
+      const botLine = i === descriptors.length - 1 ? '<div class="we-nav-line we-nav-line-hidden"></div>' : '<div class="we-nav-line"></div>';
+      const sub = descriptorHomeSub(descriptor);
+      const count = descriptorHomeCount(descriptor, s);
+      const countHtml = '<span class="we-nav-poem">' + count + '</span>';
+      return '<div class="we-nav-row" data-view="situation">'
+        + '<div class="we-nav-label">' + u(descriptorHomeTitle(descriptor)) + '</div>'
+        + '<div class="we-nav-track">' + topLine + '<div class="we-nav-dot"></div>' + botLine + '</div>'
+        + '<div class="we-nav-content"><span class="we-nav-sub">' + u(sub) + '</span>' + countHtml + '</div>'
+        + '<i class="fa-solid fa-chevron-right we-nav-arrow"></i>'
+        + '</div>';
+    }).join('') : '<div class="we-empty">暂无可显示模块</div>';
+
+    return renderWorldCore(s)
+      + '<div class="we-nav-list" style="--we-tier-color:' + tierColor + ';">' + navRows + '</div>'
+      + '<div class="we-section" id="we-sec-digest"><div class="we-section-title">' + UL('世界摘要') + '</div><div class="we-digest">' + digestHtml(s) + '</div></div>';
+  }
+
   function renderHomeView(s, layer, scope) {
+    if (isFreePresetMode()) return renderFreeHomeView(s, layer, scope);
     const stab = computeWorldStability(s);
     const tierColor = STABILITY_TIER_COLOR[stab.tier] || '#58b8a9';
 
@@ -725,12 +818,12 @@ window.WORLD_ENGINE_UI = (function() {
       `;
     }
 
-    const stats = [
+    const stats = (isFreePresetMode() ? getFreeCoreStats(s) : [
       ['事件', (s.events || []).length],
       ['势力', (s.factions || []).length],
       ['风声', (s.winds || []).length],
       ['大势', (s.worldTrends || []).length],
-    ].map(([k, v]) => `<div class="we-core-stat"><div class="we-core-stat-k">${UL(k)}</div><div class="we-core-stat-v">${v}</div></div>`).join('');
+    ]).map(([k, v]) => `<div class="we-core-stat"><div class="we-core-stat-k">${UL(k)}</div><div class="we-core-stat-v">${v}</div></div>`).join('');
 
     return `
       <div class="we-section we-core-section">
@@ -757,10 +850,10 @@ window.WORLD_ENGINE_UI = (function() {
               <circle class="we-core-dot-core" cx="${dotX}" cy="${dotY}" r="2.5" fill="#ffffff" opacity="0.95"/>
             </svg>
             <div class="we-core-center">
-              <div class="we-core-title">${UL('世界核心')}</div>
+              <div class="we-core-title">${worldCoreTitleText()}</div>
               <div class="we-core-sub">${UL('稳定度')}</div>
               <div class="we-core-pct" style="color:${tierColor};">${stab.stability.toFixed(1)}<span>%</span></div>
-              <div class="we-core-tier" style="color:${tierColor};">${UL(stab.tier)}</div>
+              <div class="we-core-tier" style="color:${tierColor};">${stabilityTierText(stab.tier)}</div>
             </div>
           </div>
           <div class="we-core-stats">${stats}</div>
@@ -3914,7 +4007,7 @@ window.WORLD_ENGINE_UI = (function() {
     renderIds: function () { return Object.keys(BUILTIN_RENDER); },
     renderWorldCore, renderEventList, renderFactionList, renderWorldTrends, renderWindList,
     renderReputation, renderEconomy, renderEnemies, renderInfluenceChain, renderRegionalIncident,
-    renderBlackbox, renderGenericModule, renderDescriptorSection, renderHomeViewExpanded, renderSubView, renderCheckpointSections
+    renderBlackbox, renderGenericModule, renderDescriptorSection, renderHomeView, renderHomeViewExpanded, renderSubView, renderCheckpointSections
   };
 
   return { buildPanel, buildInputButton, showPanel, hidePanel, togglePanel, refresh, setStatus, setEvolvingUI, setInjectedScope, __test };
