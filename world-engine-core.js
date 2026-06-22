@@ -483,20 +483,54 @@ window.WORLD_ENGINE_CORE = (function() {
   }
 
   // 输入输出过滤器：按 settings.evolveFilterRegex（每行一条正则）把匹配内容删掉。
-  // 用于喂后台推演前清洗对话文本（思维链、状态栏、HTML 等）。
-  function filterDialogue(text, settings) {
-    if (!text) return text || '';
-    const raw = (settings && settings.evolveFilterRegex) || '';
-    if (!raw.trim()) return text;
-    let out = text;
-    for (const line of raw.split('\n')) {
-      const pat = line.trim();
-      if (!pat) continue;
-      try { out = out.replace(new RegExp(pat, 'g'), ''); } catch (e) {}
+  // 支持纯 pattern 和 /pattern/flags 两种写法；非法条目默认静默，UI/诊断可用 validateFilterRegex 报错。
+  function stripRegexLine(rawLine) {
+    const line = String(rawLine || '').trim();
+    const match = /^\/(.+)\/([a-z]*)$/i.exec(line);
+    if (match) {
+      let flags = match[2] || '';
+      if (flags.indexOf('g') < 0) flags += 'g';
+      return { pattern: match[1], flags };
+    }
+    return { pattern: line, flags: 'g' };
+  }
+
+  function validateFilterRegex(raw) {
+    const out = { ok: 0, bad: [], entries: [] };
+    if (!raw) return out;
+    const lines = String(raw).split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      const stripped = stripRegexLine(line);
+      try {
+        new RegExp(stripped.pattern, stripped.flags);
+        out.ok += 1;
+        out.entries.push({ line: i + 1, pattern: stripped.pattern, flags: stripped.flags });
+      } catch (e) {
+        out.bad.push({ line: i + 1, raw: line.slice(0, 60), reason: String(e && e.message || e) });
+      }
     }
     return out;
   }
 
+  function filterDialogue(text, settings, onError) {
+    if (!text) return text || '';
+    const raw = (settings && settings.evolveFilterRegex) || '';
+    if (!raw.trim()) return text;
+    const validation = validateFilterRegex(raw);
+    let out = text;
+    for (const entry of validation.entries) {
+      try { out = out.replace(new RegExp(entry.pattern, entry.flags), ''); } catch (e) {}
+    }
+    if (typeof onError === 'function' && validation.bad.length) {
+      const lines = String(raw).split('\n');
+      validation.bad.forEach(function(item) {
+        onError(item.line, lines[item.line - 1] || '', item.reason);
+      });
+    }
+    return out;
+  }
   // ========== 故事时间解析（按时间推演模式用） ==========
   // 中文数字 → 阿拉伯数字（阿拉伯数字原样返回，空 → 0）
   function cnToNum(s) {
@@ -741,6 +775,6 @@ window.WORLD_ENGINE_CORE = (function() {
     saveCheckpoint, restoreCheckpoint, clearCheckpoint, getAnchorLayer, setAnchorLayer,
     getChatLayer, getChatFingerprint, saveFingerprint, loadFingerprint, isNewRound,
     getCleanExport, importState,
-    cnToNum, parseStoryDay, getLastStoryDay, setLastStoryDay, filterDialogue
+    cnToNum, parseStoryDay, getLastStoryDay, setLastStoryDay, filterDialogue, validateFilterRegex
   };
 })();

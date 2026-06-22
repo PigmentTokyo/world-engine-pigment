@@ -12,6 +12,7 @@
     'world-engine-worldbook.js',
     'world-engine-ledger.js',
     'world-engine-evolution.js',
+    'world-engine-diag.js',
     'world-engine-inject.js',
     'world-engine-ui.js',
     'world-engine-preset-ui.js'     // ← 新增：预设管理界面（需在 ui 之后加载）

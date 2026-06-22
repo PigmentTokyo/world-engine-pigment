@@ -50,6 +50,7 @@ window.WORLD_ENGINE_API = (function() {
       evolveEveryX: 1,
       evolveReadRounds: 1,
       evolveFilterRegex: '',
+      worldbookTrigger: false,
       tonePrompt: '',
       // 按时间推演模式
       evolveTimeFront: 0,

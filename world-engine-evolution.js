@@ -38,9 +38,10 @@ window.WORLD_ENGINE_EVOLUTION = (function() {
 
   let _lastPrompt = '';
   let _lastRawResult = '';
+  let _lastPromptSegments = [];
 
   function getLastDebug() {
-    return { prompt: _lastPrompt, rawResult: _lastRawResult };
+    return { prompt: _lastPrompt, rawResult: _lastRawResult, segments: _lastPromptSegments };
   }
 
   // ========== 区域突发事件骰子系统 ==========
@@ -1232,16 +1233,17 @@ type：${picked.type}
     const outputInstructions = (rulesLoader && typeof rulesLoader.buildOutputInstructionsText === 'function')
       ? rulesLoader.buildOutputInstructionsText()
       : OUTPUT_INSTRUCTIONS + '\n' + JSON_EXAMPLE;
-    const worldbookSection = await window.WORLD_ENGINE_WORLDBOOK?.buildPromptSection?.() || '';
+    const dialogueForWorldbook = dialogueText || `用户：${userMsg || ''}\nAI：${aiMsg || ''}`;
+    const worldbookSection = await window.WORLD_ENGINE_WORLDBOOK?.buildPromptSection?.(dialogueForWorldbook) || '';
     const tonePrompt = ((api.getSettings ? api.getSettings() : {}).tonePrompt || '').trim();
     const toneSection = tonePrompt
       ? `\n\n========== 附加提示词（用户自定义 · 优先遵守 · 但不得违反上述输出 JSON 格式）==========\n${tonePrompt}`
       : '';
 
-    let prompt = `你是一个世界推演引擎。每轮对话后，后台世界必须自动向前推进一步。
-请根据世界规则和本轮对话，更新世界状态。只输出 JSON，不要有其他文字。
+    const segEngineRole = `你是一个世界推演引擎。每轮对话后，后台世界必须自动向前推进一步。
+请根据世界规则和本轮对话，更新世界状态。只输出 JSON，不要有其他文字。`;
 
-推演时按以下因果顺序检查：
+    const segCausalSteps = `推演时按以下因果顺序检查：
 1. 【私密判定·最先执行】先判定本轮 {{user}} 及相关人物的行为有无目击者、是否留下可追溯痕迹。凡在无目击、未留痕迹的情况下发生的私密行为（独处、私密情爱、闺房之事、密室密谈、隐秘潜入、无人时的杀伐等），一律计入 blackbox.secretActions（witnesses 标"无"或"仅XX"），并且：不得据此生成风声、不得改变任何维度声誉、不得形成或推进事件链、不得让任何不在场 NPC 据此行动。只有当该行为被目击、留下可追溯痕迹、或事后确实被传播后，才可转为公开影响。
 2. 将所有持续中的天下大势作为本轮世界级约束，并检查是否形成新大势或已有大势明确结束。
 3. 判断本轮事实、行动与公开信息是否形成新风声（私密行为除外，见第1步）。
@@ -1251,14 +1253,11 @@ type：${picked.type}
 7. 声誉判定：只有当 {{user}} 的行为已形成覆盖对应圈层的风声后，才改动对应维度声誉；私密、未传播或仅单人目击的行为不改变群体声誉。
 8. 仇敌判定：判断本轮是否产生触发血仇/恩怨的不可逆伤害；已有仇敌只有通过覆盖其情报来源的风声或其他合法渠道获知线索后，才能推进追踪，且受势力等级约束，不得凭空定位 {{user}}。
 9. 经济判定：只有事件链或可追溯的外部原因驱动时才更新 climate 与 signals；重大经济变化须生成对应风声，禁止凭空波动。
-10. 不得从面板全知信息直接跳到 NPC 行动，不得为了产生联动而虚构传播节点。
+10. 不得从面板全知信息直接跳到 NPC 行动，不得为了产生联动而虚构传播节点。`;
 
-========== 世界推演规则 ==========
-${fullRules}
-
-${worldbookSection}
-
-## 当前世界状态（第${state.round}轮）
+    const segRules = fullRules;
+    const segWorldbook = worldbookSection;
+    const segStateBlock = `## 当前世界状态（第${state.round}轮）
 ${JSON.stringify({
   round: state.round,
   events: (state.events || []).map(e => ({ ...e })),
@@ -1270,25 +1269,47 @@ ${JSON.stringify({
   enemies: state.enemies || [],
   influenceChain: state.influenceChain || [],
   blackbox: state.blackbox || { secretActions: [], secretAssets: [] }
-}, null, 2)}
+}, null, 2)}`;
+    const segDialogue = `## 近期对话
+${dialogueForWorldbook}`;
+    const persona = core.getUserPersona ? core.getUserPersona() : '';
+    const segPersona = persona
+      ? `## {{user}} 身份设定
+以下是 {{user}} 的角色背景设定，推演时请将其作为 {{user}} 的身份、社会地位、职业、能力等背景信息来考量，并据此影响势力态度、声誉判定、NPC 反应等：
+${persona}`
+      : '';
+    const rl = window.WORLD_ENGINE_RULES;
+    const skippedFields = (rl && typeof rl.getDisabledOutputFields === 'function') ? rl.getDisabledOutputFields() : [];
+    const segDisabledModules = skippedFields.length
+      ? `## 已禁用的模块
+以下模块已被用户禁用，请不要在输出 JSON 中包含这些字段：${skippedFields.join('、')}。`
+      : '';
+    const segOutput = outputInstructions;
+    const segExtraInstruction = extraInstruction || '';
+    const segTone = toneSection;
 
-## 近期对话
-${dialogueText ? dialogueText : `用户：${userMsg || ''}\nAI：${aiMsg || ''}`}
-${(() => {
-  const persona = core.getUserPersona ? core.getUserPersona() : '';
-  return persona
-    ? `\n## {{user}} 身份设定\n以下是 {{user}} 的角色背景设定，推演时请将其作为 {{user}} 的身份、社会地位、职业、能力等背景信息来考量，并据此影响势力态度、声誉判定、NPC 反应等：\n${persona}\n`
-    : '';
-})()}${(() => {
-  // 构建禁用模块提示：字段映射统一由 rules-loader 描述符层提供（单一来源，消除重复 MODULE_FIELD_MAP）
-  const rl = window.WORLD_ENGINE_RULES;
-  const skippedFields = (rl && typeof rl.getDisabledOutputFields === 'function') ? rl.getDisabledOutputFields() : [];
-  if (skippedFields.length === 0) return '';
-  return `\n## 已禁用的模块\n以下模块已被用户禁用，请不要在输出 JSON 中包含这些字段：${skippedFields.join('、')}。\n`;
-})()}
-${outputInstructions}
-${extraInstruction ? '\n' + extraInstruction : ''}${toneSection}`;
+    const prompt = segEngineRole + '\n\n' + segCausalSteps
+      + '\n\n========== 世界推演规则 ==========\n' + segRules
+      + '\n\n' + segWorldbook
+      + '\n\n' + segStateBlock
+      + '\n\n' + segDialogue
+      + (segPersona ? '\n' + segPersona + '\n' : '')
+      + (segDisabledModules ? '\n' + segDisabledModules + '\n' : '')
+      + '\n' + segOutput
+      + (segExtraInstruction ? '\n' + segExtraInstruction : '') + segTone;
 
+    _lastPromptSegments = [
+      { key: 'engine-role', label: '① 引擎角色指令', content: segEngineRole },
+      { key: 'causal-steps', label: '② 因果检查', content: segCausalSteps },
+      { key: 'rules', label: '③ 世界推演规则', content: segRules },
+      { key: 'worldbook', label: '④ 世界书注入', content: segWorldbook },
+      { key: 'state', label: '⑤ 当前世界状态', content: segStateBlock },
+      { key: 'dialogue', label: '⑥ 近期对话', content: segDialogue },
+      { key: 'persona', label: '⑦ 用户身份设定', content: segPersona },
+      { key: 'disabled-modules', label: '⑧ 已禁用模块', content: segDisabledModules },
+      { key: 'output-format', label: '⑨ 输出格式与示例', content: segOutput },
+      { key: 'extra', label: '⑩ 额外指令/附加提示词', content: (segExtraInstruction ? segExtraInstruction + '\n' : '') + segTone }
+    ];
     const rawResult = await api.callApi(prompt, 8000, 0.7, _abortController.signal);
     _lastPrompt = prompt;
     _lastRawResult = rawResult;

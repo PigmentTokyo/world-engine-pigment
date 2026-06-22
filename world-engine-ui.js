@@ -363,6 +363,15 @@ window.WORLD_ENGINE_UI = (function() {
   const VIEW_TITLES = {
     situation: '局势', events: '事件', relations: '关系', resources: '资源', settings: '设置'
   };
+  const SETTINGS_TABS = [
+    { key: 'common', label: '常用' },
+    { key: 'filter', label: '过滤' },
+    { key: 'preset', label: '预设' },
+    { key: 'worldbook', label: '世界书' },
+    { key: 'data', label: '数据' },
+    { key: 'debug', label: '调试' }
+  ];
+  let _settingsTab = 'common';
 
   function renderSection(title, id, content) {
     return '<div class="we-section" id="we-sec-' + id + '"><div class="we-section-title">' + sectionHeader(title, id) + '</div>' + sectionBody(id, content) + '</div>';
@@ -656,23 +665,42 @@ window.WORLD_ENGINE_UI = (function() {
     const presetSettings = window.WORLD_ENGINE_PRESET_UI?.renderSettingsSection
       ? window.WORLD_ENGINE_PRESET_UI.renderSettingsSection()
       : '';
+    const form = renderSettingsForm();
+    const extra = renderSettingsAfterCheckpoint();
+    const checkpointSection = '<div class="we-section" style="margin-top:16px;"><div class="we-section-title">' + sectionHeader(checkpointTitle(checkpoint, cpLayer), 'checkpoint-section') + '</div>' + sectionBody('checkpoint-section', cpContent) + '</div>';
+    const debugSection = '<div class="we-section we-debug-section" style="margin-top:8px;">'
+      + '<div class="we-section-title"><span class="we-debug-toggle" title="展开或收起调试信息"><span class="we-toggle-arrow">▶</span>调试</span></div>'
+      + '<div id="we-debug-body" style="display:none;">'
+      + '<button class="we-btn" id="we-export-diag" style="width:100%;margin-bottom:8px;">导出诊断包</button>'
+      + renderDebug() + '</div></div>';
+
+    const panels = {
+      common: (form.api || '') + (form.evolve || '') + (form.display || '') + (form.inject || ''),
+      filter: (form.filter || '') + (extra.tone || ''),
+      preset: presetSettings || '<div class="we-empty">预设管理模块未加载</div>',
+      worldbook: extra.worldbook || '',
+      data: (extra.data || '') + checkpointSection,
+      debug: debugSection
+    };
+
+    const tabBar = '<div class="we-settings-tabs">' + SETTINGS_TABS.map(tab =>
+      '<button class="we-settings-tab' + (tab.key === _settingsTab ? ' we-settings-tab--active' : '') + '" data-tab="' + tab.key + '" type="button">' + tab.label + '</button>'
+    ).join('') + '</div>';
+    const panelHtml = SETTINGS_TABS.map(tab =>
+      '<div class="we-settings-panel" data-tab="' + tab.key + '"' + (tab.key === _settingsTab ? '' : ' style="display:none;"') + '>' + (panels[tab.key] || '') + '</div>'
+    ).join('');
+
     return '<div class="we-sub-topbar">'
       + '<button class="we-icon-btn" id="we-btn-back" title="返回"><i class="fa-solid fa-arrow-left"></i></button>'
       + '<span class="we-sub-title">设置</span>'
       + '</div>'
-      + renderSettingsForm()
-      + presetSettings
-      + '<div class="we-section" style="margin-top:16px;"><div class="we-section-title">' + sectionHeader(checkpointTitle(checkpoint, cpLayer), 'checkpoint-section') + '</div>' + sectionBody('checkpoint-section', cpContent) + '</div>'
-      + '<div class="we-settings-save-actions">'
+      + tabBar
+      + panelHtml
+      + '<div class="we-settings-save-actions we-settings-save-sticky">'
       + '<button class="we-btn" id="we-save-settings">保存设置</button>'
       + '<button class="we-btn we-btn-danger" id="we-reset-world">重置世界</button>'
-      + '</div>'
-      + renderSettingsAfterCheckpoint()
-      + '<div class="we-section we-debug-section" style="margin-top:8px;">'
-      + '<div class="we-section-title"><span class="we-debug-toggle" title="展开或收起调试信息"><span class="we-toggle-arrow">▶</span>调试</span></div>'
-      + '<div id="we-debug-body" style="display:none;">' + renderDebug() + '</div></div>';
+      + '</div>';
   }
-
   function renderCheckpointSections(s, layer) {
     const order = ['trends', 'events', 'factions', 'winds', 'reputation', 'economy', 'enemies', 'influence', 'regional', 'blackbox'];
     return (isFreePresetMode() ? renderActiveDescriptorSections(s, 'checkpoint', 'cp-') : order.map(id => renderModuleSection(id, s, 'checkpoint', 'cp-')).join(''))
@@ -1860,25 +1888,57 @@ window.WORLD_ENGINE_UI = (function() {
     const evo = window.WORLD_ENGINE_EVOLUTION;
     if (!evo || !evo.getLastDebug) return '<div class="we-empty">调试数据不可用</div>';
     const dbg = evo.getLastDebug();
-    if (!dbg.prompt) return '<div class="we-empty">尚未推演，暂无调试数据</div>';
-    const truncPrompt = dbg.prompt.length > 3000 ? dbg.prompt.substring(0, 3000) + '\n\n...(截断，点击下方按钮导出完整文件)' : dbg.prompt;
-    const truncResult = dbg.rawResult.length > 3000 ? dbg.rawResult.substring(0, 3000) + '\n\n...(截断，点击下方按钮导出完整文件)' : dbg.rawResult;
-    return `
-      <div style="margin-bottom:8px;">
-        <div style="font-size:12px;color:var(--we-text2);margin-bottom:4px;">发送给 API 的 Prompt（前3000字预览）</div>
-        <pre style="font-size:11px;background:var(--we-bg2);padding:6px;border-radius:4px;max-height:200px;overflow:auto;white-space:pre-wrap;word-break:break-all;">${u(truncPrompt)}</pre>
-      </div>
-      <div>
-        <div style="font-size:12px;color:var(--we-text2);margin-bottom:4px;">API 原始返回（前3000字预览）</div>
-        <pre style="font-size:11px;background:var(--we-bg2);padding:6px;border-radius:4px;max-height:200px;overflow:auto;white-space:pre-wrap;word-break:break-all;">${u(truncResult)}</pre>
-      </div>
-      <div style="display:flex;gap:6px;margin-top:8px;">
-        <button class="we-btn" id="we-export-prompt" style="flex:1;">导出 Prompt</button>
-        <button class="we-btn" id="we-export-raw-result" style="flex:1;">导出 API 返回</button>
-      </div>
-    `;
-  }
+    if (!dbg || !dbg.prompt) return '<div class="we-empty">尚未推演，暂无调试数据</div>';
+    const segments = Array.isArray(dbg.segments) ? dbg.segments : [];
+    const totalLen = String(dbg.prompt || '').length;
 
+    const tryPrettyJson = text => {
+      if (!text) return null;
+      try { return JSON.stringify(JSON.parse(text), null, 2); } catch (e) {}
+      const apiMod = window.WORLD_ENGINE_API;
+      if (apiMod && typeof apiMod.parseJSON === 'function') {
+        try {
+          const parsed = apiMod.parseJSON(text);
+          if (parsed && typeof parsed === 'object') return JSON.stringify(parsed, null, 2);
+        } catch (e) {}
+      }
+      return null;
+    };
+
+    const segmentCards = segments.length ? segments.map(seg => {
+      const content = String(seg.content || '');
+      const len = content.length;
+      const pct = totalLen ? (len / totalLen * 100).toFixed(1) : '0.0';
+      const pretty = tryPrettyJson(content);
+      const shown = pretty || content;
+      const body = len
+        ? '<pre class="we-prompt-seg-pre' + (pretty ? ' we-prompt-seg-pre-json' : '') + '">' + u(shown) + '</pre>'
+        : '<div class="we-empty">本轮未启用</div>';
+      return '<details class="we-prompt-seg-card">'
+        + '<summary><span>' + u(seg.label || seg.key || '分段') + '</span><b>' + len + '字 · ' + pct + '%</b></summary>'
+        + body
+        + '</details>';
+    }).join('') : '<div class="we-empty">暂无分段数据，显示完整 Prompt 预览</div>';
+
+    const rawResult = String(dbg.rawResult || '');
+    const prettyRaw = tryPrettyJson(rawResult);
+    const rawShown = prettyRaw || rawResult;
+    const rawCard = '<details class="we-prompt-seg-card we-prompt-seg-card-raw">'
+      + '<summary><span>AI 返回（推演 API 原始结果）</span><b>' + rawResult.length + '字' + (prettyRaw ? ' · JSON' : '') + '</b></summary>'
+      + (rawResult ? '<pre class="we-prompt-seg-pre' + (prettyRaw ? ' we-prompt-seg-pre-json' : '') + '">' + u(rawShown) + '</pre>' : '<div class="we-empty">无 API 返回</div>')
+      + '</details>';
+
+    const fallbackPrompt = segments.length ? '' : '<pre class="we-prompt-seg-pre">' + u(String(dbg.prompt || '').slice(0, 3000)) + '</pre>';
+
+    return '<div class="we-prompt-debug">'
+      + '<div class="we-prompt-debug-summary">Prompt 共 ' + totalLen + ' 字，分 ' + segments.length + ' 段。</div>'
+      + '<div class="we-prompt-seg-list">' + segmentCards + rawCard + fallbackPrompt + '</div>'
+      + '<div style="display:flex;gap:6px;margin-top:8px;">'
+      + '<button class="we-btn" id="we-export-prompt" style="flex:1;">导出完整 Prompt</button>'
+      + '<button class="we-btn" id="we-export-raw-result" style="flex:1;">导出 API 返回</button>'
+      + '</div>'
+      + '</div>';
+  }
   function renderSettingsForm() {
     const settings = window.WORLD_ENGINE_API
       ? window.WORLD_ENGINE_API.getSettings(true)
@@ -1996,8 +2056,22 @@ window.WORLD_ENGINE_UI = (function() {
     const filterBody = `
       <div class="we-input-group">
         <label>每行一条正则，匹配内容会在喂后台前删除</label>
-        <textarea id="we-filter-regex" rows="4" style="width:100%;resize:vertical;" placeholder="例如 &lt;think&gt;[\\s\\S]*?&lt;/think&gt;">${u(tv('evolveFilterRegex',''))}</textarea>
-        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">对每条「用户/AI」文本逐行做 g 全局替换为空，再拼装喂后台推演。不影响聊天正文，也不影响日期抓取。</div>
+        <div style="margin-bottom:8px;border:1px solid var(--we-border,#3a3a3a);border-radius:4px;padding:6px;">
+          <div style="font-size:12px;color:var(--we-text2);margin-bottom:4px;">简单模式：勾选标签自动生成删除正则</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:4px;">
+            <button class="we-btn" id="we-btn-filter-scan" type="button">扫描本聊天标签</button>
+            <input type="text" id="we-filter-add-input" placeholder="手动加标签名，如 think" style="flex:1;min-width:140px;">
+            <button class="we-btn" id="we-btn-filter-add" type="button">添加</button>
+          </div>
+          <div id="we-filter-tags" style="display:flex;flex-wrap:wrap;gap:4px;min-height:4px;"></div>
+          <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">自动生成的正则不一定适合带属性、带 ~、嵌套或闭标签异常的标签；遇到不生效时可直接编辑下方文本框。未勾选标签不会保存。</div>
+        </div>
+        <textarea id="we-filter-regex" rows="4" style="width:100%;resize:vertical;" placeholder="每行一条；支持纯 pattern 或 /pattern/flags。例：\n<details>[\\s\\S]*?</details>\\n?\n/&lt;think&gt;[\\s\\S]*?&lt;\\/think&gt;/g">${u(tv('evolveFilterRegex',''))}</textarea>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 4px;">
+          <button class="we-btn" id="we-btn-filter-test" type="button">测试正则</button>
+        </div>
+        <div class="we-hint" id="we-filter-status" style="margin:0 0 4px;white-space:pre-wrap;"></div>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">每行一条；支持纯 pattern（默认 g 全局）或 /pattern/flags 字面量。不影响聊天正文，也不影响日期抓取。</div>
       </div>`;
 
     const injectBody = `
@@ -2020,22 +2094,32 @@ window.WORLD_ENGINE_UI = (function() {
         <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">展开模式下世界摘要下方直接平铺全部 section，无需进分页。</div>
       </div>`;
 
-    return sec('set-api', 'API 配置', apiBody)
-      + sec('set-evolve', '推演模式', evolveBody)
-      + sec('set-filter', '输入输出过滤器', filterBody)
-      + sec('set-display', '界面显示', displayBody)
-      + sec('set-inject', '正文注入', injectBody);
+    return {
+      api: sec('set-api', 'API 配置', apiBody),
+      evolve: sec('set-evolve', '推演模式', evolveBody),
+      filter: sec('set-filter', '输入输出过滤器', filterBody),
+      display: sec('set-display', '界面显示', displayBody),
+      inject: sec('set-inject', '正文注入', injectBody)
+    };
   }
 
   function renderSettingsAfterCheckpoint() {
     const sec = (id, title, body) =>
       '<div class="we-section"><div class="we-section-title">' + sectionHeader(title, id) + '</div>' +
       sectionBody(id, body) + '</div>';
+    const worldbookTrigger = window.WORLD_ENGINE_API?.getSettings?.(true)?.worldbookTrigger === true;
     const worldbookBody = `
       <div class="we-worldbook-settings">
         <div class="we-worldbook-header">
           <div><div class="we-worldbook-summary" id="we-worldbook-summary">正在读取当前聊天世界书...</div></div>
           <button class="we-icon-btn" id="we-worldbook-reload" title="重新读取当前聊天世界书"><i class="fa-solid fa-rotate"></i></button>
+        </div>
+        <div class="we-input-group">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+            <input type="checkbox" id="we-worldbook-trigger" ${worldbookTrigger ? 'checked' : ''}>
+            启用蓝绿灯触发（常驻 / 关键词命中）
+          </label>
+          <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">关闭时：所有已勾选条目都会注入。开启后：已勾选条目还需满足常驻或关键词命中；每条可单独强制。</div>
         </div>
         <div class="we-worldbook-toolbar">
           <button class="we-btn" id="we-worldbook-select-all">全选</button>
@@ -2063,9 +2147,11 @@ window.WORLD_ENGINE_UI = (function() {
         <input type="checkbox" id="we-tone-generate-preset" ${includePresetForTone ? 'checked' : ''}> &#29983;&#25104;&#26102;&#21442;&#32771;&#24403;&#21069;&#19990;&#30028;&#39044;&#35774;
       </label>
       <div class="we-hint" id="we-tone-status" style="margin-top:6px;"></div>`;
-    return sec('set-worldbook', '后台推演世界书', worldbookBody)
-      + sec('set-data', '数据导入/导出', dataBody)
-      + sec('set-tone', '附加提示词', toneBody);
+    return {
+      worldbook: sec('set-worldbook', '后台推演世界书', worldbookBody),
+      data: sec('set-data', '数据导入/导出', dataBody),
+      tone: sec('set-tone', '附加提示词', toneBody)
+    };
   }
 
   function bindEvents(state) {
@@ -2865,9 +2951,194 @@ window.WORLD_ENGINE_UI = (function() {
       };
     });
 
+    document.querySelectorAll('.we-settings-tab').forEach(tab => {
+      tab.onclick = () => {
+        const key = tab.dataset.tab || 'common';
+        _settingsTab = key;
+        document.querySelectorAll('.we-settings-tab').forEach(item =>
+          item.classList.toggle('we-settings-tab--active', item.dataset.tab === key));
+        document.querySelectorAll('.we-settings-panel').forEach(panel =>
+          panel.style.display = panel.dataset.tab === key ? '' : 'none');
+      };
+    });
     const refreshBtn = document.getElementById('we-btn-refresh');
     if (refreshBtn) refreshBtn.onclick = () => refresh();
 
+    function renderFilterStatus(result, prefix) {
+      const el = document.getElementById('we-filter-status');
+      if (!el) return;
+      const pfx = prefix || '';
+      if (!result || (!result.ok && !result.bad.length)) { el.textContent = pfx + '（未填写正则）'; return; }
+      if (!result.bad.length) { el.textContent = pfx + result.ok + ' 条全部生效'; return; }
+      let text = pfx + result.ok + ' 条生效 / ' + result.bad.length + ' 条失败：';
+      result.bad.forEach(function(item) {
+        text += '\n行 ' + item.line + '「' + item.raw + '」无效：' + item.reason;
+      });
+      el.textContent = text;
+    }
+
+    const SIMPLE_TAG_LINE = /^<([a-zA-Z_][\w-]*)>[\s\S]*?<\/\1>(?:\\n\?)?$/;
+    const SCAN_TAG_RE = /<([a-zA-Z_][\w-]*)/g;
+    let _filterTags = [];
+
+    function parseTextareaTags(raw) {
+      const tags = [];
+      const advanced = [];
+      String(raw || '').split('\n').forEach(function(line) {
+        const match = line.match(SIMPLE_TAG_LINE);
+        if (match) {
+          if (tags.indexOf(match[1]) < 0) tags.push(match[1]);
+        } else if (line.trim()) {
+          advanced.push(line);
+        }
+      });
+      return { tags, advanced };
+    }
+
+    function writeTextareaFromTags(checkedTags, advancedLines) {
+      const tagLines = checkedTags.map(function(tag) { return '<' + tag + '>[\\s\\S]*?</' + tag + '>\\n?'; });
+      const ta = document.getElementById('we-filter-regex');
+      if (ta) ta.value = tagLines.concat(advancedLines || []).join('\n');
+    }
+
+    function renderFilterTags() {
+      const box = document.getElementById('we-filter-tags');
+      if (!box) return;
+      box.innerHTML = '';
+      _filterTags.forEach(function(tagItem) {
+        const chip = document.createElement('label');
+        chip.style.cssText = 'display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border:1px solid var(--we-border,#3a3a3a);border-radius:3px;font-size:12px;cursor:pointer;';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = !!tagItem.checked;
+        cb.onchange = function() { tagItem.checked = cb.checked; syncTextareaFromTags(); };
+        const name = document.createElement('span');
+        name.textContent = tagItem.name;
+        const del = document.createElement('span');
+        del.textContent = 'x';
+        del.style.cssText = 'color:var(--we-text3);cursor:pointer;margin-left:2px;';
+        del.onclick = function(e) {
+          e.preventDefault();
+          _filterTags = _filterTags.filter(function(item) { return item.name !== tagItem.name; });
+          renderFilterTags();
+          syncTextareaFromTags();
+        };
+        chip.appendChild(cb);
+        chip.appendChild(name);
+        chip.appendChild(del);
+        box.appendChild(chip);
+      });
+    }
+
+    function syncTextareaFromTags() {
+      const ta = document.getElementById('we-filter-regex');
+      const parsed = parseTextareaTags(ta ? ta.value : '');
+      const checked = _filterTags.filter(function(item) { return item.checked; }).map(function(item) { return item.name; });
+      writeTextareaFromTags(checked, parsed.advanced);
+    }
+
+    let _filterTagSyncTimer = null;
+    function syncTagsFromTextarea() {
+      const ta = document.getElementById('we-filter-regex');
+      if (!ta) return;
+      const parsed = parseTextareaTags(ta.value);
+      const tagSet = new Set(parsed.tags);
+      _filterTags.forEach(function(item) { item.checked = tagSet.has(item.name); });
+      parsed.tags.forEach(function(name) {
+        if (!_filterTags.some(function(item) { return item.name === name; })) _filterTags.push({ name, checked: true });
+      });
+      renderFilterTags();
+    }
+
+    function scanTagsFromLastAI() {
+      let text = '';
+      try {
+        const ctx = SillyTavern.getContext();
+        const chat = (ctx && ctx.chat) || [];
+        for (let i = chat.length - 1; i >= 0; i--) {
+          const message = chat[i];
+          if (message && !message.is_user && String(message.mes || '').trim()) { text = String(message.mes); break; }
+        }
+      } catch (e) {}
+      if (!text) { showToast('未找到 AI 回复', true); return; }
+      const found = [];
+      let match;
+      SCAN_TAG_RE.lastIndex = 0;
+      while ((match = SCAN_TAG_RE.exec(text)) !== null) {
+        const name = match[1];
+        if (name && found.indexOf(name) < 0) found.push(name);
+      }
+      if (!found.length) { showToast('最新 AI 回复里没发现标签', true); return; }
+      found.forEach(function(name) {
+        if (!_filterTags.some(function(item) { return item.name === name; })) _filterTags.push({ name, checked: true });
+      });
+      renderFilterTags();
+      syncTextareaFromTags();
+      showToast('扫描到 ' + found.length + ' 个标签');
+    }
+
+    const scanFilterBtn = document.getElementById('we-btn-filter-scan');
+    if (scanFilterBtn) scanFilterBtn.onclick = scanTagsFromLastAI;
+
+    const addFilterBtn = document.getElementById('we-btn-filter-add');
+    const addFilterInput = document.getElementById('we-filter-add-input');
+    function addFilterTag() {
+      const value = (addFilterInput && addFilterInput.value || '').trim();
+      if (!value) return;
+      if (!/^[a-zA-Z_][\w-]*$/.test(value)) { showToast('标签名无效：只允许字母、数字、下划线、连字符，且不能以数字开头', true); return; }
+      if (!_filterTags.some(function(item) { return item.name === value; })) _filterTags.push({ name: value, checked: true });
+      if (addFilterInput) addFilterInput.value = '';
+      renderFilterTags();
+      syncTextareaFromTags();
+    }
+    if (addFilterBtn) addFilterBtn.onclick = addFilterTag;
+    if (addFilterInput) addFilterInput.addEventListener('keydown', function(e) { if (e.key === 'Enter') { e.preventDefault(); addFilterTag(); } });
+
+    const filterTextarea = document.getElementById('we-filter-regex');
+    if (filterTextarea) {
+      filterTextarea.addEventListener('input', function() {
+        clearTimeout(_filterTagSyncTimer);
+        _filterTagSyncTimer = setTimeout(syncTagsFromTextarea, 300);
+      });
+      syncTagsFromTextarea();
+    }
+
+    const testFilterBtn = document.getElementById('we-btn-filter-test');
+    if (testFilterBtn) {
+      testFilterBtn.onclick = function() {
+        const raw = (document.getElementById('we-filter-regex') || {}).value || '';
+        if (!raw.trim()) { showToast('未填写正则', true); renderFilterStatus(null); return; }
+        const coreMod = window.WORLD_ENGINE_CORE;
+        if (!coreMod || typeof coreMod.validateFilterRegex !== 'function') { showToast('正则校验不可用', true); return; }
+        const validation = coreMod.validateFilterRegex(raw);
+        if (validation.bad.length) { renderFilterStatus(validation, '测试中止：'); showToast('有 ' + validation.bad.length + ' 条正则无效', true); return; }
+        let sample = '';
+        try {
+          const ctx = SillyTavern.getContext();
+          const chat = (ctx && ctx.chat) || [];
+          for (let i = chat.length - 1; i >= 0; i--) {
+            const text = chat[i] && String(chat[i].mes || '').trim();
+            if (text) { sample = String(chat[i].mes); break; }
+          }
+        } catch (e) {}
+        if (!sample) { showToast('当前聊天没有可测试文本', true); return; }
+        let removed = 0;
+        let work = sample;
+        validation.entries.forEach(function(entry) {
+          try {
+            const re = new RegExp(entry.pattern, entry.flags);
+            let m;
+            while ((m = re.exec(work)) !== null) { removed += 1; if (m.index === re.lastIndex) re.lastIndex += 1; }
+            work = work.replace(new RegExp(entry.pattern, entry.flags), '');
+          } catch (e) {}
+        });
+        const before = sample.slice(0, 60) + (sample.length > 60 ? '...' : '');
+        const after = work.slice(0, 60) + (work.length > 60 ? '...' : '');
+        const el = document.getElementById('we-filter-status');
+        if (el) el.textContent = '已删除 ' + removed + ' 处。\n前: ' + before + '\n后: ' + after;
+        showToast('已删除 ' + removed + ' 处');
+      };
+    }
     const saveBtn = document.getElementById('we-save-settings');
     if (saveBtn) {
       saveBtn.onclick = () => {
@@ -2889,6 +3160,7 @@ window.WORLD_ENGINE_UI = (function() {
           evolveEveryX: Math.max(1, parseInt(document.getElementById('we-evolve-everyx')?.value) || 1),
           evolveReadRounds: Math.max(1, parseInt(document.getElementById('we-evolve-readrounds')?.value) || 1),
           evolveFilterRegex: gv('we-filter-regex') || '',
+          worldbookTrigger: document.getElementById('we-worldbook-trigger')?.checked === true,
           displayMode: document.getElementById('we-display-mode')?.value === 'expand' ? 'expand' : 'mask',
           // 按时间模式
           evolveTimeFront: Math.max(0, parseInt(gv('we-time-front')) || 0),
@@ -2906,6 +3178,16 @@ window.WORLD_ENGINE_UI = (function() {
         ns.evolveReadRounds = Math.min(ns.evolveReadRounds, ns.evolveEveryX);
         window.WORLD_ENGINE_STORE.setItem('world_engine_settings', JSON.stringify(ns));
         if (window.WORLD_ENGINE_API) window.WORLD_ENGINE_API.getSettings(true);
+
+        let filterBadCount = 0;
+        try {
+          const coreMod = window.WORLD_ENGINE_CORE;
+          if (coreMod && typeof coreMod.validateFilterRegex === 'function') {
+            const validation = coreMod.validateFilterRegex(ns.evolveFilterRegex);
+            renderFilterStatus(validation, '已保存：');
+            filterBadCount = validation.bad.length;
+          }
+        } catch (e) {}
 
         // 按时间模式：三个时间框「有值才写」，本轮对话时间写入后触发判断
         if (ns.evolveMode === 'time') {
@@ -2926,7 +3208,7 @@ window.WORLD_ENGINE_UI = (function() {
         }
 
         window.WORLD_ENGINE?.applyInjection?.();
-        showToast('设置已保存');
+        showToast(filterBadCount > 0 ? ('已保存，但有 ' + filterBadCount + ' 条正则无效') : '设置已保存', filterBadCount > 0);
       };
     }
 
@@ -3008,6 +3290,7 @@ window.WORLD_ENGINE_UI = (function() {
       function renderWorldbookList() {
         const entries = _wbCachedEntries;
         const selectedIds = _wbCachedSelectedIds || new Set();
+        const overrides = worldbook && typeof worldbook.getOverrides === 'function' ? worldbook.getOverrides() : {};
         if (!entries || !entries.length) {
           worldbookList.innerHTML = '<div class="we-empty">当前聊天未关联可读取的世界书条目</div>';
           if (summary) summary.textContent = '0 条可选';
@@ -3038,7 +3321,13 @@ window.WORLD_ENGINE_UI = (function() {
                 <input class="we-worldbook-entry-check" type="checkbox" value="${u(entry.id)}" data-chars="${entry.content.length}" ${selectedIds.has(entry.id) && !entry.disabled ? 'checked' : ''} ${entry.disabled ? 'disabled' : ''}>
                 <span>
                   <strong>${u(entry.title)}</strong>
-                  <small>${entry.content.length} 字符${entry.disabled ? ' · 世界书内已停用' : ''}</small>
+                  <small>${entry.content.length} 字符${entry.disabled ? ' · 世界书内已停用' : ''}${entry.constant ? ' · 常驻' : ''}${entry.keys && entry.keys.length ? ' · 关键词' : ''}</small>
+                  <select class="we-worldbook-entry-mode" data-entry-id="${u(entry.id)}" ${entry.disabled ? 'disabled' : ''}>
+                    <option value="auto" ${!overrides[entry.id] ? 'selected' : ''}>跟随</option>
+                    <option value="const" ${overrides[entry.id] === 'const' ? 'selected' : ''}>强制常驻</option>
+                    <option value="key" ${overrides[entry.id] === 'key' ? 'selected' : ''}>强制关键词</option>
+                    <option value="off" ${overrides[entry.id] === 'off' ? 'selected' : ''}>关闭</option>
+                  </select>
                 </span>
               </label>`).join('')}
             </div>
@@ -3097,7 +3386,12 @@ window.WORLD_ENGINE_UI = (function() {
         });
       };
       if (saveWorldbookBtn) saveWorldbookBtn.onclick = () => {
-        worldbook.saveSelectedIds([..._wbCachedSelectedIds]);
+        const modes = {};
+        worldbookList.querySelectorAll('.we-worldbook-entry-mode').forEach(select => {
+          if (select.value && select.value !== 'auto') modes[select.dataset.entryId] = select.value;
+        });
+        if (worldbook.saveSelection) worldbook.saveSelection([..._wbCachedSelectedIds], modes);
+        else worldbook.saveSelectedIds([..._wbCachedSelectedIds]);
         showToast(`已保存 ${_wbCachedSelectedIds.size} 条后台世界书条目`);
         updateWorldbookSummary();
       };
@@ -3389,6 +3683,16 @@ window.WORLD_ENGINE_UI = (function() {
       a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
+    }
+
+    const exportDiagBtn = document.getElementById('we-export-diag');
+    if (exportDiagBtn) {
+      exportDiagBtn.onclick = () => {
+        const diag = window.WORLD_ENGINE_DIAG;
+        if (!diag || typeof diag.download !== 'function') { showToast('诊断模块未加载', true); return; }
+        diag.download();
+        showToast('诊断包已导出');
+      };
     }
 
     const exportPromptBtn = document.getElementById('we-export-prompt');

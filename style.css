@@ -2914,3 +2914,105 @@
 .we-xf-obj > summary { cursor: pointer; color: var(--we-text2, #cfcfcf); list-style: revert; }
 .we-xf-obj-pre { margin: 4px 0 0; padding: 6px; max-height: 160px; overflow: auto; border-radius: 4px;
   background: var(--we-bg2, #1a1a1a); font-size: 10px; white-space: pre-wrap; word-break: break-all; }
+
+/* Prompt debug segments */
+.we-prompt-debug-summary {
+  font-size: 11px;
+  color: var(--we-text2);
+  margin-bottom: 8px;
+}
+.we-prompt-seg-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.we-prompt-seg-card {
+  border: 1px solid var(--we-border);
+  border-radius: 4px;
+  background: rgba(255,255,255,0.02);
+  overflow: hidden;
+}
+.we-prompt-seg-card summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  padding: 7px 9px;
+  color: var(--we-text2);
+  font-size: 12px;
+}
+.we-prompt-seg-card summary b {
+  color: var(--we-text3);
+  font-weight: 400;
+  white-space: nowrap;
+}
+.we-prompt-seg-card-raw {
+  border-color: color-mix(in srgb, var(--we-accent) 60%, var(--we-border));
+}
+.we-prompt-seg-pre {
+  margin: 0 8px 8px;
+  padding: 7px;
+  max-height: 320px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-radius: 4px;
+  background: var(--we-bg2);
+  color: var(--we-text);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.we-prompt-seg-pre-json {
+  color: var(--we-green);
+  font-family: var(--we-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+}
+/* Settings tabs */
+.we-settings-tabs {
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--we-border);
+  margin: 2px 0 12px;
+  scrollbar-width: none;
+}
+.we-settings-tabs::-webkit-scrollbar { display: none; }
+.we-settings-tab {
+  flex: 0 0 auto;
+  padding: 7px 12px;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--we-text2);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.we-settings-tab:hover { color: var(--we-text); }
+.we-settings-tab--active {
+  color: var(--we-gold);
+  border-bottom-color: var(--we-gold);
+}
+.we-settings-panel { margin-bottom: 4px; }
+.we-settings-save-sticky {
+  position: sticky;
+  bottom: 0;
+  background: #182028;
+  padding-top: 10px;
+  margin-top: 4px;
+  border-top: 1px solid var(--we-border);
+  z-index: 2;
+}
+/* Worldbook trigger mode */
+.we-worldbook-entry-mode {
+  margin-top: 4px;
+  width: 100%;
+  max-width: 150px;
+  background: var(--we-bg2);
+  color: var(--we-text);
+  border: 1px solid var(--we-border);
+  border-radius: 4px;
+  padding: 3px 5px;
+  font-size: 12px;
+}
