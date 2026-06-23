@@ -1512,14 +1512,23 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
     var arrowClass = _collapsed.details ? '' : ' open';
     var bodyClass = _collapsed.details ? ' collapsed' : '';
 
+    // 自由模式下，只有当预设确实引用了对应内置模块时才显示该经典系统编辑器；
+    // 纯自定义自由预设不再展示声誉/势力/经济/区域这些古风残留配置。classic 模式照常全显示。
+    var showClassic = function (id) {
+      if (!preset || preset.mode !== 'free') return true;
+      if (!Array.isArray(preset.modules)) return false;
+      return preset.modules.some(function (m) {
+        return m && m.kind === 'builtin' && m.id === id && m.enabled !== false;
+      });
+    };
     // ── Sub-section: 声誉系统 ──
-    var reputationHTML = buildReputationEditor(preset);
+    var reputationHTML = showClassic('reputation') ? buildReputationEditor(preset) : '';
     // ── Sub-section: 势力系统 ──
-    var factionHTML = buildFactionEditor(preset);
+    var factionHTML = showClassic('factions') ? buildFactionEditor(preset) : '';
     // ── Sub-section: 经济系统 ──
-    var economyHTML = buildEconomyEditor(preset);
+    var economyHTML = showClassic('economy') ? buildEconomyEditor(preset) : '';
     // ── Sub-section: 突发事件 ──
-    var incidentHTML = buildIncidentEditor(preset);
+    var incidentHTML = showClassic('regional') ? buildIncidentEditor(preset) : '';
 
     return '' +
       '<hr class="we-preset-separator">' +
