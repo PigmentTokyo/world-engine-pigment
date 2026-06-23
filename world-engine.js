@@ -13,6 +13,7 @@
     'world-engine-ledger.js',
     'world-engine-evolution.js',
     'world-engine-diag.js',
+    'world-engine-backup.js',       // ← 新增：本地滚动存档备份（防丢存档），需在 ui 之前加载
     'world-engine-inject.js',
     'world-engine-ui.js',
     'world-engine-preset-ui.js'     // ← 新增：预设管理界面（需在 ui 之后加载）
@@ -414,6 +415,11 @@
 
       async function onChatLoaded() {
         clearAutoEvolveTimer();
+        // 切聊天时，若仍有进行中的推演，立即中止——
+        // 推演捕获的是旧聊天的对话数组引用，继续跑会把旧聊天内容写进新聊天（跨聊天污染 + 旧存档已 clearState 丢失）。
+        if (evolution && evolution.isRunning && evolution.isRunning()) {
+          try { evolution.abort(); console.log('[世界引擎] 切聊天，中止进行中的推演'); } catch (e) { console.warn('[世界引擎] 中止推演失败', e); }
+        }
         const ctx = SillyTavern.getContext();
         const chat = ctx?.chat || [];
         const currentLayer = core.getChatLayer();

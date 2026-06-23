@@ -679,7 +679,7 @@ window.WORLD_ENGINE_UI = (function() {
       filter: (form.filter || '') + (extra.tone || ''),
       preset: presetSettings || '<div class="we-empty">预设管理模块未加载</div>',
       worldbook: extra.worldbook || '',
-      data: (extra.data || '') + checkpointSection,
+      data: (extra.data || '') + (extra.backup || '') + checkpointSection,
       debug: debugSection
     };
 
@@ -2147,9 +2147,13 @@ window.WORLD_ENGINE_UI = (function() {
         <input type="checkbox" id="we-tone-generate-preset" ${includePresetForTone ? 'checked' : ''}> &#29983;&#25104;&#26102;&#21442;&#32771;&#24403;&#21069;&#19990;&#30028;&#39044;&#35774;
       </label>
       <div class="we-hint" id="we-tone-status" style="margin-top:6px;"></div>`;
+    const backupBody = window.WORLD_ENGINE_BACKUP && window.WORLD_ENGINE_BACKUP.sectionBodyHtml
+      ? window.WORLD_ENGINE_BACKUP.sectionBodyHtml()
+      : '<div class="we-empty">备份模块未加载</div>';
     return {
       worldbook: sec('set-worldbook', '后台推演世界书', worldbookBody),
       data: sec('set-data', '数据导入/导出', dataBody),
+      backup: sec('set-backup', '世界存档备份', backupBody),
       tone: sec('set-tone', '附加提示词', toneBody)
     };
   }

@@ -86,7 +86,10 @@ window.WORLD_ENGINE_API = (function() {
     let u = url.trim().replace(/\/+$/, '');
     if (!u) return '';
     if (u.endsWith('/chat/completions')) return u;
-    if (u.endsWith('/v1')) return u + '/chat/completions';
+    // 已带版本前缀（/v1、/v3、/api/v3、/api/coding/v3 等）→ 只补 /chat/completions，不再硬塞 /v1；
+    // 否则火山方舟等自定义版本前缀会被拼成 .../v3/v1/chat/completions 而 404。
+    // 裸 host（无版本段）仍按 OpenAI 风格补 /v1/chat/completions，保持旧配置不破。
+    if (/\/v\d+$/.test(u)) return u + '/chat/completions';
     return u + '/v1/chat/completions';
   }
 

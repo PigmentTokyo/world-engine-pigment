@@ -1461,8 +1461,8 @@ ${persona}`
         console.log('[世界引擎] ✅ 推演完成（重roll），轮次不变');
       }
       core.saveStateWithLayer(state);
-      _abortController = null;
-      _isRunning = false;
+      // 推演成功后自动拍一份本地存档备份（防丢存档）；失败不影响推演结果
+      try { if (window.WORLD_ENGINE_BACKUP) window.WORLD_ENGINE_BACKUP.snapshot('auto'); } catch (e) {}
       return true;
 
     } catch(e) {
@@ -1473,11 +1473,14 @@ ${persona}`
         console.error('[世界引擎] 推演失败', e);
         _lastError = e && e.message ? e.message : '未知错误';
       }
-      Object.assign(state, backup);
-      core.saveState(state);
+      // 恢复前状态；恢复语句本身可能抛错（如 IDB 在内存压力下写失败），吞掉以免跳过 finally 复位
+      try { Object.assign(state, backup); core.saveState(state); } catch (_) {}
+      return false;
+    } finally {
+      // 无论成功/失败/恢复语句抛错，都复位并发控制标志；否则后续 evolve 会被 isRunning() 守卫永久跳过
+      // （即升级后内存压力下偶发"推演再也不工作了"的症状）
       _abortController = null;
       _isRunning = false;
-      return false;
     }
   }
 
