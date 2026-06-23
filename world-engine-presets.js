@@ -1705,7 +1705,7 @@
       + '- 若引用内置模块，modules[] 条目只写 `{ "id": "events", "kind": "builtin", "enabled": true, "order": 1 }` 这种形状。可引用内置模块：\n' + builtinRefs + '\n'
       + '- 自定义模块 id 和 field 必须是英文标识符，使用 camelCase 或 snake_case；不要使用内置 state 字段：events/factions/worldTrends/winds/economy/reputation/enemies/influenceChain/regionalIncident/blackbox/world_digest。\n'
       + '- 自定义模块 container 只能是 array/object/scalar/none；array/object 必须提供 fields；array 必须提供 itemKey 且 itemKey 必须存在于 fields。\n'
-      + '- fields 的每个字段至少写 type、description、example、display；type 可用 string/number/boolean/enum/array<string>/object。\n'
+      + '- fields 的每个字段至少写 label、type、description、example、display；label 是该字段在界面上显示的【中文名】（例如 intimacy 的 label 写「亲密度」），必须填写，不能省略，也不要直接用英文字段名当 label；type 可用 string/number/boolean/enum/array<string>/object。\n'
       + '- rules 写给推演 AI 的模块规则，说明什么时候新增、更新、删除或保持该模块数据。\n'
       + '- display 说明 UI 展示方式：style 可用 cards/table/keyvalue/list，titleField/badgeFields/bodyFields 只能引用 fields。\n'
       + '- mechanics 可选，只在需要时配置：dice 支持 mode=threshold/decay/trigger；stages 支持 states 或 order；verdicts 支持 axes 和 levels。\n\n'
@@ -1728,8 +1728,8 @@
       + '      "itemKey": "name",\n'
       + '      "rules": "用中文写清楚该模块如何根据剧情更新。",\n'
       + '      "fields": {\n'
-      + '        "name": { "type": "string", "description": "条目名称", "example": "示例名称", "display": true },\n'
-      + '        "status": { "type": "enum", "enum": ["低", "中", "高"], "description": "状态", "example": "中", "display": true }\n'
+      + '        "name": { "label": "名称", "type": "string", "description": "条目名称", "example": "示例名称", "display": true },\n'
+      + '        "status": { "label": "状态", "type": "enum", "enum": ["低", "中", "高"], "description": "状态", "example": "中", "display": true }\n'
       + '      },\n'
       + '      "display": { "style": "cards", "titleField": "name", "badgeFields": ["status"], "bodyFields": [], "emptyText": "暂无记录" },\n'
       + '      "mechanics": {}\n'
@@ -1739,7 +1739,7 @@
       + '  "ui": { "labels": {}, "moods": {}, "summaryEmpty": "世界尚未开始时显示的一句话" }\n'
       + '}\n'
       + '```\n\n'
-      + '注意：modules[] 至少 1 个启用模块；不要返回解释文字；所有说明和值使用中文，但 id/field/字段名使用英文标识符。';
+      + '注意：modules[] 至少 1 个启用模块；不要返回解释文字；所有说明和值使用中文。id/field/字段名（fields 的 key）使用英文标识符，但每个字段必须额外提供中文 label 作为界面显示名——界面只显示 label，绝不显示英文字段名。';
     return { systemPrompt: systemPrompt, userPrompt: userPrompt };
   }
 
