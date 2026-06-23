@@ -1154,6 +1154,32 @@
     });
     return result;
   }
+
+  // 自由模式：顶部状态条跟踪的「模块 + 字段 + 分档短语」。
+  // 数值字段用 min 从高到低分档；枚举/字符串字段用 value 精确匹配。无效则返回 null（UI 回退到稳定度小字）。
+  function normalizeHeaderMood(raw) {
+    if (!isPlainObject(raw)) return null;
+    var moduleId = normalizeText(raw.module || raw.moduleId || raw.id, '');
+    if (!moduleId) return null;
+    var tiersRaw = Array.isArray(raw.tiers) ? raw.tiers : [];
+    var tiers = tiersRaw.map(function (t) {
+      if (!isPlainObject(t)) return null;
+      var phrase = normalizeText(t.phrase || t.text || t.label, '');
+      if (!phrase) return null;
+      var entry = { phrase: phrase };
+      if (t.min != null && Number.isFinite(Number(t.min))) entry.min = Number(t.min);
+      if (t.value != null && String(t.value).trim() !== '') entry.value = normalizeText(t.value, '');
+      if (t.color != null) entry.color = normalizeText(t.color, '');
+      if (entry.min === undefined && entry.value === undefined) return null;
+      return entry;
+    }).filter(Boolean);
+    if (!tiers.length) return null;
+    var result = { module: moduleId, tiers: tiers };
+    var field = normalizeText(raw.field, '');
+    if (field) result.field = field;
+    if (raw.fallback != null) result.fallback = normalizeText(raw.fallback, '');
+    return result;
+  }
   function normalizePreset(raw, options) {
     options = options || {};
     var source = migratePreset(raw);
@@ -1196,7 +1222,8 @@
       disabledModules: Array.isArray(source.disabledModules)
         ? source.disabledModules.filter(function (m) { return typeof m === 'string' && m; })
         : [],
-      modules: mode === 'free' ? normalizeModuleDescriptors(source.modules) : []
+      modules: mode === 'free' ? normalizeModuleDescriptors(source.modules) : [],
+      headerMood: mode === 'free' ? normalizeHeaderMood(source.headerMood) : null
     };
     return preset;
   }
@@ -1708,7 +1735,8 @@
       + '- fields 的每个字段至少写 label、type、description、example、display；label 是该字段在界面上显示的【中文名】（例如 intimacy 的 label 写「亲密度」），必须填写，不能省略，也不要直接用英文字段名当 label；type 可用 string/number/boolean/enum/array<string>/object。\n'
       + '- rules 写给推演 AI 的模块规则，说明什么时候新增、更新、删除或保持该模块数据。\n'
       + '- display 说明 UI 展示方式：style 可用 cards/table/keyvalue/list，titleField/badgeFields/bodyFields 只能引用 fields。\n'
-      + '- mechanics 可选，只在需要时配置：dice 支持 mode=threshold/decay/trigger；stages 支持 states 或 order；verdicts 支持 axes 和 levels。\n\n'
+      + '- mechanics 可选，只在需要时配置：dice 支持 mode=threshold/decay/trigger；stages 支持 states 或 order；verdicts 支持 axes 和 levels。\n'
+      + '- headerMood 指定【顶部状态条】跟踪的模块与字段（自由模式下默认的稳定度只看内置模块，所以纯自定义世界必须靠 headerMood 才能让顶部那行字随剧情变化）：module 写上面某个模块的 id，field 写该模块里一个最能代表整体氛围的数值或枚举字段 key；tiers 是分档短语——数值字段用 min 从高到低分档（每档一句贴合世界观的氛围短语），枚举字段改用 value 精确匹配该字段的每个取值。务必填写 headerMood。\n\n'
       + '请严格按以下 JSON 返回，只返回 JSON：\n\n'
       + '```json\n'
       + '{\n'
@@ -1736,7 +1764,16 @@
       + '    }\n'
       + '  ],\n'
       + '  "customRules": "可选：整个自由预设的额外总规则",\n'
-      + '  "ui": { "labels": {}, "moods": {}, "summaryEmpty": "世界尚未开始时显示的一句话" }\n'
+      + '  "ui": { "labels": {}, "moods": {}, "summaryEmpty": "世界尚未开始时显示的一句话" },\n'
+      + '  "headerMood": {\n'
+      + '    "module": "上面某个模块的 id",\n'
+      + '    "field": "该模块里一个数值或枚举字段的 key",\n'
+      + '    "tiers": [\n'
+      + '      { "min": 70, "phrase": "高档位时顶部显示的氛围短语" },\n'
+      + '      { "min": 35, "phrase": "中档位短语" },\n'
+      + '      { "min": 0, "phrase": "低档位短语" }\n'
+      + '    ]\n'
+      + '  }\n'
       + '}\n'
       + '```\n\n'
       + '注意：modules[] 至少 1 个启用模块；不要返回解释文字；所有说明和值使用中文。id/field/字段名（fields 的 key）使用英文标识符，但每个字段必须额外提供中文 label 作为界面显示名——界面只显示 label，绝不显示英文字段名。';
@@ -1762,6 +1799,7 @@
       schemaOverrides: parsed.schemaOverrides || {},
       customRules: parsed.customRules || '',
       ui: parsed.ui || {},
+      headerMood: parsed.headerMood || null,
       termMap: {}
     };
     saveCustomPreset(preset);

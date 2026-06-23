@@ -337,6 +337,57 @@ window.WORLD_ENGINE_UI = (function() {
     return UMOOD(tier, fallback || '');
   }
 
+  // 自由模式：按 headerMood 配置，从某个自定义模块的字段值匹配出顶部短语。
+  // 数值值用 min 从高到低分档；字符串/枚举值用 value 精确匹配。命中返回 {text, color}，否则 null。
+  function matchHeaderTier(tiers, value, fallback) {
+    if (!Array.isArray(tiers)) return null;
+    for (let i = 0; i < tiers.length; i++) {
+      if (tiers[i] && tiers[i].value !== undefined && String(tiers[i].value) === String(value)) {
+        return { text: tiers[i].phrase, color: tiers[i].color };
+      }
+    }
+    const num = Number(value);
+    if (Number.isFinite(num) && String(value).trim() !== '') {
+      let best = null;
+      for (let j = 0; j < tiers.length; j++) {
+        if (tiers[j] && tiers[j].min !== undefined && num >= tiers[j].min) {
+          if (!best || tiers[j].min > best.min) best = tiers[j];
+        }
+      }
+      if (best) return { text: best.phrase, color: best.color };
+    }
+    if (fallback) return { text: fallback, color: undefined };
+    return null;
+  }
+
+  function freeHeaderMoodFromModules(state) {
+    if (!isFreePresetMode()) return null;
+    const P = _PRE();
+    const preset = P && P.getActivePreset && P.getActivePreset();
+    const hm = preset && preset.headerMood;
+    if (!hm || !hm.module || !Array.isArray(hm.tiers) || !hm.tiers.length) return null;
+    const descriptors = getActiveRenderDescriptors();
+    let desc = null;
+    for (let i = 0; i < descriptors.length; i++) {
+      if (descriptors[i] && descriptors[i].id === hm.module && descriptors[i].enabled !== false) { desc = descriptors[i]; break; }
+    }
+    if (!desc) return null;
+    const field = desc.field || desc.id;
+    const base = state && Object.prototype.hasOwnProperty.call(state, field) ? state[field] : undefined;
+    let cur;
+    if (desc.container === 'array') {
+      const arr = Array.isArray(base) ? base : [];
+      const last = arr.length ? arr[arr.length - 1] : null;
+      cur = (last && typeof last === 'object' && hm.field) ? last[hm.field] : last;
+    } else if (desc.container === 'object') {
+      cur = (base && typeof base === 'object' && hm.field) ? base[hm.field] : base;
+    } else {
+      cur = base;
+    }
+    if (cur == null || cur === '') return null;
+    return matchHeaderTier(hm.tiers, cur, hm.fallback);
+  }
+
   function worldCoreTitleText() {
     return isFreePresetMode() ? UL('世界概览') : UL('世界核心');
   }
@@ -351,8 +402,13 @@ window.WORLD_ENGINE_UI = (function() {
     const moodEl = document.getElementById('we-header-mood');
     if (moodEl) {
       const stab = computeWorldStability(state || {});
-      const color = STABILITY_TIER_COLOR[stab.tier] || '#58b8a9';
-      const text = stabilityMoodText(stab.tier);
+      let color = STABILITY_TIER_COLOR[stab.tier] || '#58b8a9';
+      let text = stabilityMoodText(stab.tier);
+      const hm = freeHeaderMoodFromModules(state || {});
+      if (hm && hm.text) {
+        text = hm.text;
+        if (hm.color) color = hm.color;
+      }
       const dot = moodEl.querySelector('.we-header-dot');
       const txt = moodEl.querySelector('.we-header-mood-text');
       if (dot) { dot.style.background = color; dot.style.boxShadow = '0 0 6px ' + color; }
