@@ -1173,11 +1173,13 @@
       if (entry.min === undefined && entry.value === undefined) return null;
       return entry;
     }).filter(Boolean);
-    if (!tiers.length) return null;
+    var defaultText = normalizeText(raw['default'] || raw.initial || raw.fallback, '');
+    if (!tiers.length && !defaultText) return null;
     var result = { module: moduleId, tiers: tiers };
     var field = normalizeText(raw.field, '');
     if (field) result.field = field;
-    if (raw.fallback != null) result.fallback = normalizeText(raw.fallback, '');
+    if (defaultText) result.fallback = defaultText;
+    if (raw.color != null) result.color = normalizeText(raw.color, '');
     return result;
   }
   function normalizePreset(raw, options) {
@@ -1736,7 +1738,7 @@
       + '- rules 写给推演 AI 的模块规则，说明什么时候新增、更新、删除或保持该模块数据。\n'
       + '- display 说明 UI 展示方式：style 可用 cards/table/keyvalue/list，titleField/badgeFields/bodyFields 只能引用 fields。\n'
       + '- mechanics 可选，只在需要时配置：dice 支持 mode=threshold/decay/trigger；stages 支持 states 或 order；verdicts 支持 axes 和 levels。\n'
-      + '- headerMood 指定【顶部状态条】跟踪的模块与字段（自由模式下默认的稳定度只看内置模块，所以纯自定义世界必须靠 headerMood 才能让顶部那行字随剧情变化）：module 写上面某个模块的 id，field 写该模块里一个最能代表整体氛围的数值或枚举字段 key；tiers 是分档短语——数值字段用 min 从高到低分档（每档一句贴合世界观的氛围短语），枚举字段改用 value 精确匹配该字段的每个取值。务必填写 headerMood。\n\n'
+      + '- headerMood 指定【顶部状态条】跟踪的模块与字段（自由模式下默认的稳定度只看内置模块，所以纯自定义世界必须靠 headerMood 才能让顶部那行字随剧情变化）：module 写上面某个模块的 id，field 写该模块里一个最能代表整体氛围的数值或枚举字段 key；tiers 是分档短语——数值字段用 min 从高到低分档（每档一句贴合世界观的氛围短语），枚举字段改用 value 精确匹配该字段的每个取值。另外必须填写 default：世界刚生成、第 0 轮还没有任何数据时顶部显示的初始短语（用来替换默认的「海静不扬波」），写一句贴合该世界开场氛围的话。务必填写 headerMood 和其中的 default。\n\n'
       + '请严格按以下 JSON 返回，只返回 JSON：\n\n'
       + '```json\n'
       + '{\n'
@@ -1768,6 +1770,7 @@
       + '  "headerMood": {\n'
       + '    "module": "上面某个模块的 id",\n'
       + '    "field": "该模块里一个数值或枚举字段的 key",\n'
+      + '    "default": "世界刚开始、还没有任何数据时顶部显示的短语",\n'
       + '    "tiers": [\n'
       + '      { "min": 70, "phrase": "高档位时顶部显示的氛围短语" },\n'
       + '      { "min": 35, "phrase": "中档位短语" },\n'

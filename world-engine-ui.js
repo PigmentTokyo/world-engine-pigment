@@ -365,13 +365,15 @@ window.WORLD_ENGINE_UI = (function() {
     const P = _PRE();
     const preset = P && P.getActivePreset && P.getActivePreset();
     const hm = preset && preset.headerMood;
-    if (!hm || !hm.module || !Array.isArray(hm.tiers) || !hm.tiers.length) return null;
+    if (!hm || !hm.module) return null;
+    // 模板自带的初始/兜底短语：只要预设定义了 headerMood，就用它替换默认的「海静不扬波」
+    const def = hm.fallback ? { text: hm.fallback, color: hm.color } : null;
     const descriptors = getActiveRenderDescriptors();
     let desc = null;
     for (let i = 0; i < descriptors.length; i++) {
       if (descriptors[i] && descriptors[i].id === hm.module && descriptors[i].enabled !== false) { desc = descriptors[i]; break; }
     }
-    if (!desc) return null;
+    if (!desc) return def;
     const field = desc.field || desc.id;
     const base = state && Object.prototype.hasOwnProperty.call(state, field) ? state[field] : undefined;
     let cur;
@@ -384,8 +386,8 @@ window.WORLD_ENGINE_UI = (function() {
     } else {
       cur = base;
     }
-    if (cur == null || cur === '') return null;
-    return matchHeaderTier(hm.tiers, cur, hm.fallback);
+    if (cur == null || cur === '') return def;
+    return matchHeaderTier(hm.tiers, cur) || def;
   }
 
   function worldCoreTitleText() {
