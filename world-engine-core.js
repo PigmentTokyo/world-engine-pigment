@@ -95,6 +95,18 @@ window.WORLD_ENGINE_CORE = (function() {
     return text.replace(/\{\{user\}\}/g, name);
   }
 
+  /** 发给模型前替换 SillyTavern 宏（{{user}}/{{char}} 等）为真实值。
+   *  插件自有 API 调用不走 ST 的提示词管线，所以 {{user}} 不会被自动替换，
+   *  必须在这里手动处理，否则模型会把 {{user}} 原样写成 "user"。 */
+  function substituteMacros(text) {
+    if (!text || typeof text !== 'string') return text;
+    try {
+      const ctx = SillyTavern.getContext();
+      if (ctx && typeof ctx.substituteParams === 'function') return ctx.substituteParams(text);
+    } catch (e) {}
+    return renderUserName(text);
+  }
+
   function getChatId() {
     try {
       const ctx = SillyTavern.getContext();
@@ -771,7 +783,7 @@ window.WORLD_ENGINE_CORE = (function() {
     getDefaultState, getChatId, loadState, hasState, saveState, clearState, saveStateWithLayer,
     validateCustomModuleStateFields, getCustomModuleStateKey, pruneStoredCustomModuleState,
     addMemory, addEvent, addFaction, addWorldTrend, addWind,
-    ensureEventFields, getUserName, getUserPersona, renderUserName,
+    ensureEventFields, getUserName, getUserPersona, renderUserName, substituteMacros,
     saveCheckpoint, restoreCheckpoint, clearCheckpoint, getAnchorLayer, setAnchorLayer,
     getChatLayer, getChatFingerprint, saveFingerprint, loadFingerprint, isNewRound,
     getCleanExport, importState,

@@ -183,6 +183,10 @@ window.WORLD_ENGINE_API = (function() {
    * 调用独立 API（非酒馆自带），OpenAI 兼容格式
    */
   async function callApi(prompt, maxTokens, temperature, signal) {
+    try {
+      const _core = window.WORLD_ENGINE_CORE;
+      if (_core && typeof _core.substituteMacros === 'function') prompt = _core.substituteMacros(prompt);
+    } catch (e) {}
     const settings = getSettings();
     const url = normalizeUrl(settings.apiUrl);
     if (!url) throw new Error('未配置 API URL，请在设置中填写');
