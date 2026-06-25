@@ -22,6 +22,7 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
   var _generateEntriesLoading = false;
   var _generateEntriesError = '';
   var _generateSelectedIds = null;
+  var _generateGuidance = '';   // 内存暂存的生成指导（仅本次会话，不持久化）
   var GENERATE_WITH_CHARACTER_KEY = 'world_engine_generate_with_character_profile';
   var GENERATE_MODE_KEY = 'world_engine_generate_mode';
   var GENERATE_AUTO_CROP_KEY = 'world_engine_generate_auto_crop';
@@ -786,6 +787,10 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
           '<input id="we-preset-generate-count" type="number" min="1" max="12" value="' + esc(moduleCount) + '" title="模块数量" style="width:58px;">' +
         '</div>' +
         listHtml +
+        '<div class="we-generate-mode-row" style="flex-direction:column;align-items:stretch;gap:4px;">' +
+          '<label class="we-hint" style="margin:0;">生成指导（可留空）</label>' +
+          '<textarea id="we-preset-generate-guidance" rows="2" placeholder="用一句话引导 AI，例如：突出宫廷权谋、淡化战斗；或 这是赛博朋克世界，重点追踪义体与企业势力" style="width:100%;resize:vertical;">' + esc(_generateGuidance || '') + '</textarea>' +
+        '</div>' +
         '<div class="we-generate-footer">' +
           '<label class="we-hint" style="display:flex;align-items:center;gap:6px;margin:0;"><input type="checkbox" id="we-preset-generate-character"' + (includeCharacter ? ' checked' : '') + '> 同时读取当前角色卡描述</label>' +
           '<button class="we-btn we-btn-primary" id="we-preset-generate-start"' + (_generating || _generateEntriesLoading ? ' disabled' : '') + '>开始生成</button>' +
@@ -796,6 +801,18 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
   // ─────────────────────────────────────────────
   // Section 1: 世界观预设 (Preset Selector)
   // ─────────────────────────────────────────────
+  // 当前预设是否显示稳定度仪表：手动覆盖（store）优先，其次预设自带 showStability。
+  function isStabilityShownForPreset(preset) {
+    if (!preset) return true;
+    try {
+      var store = window.WORLD_ENGINE_STORE;
+      var ov = store && store.getItem ? store.getItem('world_engine_show_stability_' + preset.id) : null;
+      if (ov === 'true') return true;
+      if (ov === 'false') return false;
+    } catch (e) {}
+    return preset.showStability !== false;
+  }
+
   function buildPresetSelectorHTML() {
     var P = getPresets();
     if (!P) return '<div class="we-empty">预设系统未加载</div>';
@@ -815,6 +832,7 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
     var badgeClass = activePreset.builtin ? 'builtin' : 'custom';
     var badgeText = activePreset.builtin ? '内置预设' : '自定义预设';
     var includeCharacter = getGenerateWithCharacter();
+    var showStability = isStabilityShownForPreset(activePreset);
 
     return '' +
       '<div class="we-section">' +
@@ -830,6 +848,7 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
           '</div>' +
           '<div class="we-preset-card-desc">' + esc(activePreset.description) + '</div>' +
         '</div>' +
+        '<label class="we-hint" style="display:flex;align-items:center;gap:6px;margin:6px 0 0;cursor:pointer;"><input type="checkbox" id="we-preset-show-stability"' + (showStability ? ' checked' : '') + '> 显示世界稳定度仪表（恋爱 / 日常类世界可关闭）</label>' +
         '<div class="we-preset-actions">' +
           '<button class="we-btn we-btn-primary" id="we-preset-apply">应用</button>' +
           '<button class="we-btn" id="we-preset-generate"' + (_generating ? ' disabled' : '') + '>' + (_generateMenuOpen ? '收起生成设置' : '从设定生成') + '</button>' +
@@ -2121,6 +2140,16 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
       return;
     }
 
+    if (target.id === 'we-preset-show-stability') {
+      var Pss = getPresets();
+      var apss = Pss && Pss.getActivePreset ? Pss.getActivePreset() : null;
+      if (apss) {
+        try { window.WORLD_ENGINE_STORE.setItem('world_engine_show_stability_' + apss.id, target.checked ? 'true' : 'false'); } catch (e) {}
+      }
+      if (window.WORLD_ENGINE_UI && typeof window.WORLD_ENGINE_UI.refresh === 'function') window.WORLD_ENGINE_UI.refresh(false);
+      return;
+    }
+
     if (target.classList && target.classList.contains('we-free-module-kind')) {
       var card = target.closest('.we-free-module-card');
       if (card && card.parentNode) {
@@ -2180,6 +2209,8 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
     var autoCropModules = autoCropInput ? !!autoCropInput.checked : getGenerateAutoCrop();
     var moduleCountMode = countModeInput ? countModeInput.value : getGenerateCountMode();
     var moduleCount = countInput ? countInput.value : getGenerateCount();
+    var guidanceInput = document.getElementById('we-preset-generate-guidance');
+    _generateGuidance = guidanceInput ? guidanceInput.value : _generateGuidance;
     saveGenerateMode(generationMode);
     saveGenerateAutoCrop(autoCropModules);
     saveGenerateCountMode(moduleCountMode);
@@ -2205,7 +2236,8 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
         generationMode: generationMode,
         autoCropModules: autoCropModules,
         moduleCountMode: moduleCountMode,
-        moduleCount: moduleCount
+        moduleCount: moduleCount,
+        userGuidance: _generateGuidance
       });
       if (newPreset) {
         // Switch to the newly generated preset

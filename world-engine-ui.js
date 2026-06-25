@@ -402,7 +402,9 @@ window.WORLD_ENGINE_UI = (function() {
       roundEl.textContent = '第 ' + ((state && state.round) || 0) + ' 轮' + layerText;
     }
     const moodEl = document.getElementById('we-header-mood');
+    if (moodEl && !isStabilityShown()) { moodEl.style.display = 'none'; return; }
     if (moodEl) {
+      moodEl.style.display = '';
       const stab = computeWorldStability(state || {});
       let color = STABILITY_TIER_COLOR[stab.tier] || '#58b8a9';
       let text = stabilityMoodText(stab.tier);
@@ -667,6 +669,21 @@ window.WORLD_ENGINE_UI = (function() {
     } catch (e) { return false; }
   }
 
+  // 世界稳定度仪表是否显示：手动覆盖（store，按预设 id）优先，其次预设自带的
+  // showStability，默认显示。关闭时隐藏世界核心环与顶部档位小字。
+  function isStabilityShown() {
+    try {
+      const P = window.WORLD_ENGINE_PRESETS;
+      const preset = P && P.getActivePreset && P.getActivePreset();
+      if (!preset) return true;
+      const store = window.WORLD_ENGINE_STORE;
+      const ov = store && store.getItem ? store.getItem('world_engine_show_stability_' + preset.id) : null;
+      if (ov === 'true') return true;
+      if (ov === 'false') return false;
+      return preset.showStability !== false;
+    } catch (e) { return true; }
+  }
+
   function getActiveRenderDescriptors() {
     try {
       const rules = window.WORLD_ENGINE_RULES;
@@ -852,6 +869,7 @@ window.WORLD_ENGINE_UI = (function() {
 
   /** 世界核心：环形稳定度仪表 + 四格关键计数 */
   function renderWorldCore(s) {
+    if (!isStabilityShown()) return '';
     const stab = computeWorldStability(s);
     const tierColor = STABILITY_TIER_COLOR[stab.tier] || '#58b8a9';
     const detail = Object.entries(stab.breakdown)
@@ -2193,17 +2211,39 @@ window.WORLD_ENGINE_UI = (function() {
         <input type="file" id="we-import-file" accept=".json" style="display:none;">
       </div>`;
     const includePresetForTone = window.WORLD_ENGINE_STORE?.getItem?.('world_engine_tone_generate_with_preset') !== 'false';
+    const toneLibraryOptions = (function () {
+      try {
+        const raw = window.WORLD_ENGINE_STORE?.getItem?.('world_engine_tone_library');
+        const list = raw ? (JSON.parse(raw) || []) : [];
+        if (!Array.isArray(list) || !list.length) return '<option value="">（库为空）</option>';
+        const escAttr = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        return '<option value="">— 选择已保存的提示词 —</option>' + list.map((it) =>
+          '<option value="' + escAttr(it.id) + '">' + escAttr(it.name || '(未命名)') + '</option>').join('');
+      } catch (e) { return '<option value="">（库为空）</option>'; }
+    })();
     const toneBody = `
-      <div style="display:flex;gap:6px;flex-wrap:wrap;">
-        <button class="we-btn we-btn-primary" id="we-tone-generate">&#20174;&#35774;&#23450;&#29983;&#25104;</button>
+      <textarea id="we-tone-text" rows="5" style="width:100%;resize:vertical;" placeholder="在此查看或编辑当前聊天的附加提示词，编辑后点「保存编辑」生效…"></textarea>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
+        <button class="we-btn we-btn-primary" id="we-tone-save-text">保存编辑</button>
+        <button class="we-btn" id="we-tone-generate">&#20174;&#35774;&#23450;&#29983;&#25104;</button>
         <button class="we-btn" id="we-tone-import">导入</button>
         <button class="we-btn" id="we-tone-export">导出</button>
         <button class="we-btn" id="we-tone-clear">清除</button>
         <input type="file" id="we-tone-file" accept=".txt" style="display:none;">
       </div>
+      <input type="text" id="we-tone-guidance" placeholder="生成指导（可留空）：例如 侧重战斗紧张感、强调资源稀缺" style="width:100%;margin-top:6px;">
       <label class="we-hint" style="display:flex;align-items:center;gap:6px;margin-top:6px;">
         <input type="checkbox" id="we-tone-generate-preset" ${includePresetForTone ? 'checked' : ''}> &#29983;&#25104;&#26102;&#21442;&#32771;&#24403;&#21069;&#19990;&#30028;&#39044;&#35774;
       </label>
+      <div style="border-top:1px solid var(--we-border,rgba(255,255,255,0.1));margin-top:10px;padding-top:8px;">
+        <label class="we-hint" style="display:block;margin-bottom:4px;">提示词库（全局共享，可跨聊天复用）</label>
+        <select id="we-tone-library" style="width:100%;">${toneLibraryOptions}</select>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
+          <button class="we-btn we-btn-primary" id="we-tone-lib-apply">切换为此条</button>
+          <button class="we-btn" id="we-tone-lib-save">保存当前到库</button>
+          <button class="we-btn we-btn-danger" id="we-tone-lib-delete">删除此条</button>
+        </div>
+      </div>
       <div class="we-hint" id="we-tone-status" style="margin-top:6px;"></div>`;
     const backupBody = window.WORLD_ENGINE_BACKUP && window.WORLD_ENGINE_BACKUP.sectionBodyHtml
       ? window.WORLD_ENGINE_BACKUP.sectionBodyHtml()
@@ -3647,7 +3687,37 @@ window.WORLD_ENGINE_UI = (function() {
       const t = getTonePrompt().trim();
       el.textContent = t ? `当前已设置附加提示词（${t.length} 字）` : '当前未设置附加提示词';
     }
+    function fillToneText() {
+      const ta = document.getElementById('we-tone-text');
+      if (ta) ta.value = getTonePrompt();
+    }
+    const TONE_LIBRARY_KEY = 'world_engine_tone_library';
+    function getToneLibrary() {
+      try {
+        const raw = window.WORLD_ENGINE_STORE?.getItem?.(TONE_LIBRARY_KEY);
+        const list = raw ? JSON.parse(raw) : [];
+        return Array.isArray(list) ? list : [];
+      } catch (e) { return []; }
+    }
+    function setToneLibrary(list) {
+      try {
+        window.WORLD_ENGINE_STORE?.setItem?.(TONE_LIBRARY_KEY, JSON.stringify(Array.isArray(list) ? list : []));
+      } catch (e) {}
+    }
+    function refreshToneLibrarySelect(selectedId) {
+      const sel = document.getElementById('we-tone-library');
+      if (!sel) return;
+      const list = getToneLibrary();
+      const escHtml = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      if (!list.length) {
+        sel.innerHTML = '<option value="">（库为空）</option>';
+        return;
+      }
+      sel.innerHTML = '<option value="">— 选择已保存的提示词 —</option>' + list.map((it) =>
+        '<option value="' + escHtml(it.id) + '"' + (it.id === selectedId ? ' selected' : '') + '>' + escHtml(it.name || '(未命名)') + '</option>').join('');
+    }
     updateToneStatus();
+    fillToneText();
 
     const toneGeneratePreset = document.getElementById('we-tone-generate-preset');
     if (toneGeneratePreset) {
@@ -3671,12 +3741,15 @@ window.WORLD_ENGINE_UI = (function() {
         try {
           const includeCharacterDescription = window.WORLD_ENGINE_STORE?.getItem?.('world_engine_generate_with_character_profile') !== 'false';
           const includePreset = document.getElementById('we-tone-generate-preset')?.checked !== false;
+          const userGuidance = (document.getElementById('we-tone-guidance')?.value || '').trim();
           const text = await window.WORLD_ENGINE_PRESETS.generateTonePrompt({
             includeCharacterDescription: includeCharacterDescription,
             includeUserPersona: true,
-            includePreset: includePreset
+            includePreset: includePreset,
+            userGuidance: userGuidance
           });
           saveTonePrompt(text);
+          fillToneText();
           updateToneStatus();
           showToast('\u9644\u52a0\u63d0\u793a\u8bcd\u5df2\u751f\u6210');
         } catch (e) {
@@ -3702,6 +3775,7 @@ window.WORLD_ENGINE_UI = (function() {
           const text = String(ev.target.result || '').trim();
           if (!text) { showToast('文件为空', true); return; }
           saveTonePrompt(text);
+          fillToneText();
           updateToneStatus();
           showToast('附加提示词已导入');
         };
@@ -3731,8 +3805,78 @@ window.WORLD_ENGINE_UI = (function() {
       toneClearBtn.onclick = () => {
         if (!getTonePrompt().trim()) { showToast('当前无附加提示词', true); return; }
         saveTonePrompt('');
+        fillToneText();
         updateToneStatus();
         showToast('附加提示词已清除');
+      };
+    }
+
+    const toneSaveTextBtn = document.getElementById('we-tone-save-text');
+    if (toneSaveTextBtn) {
+      toneSaveTextBtn.onclick = () => {
+        const ta = document.getElementById('we-tone-text');
+        const text = ta ? ta.value : '';
+        saveTonePrompt(text);
+        updateToneStatus();
+        showToast('附加提示词已保存');
+      };
+    }
+
+    const toneLibApplyBtn = document.getElementById('we-tone-lib-apply');
+    if (toneLibApplyBtn) {
+      toneLibApplyBtn.onclick = () => {
+        const sel = document.getElementById('we-tone-library');
+        const id = sel ? sel.value : '';
+        if (!id) { showToast('请先在列表中选择一条提示词', true); return; }
+        const item = getToneLibrary().find((it) => it.id === id);
+        if (!item) { showToast('未找到该提示词，可能已被删除', true); return; }
+        saveTonePrompt(item.content || '');
+        fillToneText();
+        updateToneStatus();
+        showToast('已切换为「' + (item.name || '未命名') + '」');
+      };
+    }
+
+    const toneLibSaveBtn = document.getElementById('we-tone-lib-save');
+    if (toneLibSaveBtn) {
+      toneLibSaveBtn.onclick = () => {
+        const ta = document.getElementById('we-tone-text');
+        const content = (ta ? ta.value : getTonePrompt()) || '';
+        if (!content.trim()) { showToast('当前无内容可保存到库', true); return; }
+        const name = (window.prompt('给这条附加提示词起个名字：', '') || '').trim();
+        if (!name) { showToast('已取消保存', true); return; }
+        const list = getToneLibrary();
+        const existing = list.find((it) => it.name === name);
+        if (existing) {
+          existing.content = content;
+          existing.ts = Date.now();
+          setToneLibrary(list);
+          refreshToneLibrarySelect(existing.id);
+          showToast('已更新库中的「' + name + '」');
+        } else {
+          const id = 'tone_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+          list.push({ id: id, name: name, content: content, ts: Date.now() });
+          setToneLibrary(list);
+          refreshToneLibrarySelect(id);
+          showToast('已保存「' + name + '」到库');
+        }
+      };
+    }
+
+    const toneLibDeleteBtn = document.getElementById('we-tone-lib-delete');
+    if (toneLibDeleteBtn) {
+      toneLibDeleteBtn.onclick = () => {
+        const sel = document.getElementById('we-tone-library');
+        const id = sel ? sel.value : '';
+        if (!id) { showToast('请先在列表中选择一条提示词', true); return; }
+        const list = getToneLibrary();
+        const idx = list.findIndex((it) => it.id === id);
+        if (idx < 0) { showToast('未找到该提示词', true); return; }
+        const name = list[idx].name || '未命名';
+        list.splice(idx, 1);
+        setToneLibrary(list);
+        refreshToneLibrarySelect('');
+        showToast('已从库删除「' + name + '」');
       };
     }
 

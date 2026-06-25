@@ -1225,7 +1225,9 @@
         ? source.disabledModules.filter(function (m) { return typeof m === 'string' && m; })
         : [],
       modules: mode === 'free' ? normalizeModuleDescriptors(source.modules) : [],
-      headerMood: mode === 'free' ? normalizeHeaderMood(source.headerMood) : null
+      headerMood: mode === 'free' ? normalizeHeaderMood(source.headerMood) : null,
+      // 是否显示顶部「世界稳定度」仪表；默认显示，仅当明确为 false 时隐藏。
+      showStability: source.showStability !== false
     };
     return preset;
   }
@@ -1714,6 +1716,16 @@
     return modules;
   }
 
+  // 用户在生成时手填的「指导提示词」。返回一段可直接拼进 prompt 的高优先级指令；
+  // 留空则返回空串，完全不影响原有生成逻辑。
+  function buildUserGuidanceSection(userGuidance) {
+    var g = String(userGuidance == null ? '' : userGuidance).trim();
+    if (!g) return '';
+    if (g.length > 4000) g = g.substring(0, 4000).trim();
+    return '## 用户额外指导（最高优先级，请优先满足，但绝不能违反上面要求的输出格式）\n\n'
+      + g + '\n\n';
+  }
+
   function buildFreeGenerationPrompt(source, options) {
     options = options || {};
     var builtinRefs = buildBuiltinModuleReferenceText();
@@ -1727,6 +1739,7 @@
     var systemPrompt = '你是一个世界观结构设计专家。用户会给你世界书条目和/或角色卡描述。你需要自行判断这个世界真正需要被追踪的机制，并输出世界引擎自由模式预设。';
     var userPrompt = '请分析以下设定内容，生成一个自由模式世界引擎预设。\n\n'
       + source.sections + '\n\n'
+      + buildUserGuidanceSection(options.userGuidance)
       + '## 自由模式要求\n\n'
       + '- 不要套用固定十二模块；请按世界观自行决定需要哪些模块。\n'
       + countPrompt
@@ -1739,12 +1752,14 @@
       + '- display 说明 UI 展示方式：style 可用 cards/table/keyvalue/list，titleField/badgeFields/bodyFields 只能引用 fields。\n'
       + '- mechanics 可选，只在需要时配置：dice 支持 mode=threshold/decay/trigger；stages 支持 states 或 order；verdicts 支持 axes 和 levels。\n'
       + '- headerMood 指定【顶部状态条】跟踪的模块与字段（自由模式下默认的稳定度只看内置模块，所以纯自定义世界必须靠 headerMood 才能让顶部那行字随剧情变化）：module 写上面某个模块的 id，field 写该模块里一个最能代表整体氛围的数值或枚举字段 key；tiers 是分档短语——数值字段用 min 从高到低分档（每档一句贴合世界观的氛围短语），枚举字段改用 value 精确匹配该字段的每个取值。另外必须填写 default：世界刚生成、第 0 轮还没有任何数据时顶部显示的初始短语（用来替换默认的「海静不扬波」），写一句贴合该世界开场氛围的话。务必填写 headerMood 和其中的 default。\n\n'
+      + '- showStability：布尔值，是否需要顶部「世界稳定度/压力」仪表。若这个自由世界以人物关系、恋爱、日常为核心、没有宏观局势压力，设为 false；否则 true。拿不准设为 true。\n\n'
       + '请严格按以下 JSON 返回，只返回 JSON：\n\n'
       + '```json\n'
       + '{\n'
       + '  "name": "预设显示名称",\n'
       + '  "description": "一句话描述这个自由世界预设",\n'
       + '  "mode": "free",\n'
+      + '  "showStability": true,\n'
       + '  "modules": [\n'
       + '    { "id": "events", "kind": "builtin", "enabled": true, "order": 1 },\n'
       + '    {\n'
@@ -1803,6 +1818,7 @@
       customRules: parsed.customRules || '',
       ui: parsed.ui || {},
       headerMood: parsed.headerMood || null,
+      showStability: parsed.showStability !== false,
       termMap: {}
     };
     saveCustomPreset(preset);
@@ -1973,6 +1989,7 @@
       + '## 世界书内容\n\n' + (worldbookText || '（未提供世界书条目）') + '\n\n'
       + characterSection
       + personaSection
+      + buildUserGuidanceSection(options.userGuidance)
       + moduleSelectionPrompt
       + '## 要求\n\n'
       + '请严格按以下JSON格式返回结果（只返回JSON，不要返回其他内容）：\n\n'
@@ -1980,6 +1997,7 @@
       + '{\n'
       + '  "name": "预设显示名称",\n'
       + '  "description": "对这个世界观的一句话描述",\n'
+      + '  "showStability": true,\n'
       + '  "disabledModules": [],\n'
       + '  "reputation": {\n'
       + '    "dimensions": {\n'
@@ -2052,6 +2070,7 @@
       + '- ui.labels 直接定义界面显示文案：key 必须原样使用上面给出的中文词，value 是当前世界观下自然的叫法（例如赛博朋克可把“世界核心”改为“系统核心”、“账本”改为“事件日志”）。\n'
       + '- ui.moods 的 key 必须用固定的五档（天下太平/暗流浮动/局势紧张/动荡失序/崩坏边缘），value 是该世界观下对应稳定度档位的一句氛围短语（替换古风诗句）。\n'
       + '- ui.moduleLabels 定义12个推演模块在“模块开关”面板里的显示名：key 必须原样使用上面给出的英文 moduleId（world/events/factions/winds/influence/contact/reputation/economy/enemies/regional/blackbox/trends），value 保留“模块X：”前缀、只把冒号后的词替换成当前世界观的叫法（例如赛博朋克“模块三：势力”→“模块三：企业”，“模块十一：信息黑盒”→“模块十一：暗网档案”）。必须12个模块全部给出，不要遗漏。\n'
+      + '- showStability：布尔值。是否需要顶部「世界稳定度」仪表（追踪宏观局势、势力博弈、经济动荡、危机升级汇总的总压力）。若世界以人物关系、恋爱、日常、单一场景为核心、缺乏宏观势力/经济/冲突动态，设为 false；若为王朝、势力争霸、末世、战争、政治等宏观叙事，设为 true。拿不准时设为 true。\n'
       + '- 只返回JSON，不要有额外文字\n'
       + '- 如果本次要求返回 disabledModules，必须放在顶层，且只能包含这些英文 moduleId：' + BUILTIN_MODULE_IDS.join(', ')
       + '\n- schemaOverrides 设计原则：只为“世界运转真正重要、会反复追踪、会影响推演判断”的概念新增字段；不要把长设定、背景介绍、一次性描述塞进字段。'
@@ -2091,7 +2110,8 @@
       ui: parsed.ui || {},
       schemaOverrides: parsed.schemaOverrides || {},
       disabledModules: validateGeneratedDisabledModules(parsed.disabledModules, moduleSelection),
-      customRules: ''
+      customRules: '',
+      showStability: parsed.showStability !== false
     };
 
     // Validate basic structure integrity — fill in missing nested fields with defaults
@@ -2137,8 +2157,10 @@
       throw new Error('[WorldEngine Presets] window.WORLD_ENGINE_API.callApi is not available');
     }
 
+    var guidanceSection = buildUserGuidanceSection(options.userGuidance);
     var prompt = 'You generate an extra prompt for World Engine background simulation. Output concise Simplified Chinese text only.\n\n'
       + source.sections + '\n\n'
+      + guidanceSection
       + 'Requirements:\n'
       + '- Return only the prompt body. Do not return JSON, explanations, or code fences.\n'
       + '- Make simulation fit this world: world operating logic, priorities, hard constraints, trackable states, and common failure modes.\n'
