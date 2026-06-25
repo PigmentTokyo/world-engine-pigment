@@ -526,11 +526,18 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
       '.we-confirm-overlay {',
       '  position: fixed;',
       '  top: 0; left: 0; right: 0; bottom: 0;',
+      '  height: 100vh; height: 100dvh;',  /* dvh 适配手机动态视口；vh 作为旧内核回退 */
       '  background: rgba(0,0,0,0.6);',
-      '  z-index: 99999;',
+      '  z-index: 100002;',
       '  display: flex;',
+      '  flex-direction: column;',  /* 配合 margin:auto：空间够则垂直居中，不够则顶部贴可滚动区、能下滚 */
       '  align-items: center;',
-      '  justify-content: center;',
+      '  justify-content: flex-start;',
+      '  overflow-y: auto;',  /* 框比屏幕高时可滚动看到全部，避免 flex 顶部裁切 */
+      '  -webkit-overflow-scrolling: touch;',
+      '  overscroll-behavior: contain;',
+      '  padding: 16px;',
+      '  box-sizing: border-box;',
       '}',
       '.we-confirm-box {',
       '  background: var(--we-bg1, #151520);',
@@ -538,6 +545,7 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
       '  border-radius: 8px;',
       '  padding: 20px 24px;',
       '  max-width: 360px;',
+      '  margin: auto;',  /* 在 column flex 中实现「可居中、又不会把顶部推出屏幕」 */
       '  text-align: center;',
       '  color: var(--we-text1, #eee);',
       '}',
@@ -676,6 +684,8 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
    */
   function showConfirm(message) {
     return new Promise(function (resolve) {
+      // 弹出前收起软键盘，避免手机上「键盘顶起视口」导致弹窗错位/看不见
+      try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (e) {}
       var overlay = document.createElement('div');
       overlay.className = 'we-confirm-overlay';
       overlay.innerHTML =
@@ -1358,6 +1368,7 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
 
   function showSchemaPreviewConfirm(jsonText) {
     return new Promise(function (resolve) {
+      try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (e) {}
       var overlay = document.createElement('div');
       overlay.className = 'we-confirm-overlay';
       overlay.innerHTML =
