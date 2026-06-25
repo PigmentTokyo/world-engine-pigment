@@ -59,7 +59,12 @@ window.WORLD_ENGINE_API = (function() {
       evolveTimeRe4: '', evolveTimeRe5: '', evolveTimeRe6: '',
       evolveTimeMul1: 360, evolveTimeMul2: 30, evolveTimeMul3: 1,
       evolveTimeThreshold: 1,
-      evolveTimeMaxRounds: 10
+      evolveTimeMaxRounds: 10,
+      // [FIX 移植自上游 2.3.15] API 请求超时（毫秒）。0 = 不超时（旧行为）。默认 120s：
+      //   推演请求若落入网络黑洞（代理无响应/上游不返回也不报错），fetch 会永久挂起，
+      //   evolve 的 _isRunning 永不复位，此后所有自动推演被 isRunning() 守卫静默跳过，
+      //   直到用户切一次聊天才解锁。超时让挂起请求按失败处理，finally 正常复位。
+      apiTimeoutMs: 120000
     };
     const raw = window.WORLD_ENGINE_STORE.getItem('world_engine_settings');
     let parsed = {};
@@ -153,10 +158,48 @@ window.WORLD_ENGINE_API = (function() {
     return message || 'API 网络请求失败';
   }
 
+  // [FIX 移植自上游 2.3.15] 带超时的 fetch：把调用方传入的 signal（用户主动中止 / 切聊天）
+  //   与内部超时计时器合并到同一次请求。超时触发 => controller.abort()，但抛出的是普通 Error
+  //   （非 AbortError），这样 evolve 的 catch 会按「推演失败」处理并复位 _isRunning，状态栏显示
+  //   明确超时原因；用户主动中止仍走外部 signal 的 AbortError，buildNetworkErrorMessage 显示「已取消」。
+  //   apiTimeoutMs <= 0 时不设超时（保留旧行为）。
+  async function fetchWithTimeout(url, options) {
+    const { signal: externalSignal, ...rest } = options || {};
+    let timeoutMs = 120000;
+    try {
+      const t = Number(getSettings().apiTimeoutMs);
+      if (Number.isFinite(t)) timeoutMs = t;
+    } catch (e) {}
+
+    if (!(timeoutMs > 0)) {
+      return fetch(url, { ...rest, signal: externalSignal || null });
+    }
+
+    const controller = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
+    const onExternalAbort = () => controller.abort();
+    if (externalSignal) {
+      if (externalSignal.aborted) controller.abort();
+      else externalSignal.addEventListener('abort', onExternalAbort, { once: true });
+    }
+    try {
+      return await fetch(url, { ...rest, signal: controller.signal });
+    } catch (e) {
+      if (timedOut) {
+        throw new Error('API 请求超时（' + Math.round(timeoutMs / 1000) + 's 无响应），已中止本次推演');
+      }
+      throw e;   // 外部中止 => 原样抛 AbortError
+    } finally {
+      clearTimeout(timer);
+      if (externalSignal) externalSignal.removeEventListener('abort', onExternalAbort);
+    }
+  }
+
   async function fetchJson(url, options) {
     let resp;
     try {
-      resp = await fetch(url, options);
+      resp = await fetchWithTimeout(url, options);
     } catch(e) {
       throw new Error(buildNetworkErrorMessage(e, url));
     }
