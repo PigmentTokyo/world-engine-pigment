@@ -2266,7 +2266,14 @@ window.WORLD_ENGINE_UI = (function() {
       </div>`;
 
     const displayMode = settings.displayMode === 'expand' ? 'expand' : 'mask';
+    const _curTheme = getStoredTheme();
+    const _themeOpts = WE_THEMES.map(t => '<option value="' + t.id + '"' + (t.id === _curTheme ? ' selected' : '') + '>' + t.name + '</option>').join('');
     const displayBody = `
+      <div class="we-input-group">
+        <label>主题配色</label>
+        <select id="we-theme-select" style="width:100%;">${_themeOpts}</select>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">切换即时生效，无需保存。深色：墨玉 / 夜阑 / 深海 / 夜合；浅色：云白 / 早樱。</div>
+      </div>
       <div class="we-input-group">
         <label>主页显示模式</label>
         <select id="we-display-mode" style="width:100%;">
@@ -3420,6 +3427,10 @@ window.WORLD_ENGINE_UI = (function() {
       };
     }
 
+    // 主题配色：即时应用 + 持久化，不 refresh（纯 CSS，避免清空正在编辑的设置表单）
+    const themeSel = document.getElementById('we-theme-select');
+    if (themeSel) themeSel.onchange = () => setTheme(themeSel.value);
+
     // 推演模式切换：按轮显示 X/a，按时间显示时间组，手动都隐藏
     const evolveModeSel = document.getElementById('we-evolve-mode');
     if (evolveModeSel) {
@@ -4048,6 +4059,34 @@ window.WORLD_ENGINE_UI = (function() {
   function togglePanel() {
     if (panelVisible) hidePanel();
     else showPanel();
+  }
+
+  // ===== 主题配色 =====
+  // 纯 CSS 变量主题：在 <html> 上设 data-we-theme，:root[data-we-theme] 覆盖 --we-* 变量，
+  // 面板 / 悬浮球 / 顶部横幅一起变。持久化用 localStorage（同步、无 store 异步竞态）。
+  const WE_THEME_KEY = 'we-theme';
+  const WE_THEMES = [
+    { id: 'default', name: '墨玉 · 默认' },
+    { id: 'night',   name: '夜阑 · 近黑' },
+    { id: 'deepsea', name: '深海 · 幽蓝' },
+    { id: 'plum',    name: '夜合 · 暗紫' },
+    { id: 'paper',   name: '云白 · 清爽' },
+    { id: 'sakura',  name: '早樱 · 浅粉' }
+  ];
+  function getStoredTheme() {
+    try { return localStorage.getItem(WE_THEME_KEY) || 'default'; } catch (e) { return 'default'; }
+  }
+  function applyTheme(id) {
+    const valid = WE_THEMES.some(t => t.id === id) ? id : 'default';
+    const root = document.documentElement;
+    if (!root) return;
+    if (valid === 'default') root.removeAttribute('data-we-theme');
+    else root.setAttribute('data-we-theme', valid);
+  }
+  function setTheme(id) {
+    const valid = WE_THEMES.some(t => t.id === id) ? id : 'default';
+    applyTheme(valid);
+    try { localStorage.setItem(WE_THEME_KEY, valid); } catch (e) {}
   }
 
   // 面板位置 + 大小持久化：拖动 / 缩放后都写回，重开面板还原（并按当前视口夹回可视区）。
@@ -4709,6 +4748,9 @@ window.WORLD_ENGINE_UI = (function() {
     renderReputation, renderEconomy, renderEnemies, renderInfluenceChain, renderRegionalIncident,
     renderBlackbox, renderGenericModule, renderDescriptorSection, renderHomeView, renderHomeViewExpanded, renderSubView, renderCheckpointSections
   };
+
+  // 脚本加载即应用已存主题，避免面板 / 悬浮球先闪默认色。
+  try { applyTheme(getStoredTheme()); } catch (e) {}
 
   return { buildPanel, buildInputButton, showPanel, hidePanel, togglePanel, refresh, setStatus, setEvolvingUI, setInjectedScope, __test };
 })();

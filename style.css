@@ -18,6 +18,105 @@
   --we-blue: #70a8d2;
   --we-green: #69b68e;
   --we-red: #d66f68;
+  /* 主题语义变量：默认值即原硬编码值，换主题时由 :root[data-we-theme] 覆盖。
+     --we-hairline 统一原先十几条 3%~8% 白色分隔线（深色下几乎无差别，浅色主题改为深色描边才可见）。 */
+  --we-hairline: rgba(255,255,255,0.06);
+  --we-title: #d8bd82;
+}
+
+/* ===== 主题模板 =====
+   默认(墨玉)= 上面的 :root，不设 data-we-theme。
+   其余主题只覆盖需要变的变量；深色系沿用白色 hairline，浅色系(paper/sakura)改深色 hairline 与深色文字。 */
+
+/* 夜阑 · 中性近黑（深色） */
+:root[data-we-theme="night"] {
+  --we-bg: #17181c;
+  --we-bg2: #121317;
+  --we-bg-hl: #2b2e36;
+  --we-card: #1c1d22;
+  --we-surface: #262830;
+  --we-border: rgba(255,255,255,0.16);
+  --we-text: #e8e9ec;
+  --we-text2: #a9acb4;
+  --we-text3: #71747c;
+  --we-accent: #8ab4f8;
+  --we-gold: #c7a86a;
+  --we-title: #d6dae1;
+  --we-hairline: rgba(255,255,255,0.07);
+}
+
+/* 深海 · 幽蓝（深色） */
+:root[data-we-theme="deepsea"] {
+  --we-bg: #0e1b2a;
+  --we-bg2: #0a1622;
+  --we-bg-hl: #1c3a56;
+  --we-card: #10202f;
+  --we-surface: #163049;
+  --we-border: rgba(90,168,210,0.32);
+  --we-text: #dce9f5;
+  --we-text2: #9fb6cc;
+  --we-text3: #66809a;
+  --we-accent: #4fc3dc;
+  --we-gold: #e0b968;
+  --we-title: #86c8e4;
+  --we-hairline: rgba(255,255,255,0.06);
+}
+
+/* 夜合 · 暗紫（深色） */
+:root[data-we-theme="plum"] {
+  --we-bg: #1e1526;
+  --we-bg2: #170f1e;
+  --we-bg-hl: #3a2450;
+  --we-card: #221829;
+  --we-surface: #2e2140;
+  --we-border: rgba(170,139,201,0.34);
+  --we-text: #ece3f2;
+  --we-text2: #bda9cc;
+  --we-text3: #8a7799;
+  --we-accent: #b98bd6;
+  --we-gold: #d8b06a;
+  --we-title: #d9b8f0;
+  --we-hairline: rgba(255,255,255,0.06);
+}
+
+/* 云白 · 现代清爽（浅色） */
+:root[data-we-theme="paper"] {
+  --we-bg: #f5f7f9;
+  --we-bg2: #eceef2;
+  --we-bg-hl: #e0e5ea;
+  --we-card: #ffffff;
+  --we-surface: #eef1f5;
+  --we-border: rgba(0,0,0,0.16);
+  --we-beige: #5c4f32;
+  --we-text: #232f39;
+  --we-text2: #55616f;
+  --we-text3: #8792a0;
+  --we-accent: #2f8f7f;
+  --we-gold: #a9791f;
+  --we-title: #93671b;
+  --we-danger: #c0564f;
+  --we-success: #3f9b6f;
+  --we-hairline: rgba(0,0,0,0.10);
+}
+
+/* 早樱 · 浅粉（浅色） */
+:root[data-we-theme="sakura"] {
+  --we-bg: #fff6f9;
+  --we-bg2: #fdedf2;
+  --we-bg-hl: #f8dbe5;
+  --we-card: #ffffff;
+  --we-surface: #fdeff4;
+  --we-border: rgba(168,88,118,0.30);
+  --we-beige: #7a4c56;
+  --we-text: #3b2a30;
+  --we-text2: #6d5760;
+  --we-text3: #9a818a;
+  --we-accent: #c76b8e;
+  --we-gold: #b07a3f;
+  --we-title: #a85876;
+  --we-danger: #c85a63;
+  --we-success: #4f9b78;
+  --we-hairline: rgba(0,0,0,0.09);
 }
 
 /* ===== 世界引擎悬浮球 ===== */
@@ -236,7 +335,7 @@
   width: min(420px, calc(100vw - 24px));
   height: calc(100dvh - 20px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
   max-height: 900px;
-  background: #182028;
+  background: var(--we-bg);
   color: var(--we-text);
   border-radius: 14px;
   box-shadow: 0 10px 36px rgba(0,0,0,0.68), 0 0 0 1px rgba(208,170,88,0.10);
@@ -697,7 +796,7 @@
 }
 
 .we-core-stat + .we-core-stat {
-  border-left: 1px solid rgba(255,255,255,0.045);
+  border-left: 1px solid var(--we-hairline);
 }
 
 .we-core-stat-k {
@@ -1327,7 +1426,7 @@
   grid-template-columns: 34px minmax(0, 1fr);
   gap: 7px;
   padding: 3px 0;
-  border-top: 1px solid rgba(255,255,255,0.045);
+  border-top: 1px solid var(--we-hairline);
   color: var(--we-text3);
   font-size: 11px;
   line-height: 1.55;
@@ -1399,7 +1498,7 @@
 }
 
 .we-trend-name {
-  color: #d8bd82;
+  color: var(--we-title);
   font-size: 14px;
   font-weight: 800;
 }
@@ -1428,7 +1527,7 @@
   gap: 7px;
   margin-top: 5px;
   padding-top: 4px;
-  border-top: 1px solid rgba(255,255,255,0.05);
+  border-top: 1px solid var(--we-hairline);
   color: var(--we-text3);
   font-size: 10px;
 }
@@ -1610,7 +1709,7 @@
   align-items: center;
   gap: 10px;
   padding: 7px 2px;
-  border-top: 1px solid rgba(255,255,255,0.05);
+  border-top: 1px solid var(--we-hairline);
 }
 .we-rep-row:first-child { border-top: none; }
 .we-rep-dim {
@@ -1668,7 +1767,7 @@
 }
 
 .we-influence-step + .we-influence-step {
-  border-top: 1px solid rgba(255,255,255,0.05);
+  border-top: 1px solid var(--we-hairline);
 }
 
 .we-influence-label {
@@ -1741,7 +1840,7 @@
   grid-template-columns: minmax(3.5em, 0.4fr) minmax(0, 1fr);
   gap: 4px 10px;
   padding: 3px 0;
-  border-top: 1px solid rgba(255,255,255,0.045);
+  border-top: 1px solid var(--we-hairline);
   font-size: 11px;
   line-height: 1.55;
 }
@@ -1777,7 +1876,7 @@
 }
 .we-generic-card-title {
   min-width: 0;
-  color: #d8bd82;
+  color: var(--we-title);
   font-size: 14px;
   font-weight: 800;
   overflow-wrap: anywhere;
@@ -1807,7 +1906,7 @@
 .we-generic-table td {
   min-width: 4.5em;
   padding: 4px 7px;
-  border: 1px solid rgba(255,255,255,0.08);
+  border: 1px solid var(--we-hairline);
   text-align: left;
   vertical-align: top;
   overflow-wrap: anywhere;
@@ -2353,7 +2452,7 @@
 .we-wind-rumor .we-wind-content span:last-child {
   color: var(--we-text3);
 }
-.we-wind-rumor .we-wind-field { border-top-color: rgba(255,255,255,0.03); }
+.we-wind-rumor .we-wind-field { border-top-color: var(--we-hairline); }
 .we-wind-rumor > .we-wind-header,
 .we-wind-rumor > .we-wind-field,
 .we-wind-rumor > .we-event-editor,
@@ -2753,7 +2852,7 @@
 /* 未触发/冷却中：沉默收缩，不喧嚣 */
 .we-regional-incident-item:not(.we-accident-triggered) {
   background: rgba(255,255,255,0.015);
-  border: 1px solid rgba(255,255,255,0.04);
+  border: 1px solid var(--we-hairline);
   color: var(--we-text3);
 }
 
@@ -2766,7 +2865,7 @@
   color: var(--we-text2);
   padding-bottom: 7px;
   margin-bottom: 9px;
-  border-bottom: 1px solid rgba(255,255,255,0.05);
+  border-bottom: 1px solid var(--we-hairline);
 }
 
 /* 内容：宋体长卷气息，行距宽，左侧一道细青线如页边注 */
@@ -2791,7 +2890,7 @@
   align-items: start;
   background: transparent;
   border: none;
-  border-top: 1px solid rgba(255,255,255,0.042);
+  border-top: 1px solid var(--we-hairline);
   border-radius: 0;
   padding: 8px 2px;
   margin-bottom: 0;
@@ -2808,7 +2907,7 @@
   line-height: 1.65;
   text-align: right;
   padding-right: 9px;
-  border-right: 1px solid rgba(255,255,255,0.06);
+  border-right: 1px solid var(--we-hairline);
   white-space: nowrap;
   margin-bottom: 0;
 }
@@ -3116,7 +3215,7 @@
 .we-settings-save-sticky {
   position: sticky;
   bottom: 0;
-  background: #182028;
+  background: var(--we-bg);
   padding-top: 10px;
   margin-top: 4px;
   border-top: 1px solid var(--we-border);
