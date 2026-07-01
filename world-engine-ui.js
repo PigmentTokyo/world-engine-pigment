@@ -107,6 +107,7 @@ window.WORLD_ENGINE_UI = (function() {
       <div class="we-panel-body" id="we-panel-body">
         <div class="we-loading">加载中...</div>
       </div>
+      <div class="we-panel-resize" title="拖拽调整大小"></div>
     `;
     document.body.appendChild(panel);
     panelElement = panel;
@@ -114,6 +115,8 @@ window.WORLD_ENGINE_UI = (function() {
 
     panel.querySelector('.we-panel-close').onclick = () => hidePanel();
     initDrag(panel, panel.querySelector('.we-panel-header'));
+    initResize(panel, panel.querySelector('.we-panel-resize'));
+    applySavedPanelRect(panel);
 
     document.addEventListener('keydown', function(e) {
       if (e.key === 'Escape' && panelVisible) hidePanel();
@@ -570,7 +573,7 @@ window.WORLD_ENGINE_UI = (function() {
     return '<div class="we-generic-kv">' + fields.map(field => {
       const value = genericValueText(data[field]);
       if (!value) return '';
-      return '<div class="we-wind-field"><span>' + u(genericFieldLabel(descriptor, field)) + '</span>' + u(value) + '</div>';
+      return '<div class="we-generic-kv-row"><span class="we-generic-kv-label">' + u(genericFieldLabel(descriptor, field)) + '</span><span class="we-generic-kv-value">' + u(value) + '</span></div>';
     }).join('') + '</div>';
   }
 
@@ -586,13 +589,14 @@ window.WORLD_ENGINE_UI = (function() {
       const title = genericValueText(data[titleField] || data.name || data.value || descriptor.name || descriptor.id);
       const badges = badgeFields.map(field => genericValueText(data[field])).filter(Boolean)
         .map(text => '<span class="we-badge">' + u(text) + '</span>').join('');
-      const subtitle = subtitleField && data[subtitleField] ? '<div class="we-trend-scope">' + u(genericValueText(data[subtitleField])) + '</div>' : '';
+      const subtitle = subtitleField && data[subtitleField] ? '<div class="we-generic-card-sub">' + u(genericValueText(data[subtitleField])) + '</div>' : '';
       const fields = genericVisibleFields(descriptor, data, bodyFields).filter(field => field !== titleField && field !== subtitleField && badgeFields.indexOf(field) === -1);
       const body = fields.map(field => {
         const text = genericValueText(data[field]);
-        return text ? '<div class="we-wind-field"><span>' + u(genericFieldLabel(descriptor, field)) + '</span>' + u(text) + '</div>' : '';
+        return text ? '<div class="we-generic-kv-row"><span class="we-generic-kv-label">' + u(genericFieldLabel(descriptor, field)) + '</span><span class="we-generic-kv-value">' + u(text) + '</span></div>' : '';
       }).join('');
-      return '<div class="we-trend-item"><div class="we-trend-header"><span class="we-trend-name">' + u(title) + '</span>' + badges + '</div>' + subtitle + body + '</div>';
+      const bodyHtml = body ? '<div class="we-generic-kv">' + body + '</div>' : '';
+      return '<div class="we-generic-card"><div class="we-generic-card-head"><span class="we-generic-card-title">' + u(title) + '</span>' + badges + '</div>' + subtitle + bodyHtml + '</div>';
     }, display.perPage || 4);
   }
 
@@ -606,7 +610,7 @@ window.WORLD_ENGINE_UI = (function() {
       const data = (item && typeof item === 'object' && !Array.isArray(item)) ? item : { value: item };
       return '<tr>' + columns.map(field => '<td>' + u(genericValueText(data[field])) + '</td>').join('') + '</tr>';
     }).join('') + '</tbody>';
-    return '<table class="we-term-table we-generic-table">' + head + body + '</table>';
+    return '<div class="we-generic-table-wrap"><table class="we-term-table we-generic-table">' + head + body + '</table></div>';
   }
 
   function renderGenericList(descriptor, value, scope) {
@@ -4046,6 +4050,45 @@ window.WORLD_ENGINE_UI = (function() {
     else showPanel();
   }
 
+  // 面板位置 + 大小持久化：拖动 / 缩放后都写回，重开面板还原（并按当前视口夹回可视区）。
+  const WE_PANEL_RECT_KEY = 'world_engine_panel_rect';
+  const WE_PANEL_MIN_W = 320;
+  const WE_PANEL_MIN_H = 360;
+
+  function savePanelRect(panel) {
+    try {
+      const r = panel.getBoundingClientRect();
+      localStorage.setItem(WE_PANEL_RECT_KEY, JSON.stringify({
+        left: Math.round(r.left), top: Math.round(r.top),
+        width: Math.round(r.width), height: Math.round(r.height)
+      }));
+    } catch (e) {}
+  }
+
+  function applySavedPanelRect(panel) {
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(WE_PANEL_RECT_KEY) || 'null'); } catch (e) {}
+    if (!saved) return;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    if (saved.width) {
+      panel.style.width = Math.max(WE_PANEL_MIN_W, Math.min(saved.width, vw - 8)) + 'px';
+      panel.style.maxWidth = 'none';
+    }
+    if (saved.height) {
+      panel.style.height = Math.max(WE_PANEL_MIN_H, Math.min(saved.height, vh - 8)) + 'px';
+      panel.style.maxHeight = 'none';
+    }
+    if (typeof saved.left === 'number' && typeof saved.top === 'number') {
+      const w = saved.width || panel.getBoundingClientRect().width || 420;
+      const left = Math.max(4, Math.min(saved.left, vw - w - 4));
+      const top = Math.max(4, Math.min(saved.top, vh - 80));
+      panel.style.left = left + 'px';
+      panel.style.top = top + 'px';
+      panel.style.right = 'auto';
+      panel.style.bottom = 'auto';
+    }
+  }
+
   function initDrag(panel, handle) {
     let dragging = false, startX, startY, startLeft, startTop;
     handle.style.cursor = 'grab';
@@ -4074,7 +4117,52 @@ window.WORLD_ENGINE_UI = (function() {
       if (!dragging) return;
       dragging = false;
       panel.style.cursor = '';
+      savePanelRect(panel);
     });
+  }
+
+  // 左下角把手缩放：面板锚在右上角，往左 / 下扩最顺手（宽内容有处可去）。
+  // 用 pointer 事件一套代码兼容鼠标 + 触屏；右、上两边固定，只动左、下两边。
+  function initResize(panel, handle) {
+    if (!handle) return;
+    let resizing = false, startX, startY, startW, startH, rightEdge, topEdge;
+
+    handle.addEventListener('pointerdown', function(e) {
+      resizing = true;
+      const rect = panel.getBoundingClientRect();
+      startX = e.clientX; startY = e.clientY;
+      startW = rect.width; startH = rect.height;
+      rightEdge = rect.left + rect.width;
+      topEdge = rect.top;
+      panel.style.left = rect.left + 'px';
+      panel.style.top = rect.top + 'px';
+      panel.style.right = 'auto'; panel.style.bottom = 'auto';
+      panel.style.maxWidth = 'none'; panel.style.maxHeight = 'none';
+      document.body.style.userSelect = 'none';
+      try { handle.setPointerCapture(e.pointerId); } catch (_) {}
+      e.preventDefault();
+    });
+
+    handle.addEventListener('pointermove', function(e) {
+      if (!resizing) return;
+      const maxW = rightEdge - 4;
+      const maxH = window.innerHeight - topEdge - 4;
+      const newW = Math.max(WE_PANEL_MIN_W, Math.min(startW - (e.clientX - startX), maxW));
+      const newH = Math.max(WE_PANEL_MIN_H, Math.min(startH + (e.clientY - startY), maxH));
+      panel.style.width = newW + 'px';
+      panel.style.height = newH + 'px';
+      panel.style.left = (rightEdge - newW) + 'px';
+    });
+
+    function endResize(e) {
+      if (!resizing) return;
+      resizing = false;
+      document.body.style.userSelect = '';
+      try { handle.releasePointerCapture(e.pointerId); } catch (_) {}
+      savePanelRect(panel);
+    }
+    handle.addEventListener('pointerup', endResize);
+    handle.addEventListener('pointercancel', endResize);
   }
 
   /** 获取当前对话层数 */

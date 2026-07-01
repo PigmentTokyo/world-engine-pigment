@@ -393,6 +393,34 @@
   padding: 12px 14px;
 }
 
+/* ===== 左下角缩放把手（面板锚右上角，往左 / 下扩）===== */
+.we-panel-resize {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 20px;
+  height: 20px;
+  cursor: nesw-resize;
+  z-index: 6;
+  touch-action: none;
+}
+.we-panel-resize::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  width: 9px;
+  height: 9px;
+  border-left: 2px solid var(--we-text3, #8a97a3);
+  border-bottom: 2px solid var(--we-text3, #8a97a3);
+  border-bottom-left-radius: 5px;
+  opacity: 0.55;
+  transition: opacity 0.12s;
+}
+.we-panel-resize:hover::before { opacity: 1; }
+/* 窄屏面板本就近乎全宽全高，隐藏把手避免与滚动 / 触摸冲突 */
+@media (max-width: 520px) { .we-panel-resize { display: none; } }
+
 /* ===== 快速操作栏 ===== */
 .we-actions-bar {
   display: flex;
@@ -1702,6 +1730,96 @@
 
 /* ===== 空状态 ===== */
 .we-empty { color: var(--we-text3); font-size: 12px; padding: 4px 0; }
+
+/* ===== 自由模块通用渲染（keyvalue / cards / table）=====
+   通用模块字段名任意长（如「当前修炼阶段」），不能沿用内置模块 34px 的窄标签栅格，
+   否则长标签会被挤成竖排一字一行 → 「字乱」。这里独立成一套自适应布局：
+   标签列可伸缩并按需换行、值列 min-width:0 正常回流、表格超宽时横向滚动而非撑爆面板。 */
+.we-generic-kv { display: flex; flex-direction: column; }
+.we-generic-kv-row {
+  display: grid;
+  grid-template-columns: minmax(3.5em, 0.4fr) minmax(0, 1fr);
+  gap: 4px 10px;
+  padding: 3px 0;
+  border-top: 1px solid rgba(255,255,255,0.045);
+  font-size: 11px;
+  line-height: 1.55;
+}
+.we-generic-kv-row:first-child { border-top: none; }
+.we-generic-kv-label {
+  align-self: start;
+  color: var(--we-text3);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.we-generic-kv-value {
+  min-width: 0;
+  color: var(--we-text2);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.we-generic-card {
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 6px;
+  padding: 9px 10px;
+  border-left: 4px solid rgba(201,164,92,0.55);
+  border-radius: 6px;
+  background: linear-gradient(135deg, rgba(201,164,92,0.1), var(--we-bg) 52%);
+}
+.we-generic-card-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+}
+.we-generic-card-title {
+  min-width: 0;
+  color: #d8bd82;
+  font-size: 14px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.we-generic-card-sub {
+  margin-top: 2px;
+  color: var(--we-text3);
+  font-size: 10px;
+  letter-spacing: 1px;
+  overflow-wrap: anywhere;
+}
+.we-generic-card .we-generic-kv { margin-top: 5px; }
+
+.we-generic-table-wrap {
+  margin: 2px 0 6px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.we-generic-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.we-generic-table th,
+.we-generic-table td {
+  min-width: 4.5em;
+  padding: 4px 7px;
+  border: 1px solid rgba(255,255,255,0.08);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.we-generic-table th {
+  color: var(--we-text2);
+  font-weight: 700;
+  white-space: nowrap;
+  background: rgba(255,255,255,0.035);
+}
+.we-generic-table td { color: var(--we-text3); }
 
 /* ===== 加载中 ===== */
 .we-loading { color: var(--we-text3); text-align: center; padding: 40px 0; }
