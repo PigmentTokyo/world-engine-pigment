@@ -15,6 +15,7 @@
     'world-engine-diag.js',
     'world-engine-backup.js',       // ← 新增：本地滚动存档备份（防丢存档），需在 ui 之前加载
     'world-engine-inject.js',
+    'world-engine-inject-inspector.js', // ← 新增：注入自检查看器（解耦/只读，订阅 prompt-ready 事件核对注入是否真进正文）
     'world-engine-ui.js',
     'world-engine-preset-ui.js'     // ← 新增：预设管理界面（需在 ui 之后加载）
   ];
@@ -53,6 +54,11 @@
       // 先把存储灌入内存镜像（并迁移旧 localStorage 存档），之后所有同步读写才有数据
       if (window.WORLD_ENGINE_STORE) {
         await window.WORLD_ENGINE_STORE.hydrate();
+      }
+
+      // 注入自检查看器：只读订阅 ST prompt-ready 事件，核对世界状态是否真进了最终 prompt（解耦，订阅失败不阻断启动）
+      if (window.WORLD_ENGINE_INJECT_INSPECTOR) {
+        try { window.WORLD_ENGINE_INJECT_INSPECTOR.init(); } catch (e) { console.warn('[世界引擎] 注入自检初始化失败（非致命）', e); }
       }
 
       const core = window.WORLD_ENGINE_CORE;
@@ -173,12 +179,34 @@
         }
       }
 
-      // 正文组装前直接比较注入当下的对话层数和当前状态记录的层数：
-      // 对话层数更小 = 重 roll，注入存档点；否则注入当前状态。
-      function applyInjectionForCurrentRound() {
+      // 正文组装前选择注入哪份世界状态：
+      //   重 roll（酒馆 type=swipe/regenerate，由调用方传 opts.isReroll）→ 注入存档点（这层正文产生前的状态）；
+      //   往前删到旧层（chatLayer < stateLayer）→ 注入存档点；
+      //   否则（新生成/新轮次/续写）→ 注入当前状态。
+      function applyInjectionForCurrentRound(opts) {
         const state = core.loadState();
         const chatLayer = core.getChatLayer();
         const stateLayer = Number.isFinite(Number(state.chatLayer)) ? Number(state.chatLayer) : chatLayer;
+        const isReroll = !!(opts && opts.isReroll);
+
+        // [FIX v2.3.17→19 移植] 重 roll 判据改用酒馆原生 type（swipe/regenerate，见 onGenerationStarted/onMessageSwiped），
+        //   不再靠楼层数值推断——GENERATION_STARTED 在用户楼 push 进 chat **之前** emit，新一轮发消息时 chatLayer 仍 == 上一轮
+        //   stateLayer，纯数值判据会把新轮首生成误判成重 roll、注入旧存档点（"没重 roll 却注入旧状态"，与双生成插件叠加时每轮必现）。
+        //   真重 roll（同层 swipe/regenerate）→ 注入存档点（这层正文产生前的世界状态），无存档点才不注入。
+        if (isReroll) {
+          const checkpoint = core.restoreCheckpoint();
+          if (checkpoint) {
+            console.log('[世界引擎] 正文注入判定：重 roll（type=swipe/regenerate），注入存档点');
+            applyInjection(checkpoint);
+            if (ui && ui.setInjectedScope) ui.setInjectedScope('checkpoint');
+          } else {
+            console.log('[世界引擎] 正文注入判定：重 roll（type=swipe/regenerate），无存档点，不注入');
+            unregisterInjection();
+          }
+          if (ui && ui.refresh) ui.refresh(true);
+          return;
+        }
+
         let injectedScope = 'state';
         if (chatLayer < stateLayer) {
           const checkpoint = core.restoreCheckpoint();
@@ -458,12 +486,17 @@
 
       function onMessageSwiped() {
         clearAutoEvolveTimer();
-        applyInjectionForCurrentRound();
+        // swipe（消息下方左右箭头）：明确的重 roll，注入存档点。
+        applyInjectionForCurrentRound({ isReroll: true });
       }
 
-      // 只借用生成开始事件作为正文组装时机；注入哪份状态仍完全由楼层数判断。
-      function onGenerationStarted() {
-        applyInjectionForCurrentRound();
+      // 借用生成开始事件作为正文组装时机。重 roll 判据用酒馆原生 type（swipe/regenerate），不再靠楼层数值——
+      //   GENERATION_STARTED 在用户/AI 楼 push 进 chat 之前 emit，新一轮发消息时 chatLayer 仍 == 上一轮 stateLayer，
+      //   纯数值判据会把新轮首生成误判成重 roll（v2.3.18 回归）。dryRun（数据库类插件的预热/算 token 生成）跳过，避免"生成完又注入一遍"。
+      function onGenerationStarted(type, _opts, dryRun) {
+        if (dryRun) return; // 预热轮不重判注入
+        const isReroll = (type === 'swipe' || type === 'regenerate');
+        applyInjectionForCurrentRound({ isReroll });
       }
 
       // ========== 事件绑定 ==========

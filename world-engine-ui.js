@@ -1960,11 +1960,112 @@ window.WORLD_ENGINE_UI = (function() {
     });
   }
 
+  // ── 注入自检卡（只读）：读 WORLD_ENGINE_INJECT_INSPECTOR 最后一份快照，
+  //    用大白话 + role 分好的消息链回答「世界状态到底有没有真进发给大模型的 prompt」。
+  //    数据全来自 inspector 只读快照；本函数纯拼 HTML，不触发任何副作用。
+  //    折叠复用本文件 renderDebug 的原生 <details class="we-prompt-seg-card">，无需额外事件绑定。
+  function renderInjectInspector() {
+    const insp = window.WORLD_ENGINE_INJECT_INSPECTOR;
+    if (!insp || !insp.getLastSnapshot) return '';
+    const snap = insp.getLastSnapshot();
+    const status = snap ? snap.status : 'NOT_YET';
+    const text = insp.statusText ? insp.statusText(status) : '';
+
+    const palette = {
+      SUCCESS:          { icon: '✅', color: '#3fb950', bg: 'rgba(63,185,80,0.10)' },
+      MISSING:          { icon: '❌', color: '#f85149', bg: 'rgba(248,81,73,0.10)' },
+      SKIPPED_DISABLED: { icon: '⏸', color: 'var(--we-text3)', bg: 'rgba(128,128,128,0.08)' },
+      SKIPPED_REROLL:   { icon: '⏸', color: 'var(--we-text3)', bg: 'rgba(128,128,128,0.08)' },
+      SKIPPED_OTHER:    { icon: '⏸', color: 'var(--we-text3)', bg: 'rgba(128,128,128,0.08)' },
+      NOT_YET:          { icon: '—', color: 'var(--we-text3)', bg: 'rgba(128,128,128,0.08)' },
+    };
+    const p = palette[status] || palette.NOT_YET;
+
+    let html = '<div class="we-inject-inspector" style="border:1px solid var(--we-border);border-radius:8px;padding:10px;margin-bottom:12px;background:' + p.bg + ';">';
+    html += '<div style="font-weight:600;color:' + p.color + ';margin-bottom:4px;">' + p.icon + ' 注入自检 · ' + h(text) + '</div>';
+
+    if (!snap) {
+      html += '<div style="font-size:11px;color:var(--we-text3);">发一条消息触发生成后，这里会显示「世界状态」有没有真正进入发给大模型的正文 prompt（与上方推演 prompt 不是一回事）。</div>';
+      return html + '</div>';
+    }
+
+    // 元信息行
+    const apiLabel = snap.apiType === 'chat' ? '对话补全' : '文本补全';
+    let when = '';
+    try { when = snap.ts ? new Date(snap.ts).toLocaleTimeString() : ''; } catch (e) {}
+    html += '<div style="font-size:11px;color:var(--we-text3);margin-bottom:6px;">'
+      + 'API：' + apiLabel + ' · 轮次：' + (snap.round != null ? h(String(snap.round)) : '?')
+      + ' · 已注册：' + (snap.registeredAtSend ? '是' : '否')
+      + ' · 进正文：' + (snap.landed ? '是' : '否')
+      + (when ? ' · ' + h(when) : '')
+      + '</div>';
+
+    // role 徽标 + 右对齐字数
+    const roleColor = { system: '#a371f7', user: '#58a6ff', assistant: '#3fb950', tool: '#d29922' };
+    const roleBadge = (role) => {
+      const c = roleColor[role] || 'var(--we-text3)';
+      return '<span style="display:inline-block;min-width:62px;text-align:center;font-size:10px;padding:1px 6px;border-radius:4px;border:1px solid ' + c + ';color:' + c + ';">' + h(role || '?') + '</span>';
+    };
+    const metaSpan = (len) => (len != null ? '<span style="margin-left:auto;font-size:10px;color:var(--we-text3);">' + len + ' 字</span>' : '');
+
+    if (snap.apiType === 'chat' && Array.isArray(snap.messages)) {
+      html += '<div style="font-size:11px;color:var(--we-text2);margin-bottom:4px;">实际发出的消息链（共 ' + h(String(snap.messageCount)) + ' 条，按 role 分；点击任意条展开看完整内容）：</div>';
+      html += snap.messages.map((m) => {
+        const meta = metaSpan(m.length);
+        const hasBody = (m.content != null && m.content.length > 0);
+        if (m.isOurs) {
+          // 本扩展注入那条：可折叠，展开看完整世界状态（证明确实在 prompt 里）
+          const body = '<pre class="we-prompt-seg-pre">' + u(m.content || snap.ourContent || '') + '</pre>';
+          return '<details class="we-prompt-seg-card" style="margin:3px 0;">'
+            + '<summary style="display:flex;align-items:center;gap:6px;">'
+            + roleBadge(m.role)
+            + '<span style="color:#3fb950;">✅ 含本扩展注入</span>'
+            + meta
+            + '</summary>'
+            + body
+            + '</details>';
+        }
+        // 其它消息：也可折叠展开看完整内容（只读，不写任何存储）
+        if (hasBody) {
+          const body = '<pre class="we-prompt-seg-pre">' + u(m.content) + '</pre>';
+          return '<details class="we-prompt-seg-card" style="margin:3px 0;">'
+            + '<summary style="display:flex;align-items:center;gap:6px;">'
+            + roleBadge(m.role)
+            + meta
+            + '</summary>'
+            + body
+            + '</details>';
+        }
+        // 空内容：只读一行（不可展开）
+        return '<div style="display:flex;align-items:center;gap:6px;padding:2px 6px;font-size:11px;color:var(--we-text3);">'
+          + roleBadge(m.role)
+          + meta
+          + '</div>';
+      }).join('');
+    } else if (snap.apiType === 'text') {
+      html += '<div style="font-size:11px;color:var(--we-text2);margin-bottom:4px;">文本补全 prompt 共 ' + h(String(snap.promptLength || 0)) + ' 字（已 flatten 成单串，无 role 之分）：</div>';
+      if (snap.landed && snap.ourExcerpt) {
+        const body = '<pre class="we-prompt-seg-pre">' + u(snap.ourExcerpt) + '</pre>';
+        html += '<details class="we-prompt-seg-card" style="margin:3px 0;">'
+          + '<summary style="display:flex;align-items:center;gap:6px;">'
+          + '<span style="color:#3fb950;">✅ 哨兵命中处摘录</span>'
+          + '</summary>'
+          + body
+          + '</details>';
+      }
+    }
+
+    return html + '</div>';
+  }
+
   function renderDebug() {
+    // 注入自检卡独立于推演数据：每次生成都会更新，故即便尚未推演也要先展示它（原生 <details> 折叠，无需额外事件绑定）。
+    const injectCard = renderInjectInspector();
+    const wrap = (inner) => '<div class="we-prompt-debug">' + injectCard + inner + '</div>';
     const evo = window.WORLD_ENGINE_EVOLUTION;
-    if (!evo || !evo.getLastDebug) return '<div class="we-empty">调试数据不可用</div>';
+    if (!evo || !evo.getLastDebug) return wrap('<div class="we-empty">调试数据不可用</div>');
     const dbg = evo.getLastDebug();
-    if (!dbg || !dbg.prompt) return '<div class="we-empty">尚未推演，暂无调试数据</div>';
+    if (!dbg || !dbg.prompt) return wrap('<div class="we-empty">尚未推演，暂无调试数据</div>');
     const segments = Array.isArray(dbg.segments) ? dbg.segments : [];
     const totalLen = String(dbg.prompt || '').length;
 
@@ -2007,6 +2108,7 @@ window.WORLD_ENGINE_UI = (function() {
     const fallbackPrompt = segments.length ? '' : '<pre class="we-prompt-seg-pre">' + u(String(dbg.prompt || '').slice(0, 3000)) + '</pre>';
 
     return '<div class="we-prompt-debug">'
+      + injectCard
       + '<div class="we-prompt-debug-summary">Prompt 共 ' + totalLen + ' 字，分 ' + segments.length + ' 段。</div>'
       + '<div class="we-prompt-seg-list">' + segmentCards + rawCard + fallbackPrompt + '</div>'
       + '<div style="display:flex;gap:6px;margin-top:8px;">'
