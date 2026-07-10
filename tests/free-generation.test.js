@@ -68,7 +68,12 @@ function makeResponse(mode) {
       name: 'Xianxia Free',
       description: 'Tracks sect cultivation arcs.',
       mode: 'free',
-      modules: [customModule('cultivationTracks', 'cultivationTracks', 'Track cultivation breakthroughs, sect trials, and spirit qi changes.', ['mortal', 'adept'])]
+      modules: [customModule('cultivationTracks', 'cultivationTracks', 'Track cultivation breakthroughs, sect trials, and spirit qi changes.', ['mortal', 'adept'])],
+      // 生成器只允许返回 causalSteps；engineRole 即使被 AI 擅自返回也必须被丢弃
+      engineSegments: {
+        engineRole: 'AI 擅自生成的人设（应被丢弃）',
+        causalSteps: '1. 私密行为未被目击不得影响公开状态。\n2. cultivationTracks 仅在突破/受创时更新。\n3. 禁止直接读取面板信息行动。'
+      }
     };
   }
   if (mode === 'wasteland') {
@@ -131,8 +136,15 @@ async function main() {
   const campus = await generateAndAssert('campus', 'campus::1', 'campusSystems', 'student council clubs', 'cultivation realms', { moduleCountMode: 'fixed', moduleCount: 2 });
   assert.strictEqual(campus.modules[0].kind, 'builtin');
   assert.strictEqual(campus.modules[0].id, 'events');
+  // 生成模板应包含引擎段落定制说明；响应未带 engineSegments 时双空（跟随默认）
+  assert(lastPrompt.includes('"engineSegments"'), '生成模板应含 engineSegments 字段说明');
+  assert(lastPrompt.includes('causalSteps'), '生成模板应含 causalSteps 说明');
+  assert.deepStrictEqual(campus.engineSegments, { engineRole: '', causalSteps: '' });
 
-  await generateAndAssert('xianxia', 'xianxia::2', 'cultivationTracks', 'cultivation realms', 'water ration');
+  const xianxia = await generateAndAssert('xianxia', 'xianxia::2', 'cultivationTracks', 'cultivation realms', 'water ration');
+  // causalSteps 采纳；engineRole 不开放给生成器，即使 AI 返回也丢弃
+  assert(xianxia.engineSegments.causalSteps.includes('cultivationTracks 仅在突破/受创时更新'));
+  assert.strictEqual(xianxia.engineSegments.engineRole, '');
   await generateAndAssert('wasteland', 'wasteland::3', 'settlementResources', 'water ration', 'student council clubs');
 
   responseMode = 'campus';
@@ -147,7 +159,7 @@ async function main() {
     /did not return any free modules/
   );
 
-  console.log('Free generation tests: 39 passed');
+  console.log('Free generation tests: 44 passed');
 }
 
 main().catch((error) => {

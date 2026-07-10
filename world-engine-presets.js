@@ -1797,6 +1797,9 @@
       + '    }\n'
       + '  ],\n'
       + '  "customRules": "可选：整个自由预设的额外总规则",\n'
+      + '  "engineSegments": {\n'
+      + '    "causalSteps": "可选：为本世界观定制的因果检查步骤（将替换推演引擎默认的检查清单）。若提供：用中文按 1. 2. 3. 编号写 6-10 条；第 1 条必须是私密信息处理原则（未被目击、未传播的行为不得影响任何公开状态）；随后为上面每个启用模块各写一条更新时机与因果条件（什么情况下才允许更新该模块、依据什么）；最后一条必须禁止角色直接读取面板信息行动。若内置默认清单已够用，返回空字符串。"\n'
+      + '  },\n'
       + '  "ui": { "labels": {}, "moods": {}, "summaryEmpty": "世界尚未开始时显示的一句话" },\n'
       + '  "headerMood": {\n'
       + '    "module": "上面某个模块的 id",\n'
@@ -1832,6 +1835,13 @@
       disabledModules: [],
       schemaOverrides: parsed.schemaOverrides || {},
       customRules: parsed.customRules || '',
+      // 引擎角色不开放给生成器（换人设收益小、写坏输出纪律风险大）；只接受因果步骤定制
+      engineSegments: {
+        engineRole: '',
+        causalSteps: (parsed.engineSegments && typeof parsed.engineSegments.causalSteps === 'string')
+          ? parsed.engineSegments.causalSteps.trim()
+          : ''
+      },
       ui: parsed.ui || {},
       headerMood: parsed.headerMood || null,
       showStability: parsed.showStability !== false,
