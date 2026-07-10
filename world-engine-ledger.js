@@ -30,12 +30,13 @@ window.WORLD_ENGINE_LEDGER = (function() {
     const changes = [];
 
     // —— 事件链：普通变化记录 Lv3/4，任何等级的终局都记录 ——
-    const cpEventMap = new Map((cp.events || []).map(e => [e.name, e]));
+    // [移植 v2.4.0] 账本对比改按稳定 id（旧存档条目回退到 legacy:name 键）
+    const cpEventMap = new Map((cp.events || []).map(e => [e.id || `legacy:${e.name}`, e]));
     const currentEvents = state.events || [];
     for (const ev of [...currentEvents, ...removedTerminalEvents]) {
       const isTerminal = TERMINAL_STAGES.has(ev.stage);
       if ((!ev.level || ev.level < 3) && !isTerminal) continue;
-      const cpEv = cpEventMap.get(ev.name);
+      const cpEv = cpEventMap.get(ev.id || `legacy:${ev.name}`);
       if (!cpEv) {
         changes.push({
           type: isTerminal ? 'event_terminal' : 'event_new',
@@ -58,10 +59,10 @@ window.WORLD_ENGINE_LEDGER = (function() {
       }
     }
     // —— 风声：新增 Lv3/4 ——
-    const cpWindTopics = new Set((cp.winds || []).map(w => w.topic));
+    const cpWindIds = new Set((cp.winds || []).map(w => w.id || `legacy:${w.topic}`));
     for (const wind of (state.winds || [])) {
       if (!wind.level || wind.level < 3) continue;
-      if (!cpWindTopics.has(wind.topic)) {
+      if (!cpWindIds.has(wind.id || `legacy:${wind.topic}`)) {
         changes.push({
           type: 'wind_new',
           topic: wind.topic,

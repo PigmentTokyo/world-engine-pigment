@@ -54,7 +54,7 @@ AI可根据剧情自然推断季节，在面板世界摘要或经济摘要中体
 
 一、双类型事件链
 
-事件链分为两类：冲突型（conflict）与推进型（progress）。事件 type 一旦确定不得改动；同名事件后续更新必须沿用原 type。若需要从研发引发冲突，或从冲突引出善后工程，应新建另一条事件链，并在影响链中记录两者的传导关系。
+事件链分为两类：冲突型（conflict）与推进型（progress）。事件 type 一旦确定不得改动；同一 id 的事件后续更新必须沿用原 type。若需要从研发引发冲突，或从冲突引出善后工程，应新建另一条事件链，并在影响链中记录两者的传导关系。
 
 1. 冲突型（conflict）— 用于报复、通缉、派系摩擦、追杀、战争、清算等会滚向爆发的矛盾链。
 正常推进顺序固定为：萌芽 → 发酵 → 逼近 → 已爆发。
@@ -168,7 +168,8 @@ AI可根据剧情自然推断季节，在面板世界摘要或经济摘要中体
 
 五、势力字段（每轮输出）
 每轮按以下字段描述各势力：
-- name：势力名称（同名覆盖，新名新增）
+- id：已有势力沿用系统分配的 id；新势力必须显式填 null，禁止省略
+- name：势力名称。改名、易帜或称号变化不改变 id；真正分裂出的新势力才创建新对象
 - scope：势力直接控制或具有重大影响力的地理范围
 - status：整体运势——"鼎盛"/"稳固"/"倾轧"/"困顿"/"衰落"/"瓦解"。
   鼎盛=有钱有人有势，内部铁板一块。稳固=正常运行无重大危机。倾轧=内部有派系斗争或核心人物不和，但架子还没散。困顿=资源枯竭或被外部封锁，正在咬牙硬撑。衰落=失去支柱/地盘/核心人物，滑向瓦解。瓦解=只差终局确认，已名存实亡。
@@ -212,7 +213,8 @@ AI可根据剧情自然推断季节，在面板世界摘要或经济摘要中体
 风声是世界中正在传播的公开说法，是事件、势力、经济、声誉与主动接触之间的信息中介。它不是客观真相记录，也不是无意义的气氛列表。
 
 一、风声结构
-- topic：稳定主题名。更新同一条风声时沿用 topic，禁止重复创建近义条目。
+- id：已有风声沿用系统分配的 id；新风声必须显式填 null，禁止省略。
+- topic：风声主题。同一传播脉络允许随说法或焦点变化而改名，但必须沿用 id；禁止重复创建近义条目。
 - type："announcement"/"report"/"rumor"/"sentiment"，分别表示公告、消息、流言、舆情。
 - level：实际传播规模。Lv1=圈内少数人；Lv2=地方；Lv3=州郡、省份、等大区；Lv4=国家、国际、天下。
 - content：当前正在传播的具体说法。
@@ -228,7 +230,7 @@ AI可根据剧情自然推断季节，在面板世界摘要或经济摘要中体
 三、传播与升级
 - 每轮检查已有风声是否获得新的合法传播节点。没有传播节点时，level 与 scope 保持不变。
 - 连续多轮没有实质更新的风声会由本地系统判定消散，并在下一轮后台推演前直接删除。
-- 若一条风声本轮仍在传播、变质、扩大范围或持续影响世界，必须返回相同 topic 的更新；仅原样复述而没有实际变化不算更新。
+- 若一条风声本轮仍在传播、变质、扩大范围或持续影响世界，必须返回相同 id 的更新；仅原样复述而没有实际变化不算更新。
 - 风声寿命与消散由本地系统管理，禁止输出或操纵内部计数。
 - 同一场景可即时传播；同一区域通常需1-2轮；跨区域通常需3-5轮；世界观内的广播、网络、法术通讯等可缩短时间。
 - level 只表示传播规模，不表示事情的重要性或真假。
@@ -465,6 +467,8 @@ AI 必须让每条 signal 有因果：变化的背后必须有可追溯的事件
 
 仇敌是因{{user}}的具体伤害行为而产生的、不可逆的个人恩怨。仇敌的核心特征是永不淡化和跨区域追踪。它与势力层面的态度对立（factions.relation）是两套完全不同的东西——势力对立源于立场和利益，可以谈判；仇敌源于伤害，不可谈判。
 
+每条仇敌记录都有系统 id。更新已有仇敌时必须沿用原 id，即使姓名、称号或组织名称改变；新仇敌必须显式填 null，禁止省略。
+
 一、仇敌类型
 1. 血仇（type: "blood"）— 触发条件（满足任一）：{{user}}杀死某团体的核心人物（但失去权力的前核心人物除外，见势力模块的权力瓦解）；{{user}}导致某人至亲身亡或永久致残。
    特性：永不淡化、不可谈判、复仇动机永不消失。即使复仇方资源耗尽，仇恨不会消退，只会因能力不足而暂时停滞。
@@ -594,7 +598,8 @@ cooldown 由本地维护，API 不得输出或修改此字段。
 
 一、数据结构
 每条包含：
-- name：稳定的大势名称，同名覆盖更新。
+- id：已有大势沿用系统分配的 id；新大势必须显式填 null，禁止省略。
+- name：大势名称。措辞变化不改变 id。
 - scope：实际影响范围。
 - status："持续中"/"已结束"。
 - description：当前局势及其正在如何约束世界行动。
@@ -969,7 +974,8 @@ cooldown 由本地维护，API 不得输出或修改此字段。
       moduleId: 'events', field: 'events', title: 'events', container: 'array',
       description: '事件链数组。只返回本轮有推进、停滞、转向、结束或新建的事件。',
       fields: {
-        name: { type: 'string', description: '事件名称。同名事件用于更新既有事件。', example: '血刃门复仇' },
+        id: { type: 'string|null', description: '系统身份。更新已有事件必须原样返回当前 id；新事件必须显式填 null，禁止省略或编造。', example: 'event_1' },
+        name: { type: 'string', description: '事件名称。改名不代表创建新事件，同一事件沿用 id。', example: '血刃门复仇' },
         type: { type: 'enum', description: 'conflict 或 progress。新事件必须明确类型。', example: 'conflict' },
         level: { type: 'number', description: '1-4，表示冲突强度或推进规模。', example: 2 },
         stage: { type: 'string', description: '当前阶段。必须符合对应 type 的阶段体系。', example: '发酵' },
@@ -982,7 +988,8 @@ cooldown 由本地维护，API 不得输出或修改此字段。
       moduleId: 'factions', field: 'factions', title: 'factions', container: 'array',
       description: '势力数组。用于记录组织、团体、家族、门派、公司或其他可持续行动的集体。',
       fields: {
-        name: { type: 'string', description: '势力名称。同名势力用于更新既有势力。', example: '血刃门' },
+        id: { type: 'string|null', description: '系统身份。更新已有势力必须原样返回当前 id；新势力必须显式填 null，禁止省略或编造。', example: 'faction_1' },
+        name: { type: 'string', description: '势力名称。改名、易帜不改变 id；真正分裂出的新势力才创建新对象。', example: '血刃门' },
         scope: { type: 'string', description: '势力影响范围。', example: '北境三郡' },
         status: { type: 'enum', description: '整体状态。使用当前预设定义的势力状态。', example: '稳定' },
         relation: { type: 'enum', description: '该势力对{{user}}的态度。使用当前预设定义的关系层级。', example: '敌对' },
@@ -995,7 +1002,8 @@ cooldown 由本地维护，API 不得输出或修改此字段。
       moduleId: 'trends', field: 'worldTrends', title: 'worldTrends', container: 'array',
       description: '天下大势数组。用于长期、广域、跨系统的局势变化。',
       fields: {
-        name: { type: 'string', description: '大势名称。', example: '北境军粮短缺' },
+        id: { type: 'string|null', description: '系统身份。更新已有大势必须原样返回当前 id；新大势必须显式填 null，禁止省略或编造。', example: 'trend_1' },
+        name: { type: 'string', description: '大势名称。措辞变化不改变 id。', example: '北境军粮短缺' },
         scope: { type: 'string', description: '影响范围。', example: '北境诸郡' },
         status: { type: 'enum', description: '持续中或已结束。', example: '持续中' },
         description: { type: 'string', description: '当前局势说明。', example: '粮道受阻，军需价格持续上涨。' },
@@ -1006,7 +1014,8 @@ cooldown 由本地维护，API 不得输出或修改此字段。
       moduleId: 'winds', field: 'winds', title: 'winds', container: 'array',
       description: '风声数组。用于记录正在传播的信息、谣言、公告、情绪或报道。',
       fields: {
-        topic: { type: 'string', description: '稳定主题名。同一风声更新时沿用 topic。', example: '渡口封锁' },
+        id: { type: 'string|null', description: '系统身份。更新已有风声必须原样返回当前 id；新风声必须显式填 null，禁止省略或编造。', example: 'wind_1' },
+        topic: { type: 'string', description: '风声主题。同一传播脉络允许改名，但必须沿用 id。', example: '渡口封锁' },
         type: { type: 'enum', description: 'announcement/report/rumor/sentiment。', example: 'report' },
         level: { type: 'number', description: '1-4，表示传播范围。', example: 2 },
         content: { type: 'string', description: '正在传播的说法。', example: '北渡口被血刃门封锁。' },
@@ -1040,7 +1049,8 @@ cooldown 由本地维护，API 不得输出或修改此字段。
       moduleId: 'enemies', field: 'enemies', title: 'enemies', container: 'array',
       description: '仇敌数组。用于不可逆的个人恩怨，不等同于势力关系敌对。',
       fields: {
-        name: { type: 'string', description: '仇敌名称。', example: '血刃门少主' },
+        id: { type: 'string|null', description: '系统身份。更新已有仇敌必须原样返回当前 id；新仇敌必须显式填 null，禁止省略或编造。', example: 'enemy_1' },
+        name: { type: 'string', description: '仇敌名称。姓名、称号变化不改变 id。', example: '血刃门少主' },
         reason: { type: 'string', description: '与{{user}}结仇的具体原因。', example: '{{user}}杀死其亲族。' },
         type: { type: 'enum', description: 'blood 或 grudge。', example: 'blood' },
         status: { type: 'enum', description: '追踪中、等待中、执行中或已结束。', example: '追踪中' }

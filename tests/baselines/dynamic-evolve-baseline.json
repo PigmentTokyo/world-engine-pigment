@@ -14,7 +14,8 @@
           "stageRound": 3,
           "desc": "试小炉",
           "consecutiveFails": 0,
-          "stall": false
+          "stall": false,
+          "id": "event_2"
         },
         {
           "name": "血刀门复仇",
@@ -24,7 +25,8 @@
           "stageRound": 4,
           "desc": "追兵抵近渡口",
           "consecutiveFails": 0,
-          "stall": false
+          "stall": false,
+          "id": "event_1"
         }
       ],
       "factions": [
@@ -38,7 +40,8 @@
           "powerPillars": [
             "武力",
             "财源"
-          ]
+          ],
+          "id": "faction_1"
         }
       ],
       "winds": [
@@ -49,7 +52,8 @@
           "content": "北渡口被封",
           "scope": "北渡口",
           "source": "船夫",
-          "quietRounds": 0
+          "quietRounds": 0,
+          "id": "wind_1"
         }
       ],
       "worldTrends": [
@@ -58,7 +62,8 @@
           "scope": "北境诸郡",
           "status": "持续中",
           "description": "粮道受阻",
-          "source": "边境战事"
+          "source": "边境战事",
+          "id": "trend_1"
         }
       ],
       "reputation": {
@@ -83,7 +88,8 @@
           "name": "血刀门少主",
           "reason": "杀其亲族",
           "type": "blood",
-          "status": "追踪中"
+          "status": "追踪中",
+          "id": "enemy_1"
         }
       ],
       "influenceChain": [
@@ -130,7 +136,8 @@
             "stageRound": 4,
             "desc": "追兵抵近渡口",
             "consecutiveFails": 0,
-            "stall": false
+            "stall": false,
+            "id": "event_1"
           },
           {
             "name": "青炉司改良火药",
@@ -140,7 +147,8 @@
             "stageRound": 3,
             "desc": "试小炉",
             "consecutiveFails": 0,
-            "stall": false
+            "stall": false,
+            "id": "event_2"
           }
         ],
         "factions": [
@@ -154,7 +162,8 @@
             "powerPillars": [
               "武力",
               "财源"
-            ]
+            ],
+            "id": "faction_1"
           }
         ],
         "winds": [
@@ -165,7 +174,8 @@
             "content": "北渡口被封",
             "scope": "北渡口",
             "source": "船夫",
-            "quietRounds": 0
+            "quietRounds": 0,
+            "id": "wind_1"
           }
         ],
         "worldTrends": [
@@ -174,7 +184,8 @@
             "scope": "北境诸郡",
             "status": "持续中",
             "description": "粮道受阻",
-            "source": "边境战事"
+            "source": "边境战事",
+            "id": "trend_1"
           }
         ],
         "economy": {
@@ -198,7 +209,8 @@
             "name": "血刀门少主",
             "reason": "杀其亲族",
             "type": "blood",
-            "status": "追踪中"
+            "status": "追踪中",
+            "id": "enemy_1"
           }
         ],
         "influenceChain": [
@@ -249,6 +261,7 @@
           "desc": "试小炉",
           "consecutiveFails": 1,
           "stall": false,
+          "id": "event_2",
           "evolveResult": "受挫"
         },
         {
@@ -260,6 +273,7 @@
           "desc": "追兵设伏",
           "consecutiveFails": 0,
           "stall": false,
+          "id": "event_1",
           "evolveResult": "成功"
         }
       ],
@@ -273,7 +287,8 @@
           "core_person": "司丞",
           "powerPillars": [
             "技术"
-          ]
+          ],
+          "id": "faction_2"
         },
         {
           "name": "血刀门",
@@ -285,7 +300,8 @@
           "powerPillars": [
             "武力",
             "财源"
-          ]
+          ],
+          "id": "faction_1"
         }
       ],
       "winds": [
@@ -296,7 +312,8 @@
           "content": "封锁要持续半月",
           "scope": "北境",
           "source": "脚夫",
-          "quietRounds": 0
+          "quietRounds": 0,
+          "id": "wind_1"
         }
       ],
       "worldTrends": [
@@ -305,7 +322,8 @@
           "scope": "北境诸郡",
           "status": "持续中",
           "description": "粮道受阻",
-          "source": "边境战事"
+          "source": "边境战事",
+          "id": "trend_1"
         }
       ],
       "reputation": {
@@ -330,7 +348,8 @@
           "name": "血刀门少主",
           "reason": "杀其亲族",
           "type": "blood",
-          "status": "追踪中"
+          "status": "追踪中",
+          "id": "enemy_1"
         }
       ],
       "influenceChain": [
@@ -364,7 +383,8 @@
             "level": 2,
             "stage": "逼近",
             "stageRound": 6,
-            "desc": "追兵设伏"
+            "desc": "追兵设伏",
+            "id": "event_1"
           }
         ],
         "factions": [
@@ -377,7 +397,8 @@
             "core_person": "司丞",
             "powerPillars": [
               "技术"
-            ]
+            ],
+            "id": "faction_2"
           }
         ],
         "winds": [
@@ -388,7 +409,8 @@
             "content": "封锁要持续半月",
             "scope": "北境",
             "source": "脚夫",
-            "quietRounds": 0
+            "quietRounds": 0,
+            "id": "wind_1"
           }
         ],
         "economy": {
@@ -436,6 +458,7 @@
           "desc": "试小炉",
           "consecutiveFails": 2,
           "stall": false,
+          "id": "event_2",
           "evolveResult": "保持"
         },
         {
@@ -447,6 +470,7 @@
           "desc": "渡口火并爆发",
           "consecutiveFails": 0,
           "stall": false,
+          "id": "event_1",
           "evolveResult": "成功",
           "_terminalSince": 2
         }
@@ -461,7 +485,8 @@
           "core_person": "司丞",
           "powerPillars": [
             "技术"
-          ]
+          ],
+          "id": "faction_2"
         },
         {
           "name": "血刀门",
@@ -473,7 +498,8 @@
           "powerPillars": [
             "武力",
             "财源"
-          ]
+          ],
+          "id": "faction_1"
         }
       ],
       "winds": [
@@ -484,7 +510,8 @@
           "content": "封锁要持续半月",
           "scope": "北境",
           "source": "脚夫",
-          "quietRounds": 1
+          "quietRounds": 1,
+          "id": "wind_1"
         }
       ],
       "worldTrends": [],
@@ -506,6 +533,7 @@
           "reason": "杀其亲族",
           "type": "blood",
           "status": "已终结",
+          "id": "enemy_1",
           "_terminalSince": 2
         }
       ],
@@ -540,7 +568,8 @@
             "level": 2,
             "stage": "已爆发",
             "stageRound": 9,
-            "desc": "渡口火并爆发"
+            "desc": "渡口火并爆发",
+            "id": "event_1"
           }
         ],
         "enemies": [
@@ -548,7 +577,8 @@
             "name": "血刀门少主",
             "reason": "杀其亲族",
             "type": "blood",
-            "status": "已终结"
+            "status": "已终结",
+            "id": "enemy_1"
           }
         ],
         "worldTrends": [
@@ -557,7 +587,8 @@
             "scope": "北境诸郡",
             "status": "已结束",
             "description": "粮道恢复",
-            "source": "战事平息"
+            "source": "战事平息",
+            "id": "trend_1"
           }
         ],
         "world_digest": "渡口血案落幕。",

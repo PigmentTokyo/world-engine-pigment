@@ -36,8 +36,8 @@ node tests/evolve-harness.js            # 动态：种子化随机+冻结时间+
 node tests/ui-render-harness.js         # UI：17 个渲染快照逐字比对
 ```
 基线文件在 `tests/baselines/`。
-- 闸门**红了**：要么你改回归了（修），要么是**预期内**的行为变更（极少；确认后用 `--update` 重置对应基线，evolve/ui harness 支持该参数）。classic 相关的红线绝不允许“预期变更”。
-- `tests/baselines/classic-baseline-pre-refactor.json` 是用户在真实 SillyTavern 里导出的“改造前”静态基线，**不要重新生成**（它代表黄金真相）。
+- 闸门**红了**：要么你改回归了（修），要么是**预期内**的行为变更（极少；确认后用 `--update` 重置对应基线，evolve/ui harness 支持该参数）。
+- `tests/baselines/classic-baseline-pre-refactor.json` 原始版本是用户在真实 SillyTavern 里导出的“自由模式改造前”静态基线（黄金真相），自由模式改造期间**不允许重新生成**。改造收尾后它的角色转为「已批准的 classic 契约」：仅当**有意变更 prompt 契约**（如移植上游 v2.4.0 稳定实体 ID）时才允许更新，且必须先逐行核对新旧差异全部属于本次有意变更（参考 2026-07-11 稳定 ID 移植的做法：脚本比对 + 白名单核对后重写），核对记录写进提交说明。
 
 ## 6. 工作纪律
 1. 先读路线图，认领下一个未勾选项。

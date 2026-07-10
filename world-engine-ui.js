@@ -2688,6 +2688,7 @@ window.WORLD_ENGINE_UI = (function() {
         const event = scopedState?.events?.[index];
         if (!event) return;
         const copy = JSON.parse(JSON.stringify(event));
+        delete copy.id;  // [移植 v2.4.0] 复制品是新实体，由本地补新 id，不与原件共享身份
         delete copy.evolveResult;
         core.ensureEventFields(copy);
         scopedState.events.push(copy);
@@ -2827,6 +2828,7 @@ window.WORLD_ENGINE_UI = (function() {
         const faction = state.factions?.[index];
         if (!faction) return;
         const copy = JSON.parse(JSON.stringify(faction));
+        delete copy.id;
         state.factions.splice(index + 1, 0, copy);
         saveScopedState(scope, state);
         showToast('势力已复制');
@@ -2889,6 +2891,7 @@ window.WORLD_ENGINE_UI = (function() {
         const wind = scopedState.winds?.[index];
         if (!wind) return;
         const copy = JSON.parse(JSON.stringify(wind));
+        delete copy.id;
         copy.quietRounds = 0;
         scopedState.winds.push(copy);
         saveScopedState(scope, scopedState);
@@ -2950,6 +2953,7 @@ window.WORLD_ENGINE_UI = (function() {
         const trend = scopedState?.worldTrends?.[index];
         if (!trend) return;
         const copy = JSON.parse(JSON.stringify(trend));
+        delete copy.id;
         scopedState.worldTrends.push(copy);
         saveScopedState(scope, scopedState);
         showToast('天下大势已复制');
@@ -3009,6 +3013,7 @@ window.WORLD_ENGINE_UI = (function() {
         const enemy = state.enemies?.[index];
         if (!enemy) return;
         const copy = JSON.parse(JSON.stringify(enemy));
+        delete copy.id;
         state.enemies.splice(index + 1, 0, copy);
         saveScopedState(scope, state);
         showToast('仇敌已复制');
