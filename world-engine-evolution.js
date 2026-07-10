@@ -1459,9 +1459,9 @@ ${persona}`
       + (segExtraInstruction ? '\n' + segExtraInstruction : '') + segTone;
 
     _lastPromptSegments = [
-      { key: 'engine-role', label: '① 引擎角色指令', content: segEngineRole },
+      { key: 'engine-role', label: '① 引擎角色指令' + (engineSegs.engineRoleOverridden ? '（预设覆写）' : ''), content: segEngineRole },
       { key: 'entity-ids', label: '② 持续实体 ID 协议', content: ENTITY_ID_PROTOCOL },
-      { key: 'causal-steps', label: '③ 因果检查', content: segCausalSteps },
+      { key: 'causal-steps', label: '③ 因果检查' + (engineSegs.causalStepsOverridden ? '（预设覆写）' : ''), content: segCausalSteps },
       { key: 'rules', label: '④ 世界推演规则', content: segRules },
       { key: 'worldbook', label: '⑤ 世界书注入', content: segWorldbook },
       { key: 'state', label: '⑥ 当前世界状态', content: segStateBlock },
