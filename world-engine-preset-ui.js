@@ -110,6 +110,7 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
   // Collapsible section state (persisted in memory only)
   var _collapsed = {
     rules: true,
+    engineSegments: true,
     moduleToggles: true,
     schemaOverrides: true,
     termMap: true,
@@ -1061,6 +1062,59 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
   }
 
   // ─────────────────────────────────────────────
+  // Section 2b: 引擎段落覆写（高级）
+  //   引擎角色 / 因果步骤两段可按世界观替换；留空 = 使用内置默认。
+  //   默认文本单一真相源 = evolution 的 DEFAULT_SEGS，这里只读引用。
+  // ─────────────────────────────────────────────
+  function getDefaultSegs() {
+    return window.WORLD_ENGINE_EVOLUTION_DEFAULT_SEGS || { engineRole: '', causalSteps: '' };
+  }
+
+  function buildEngineSegmentsHTML() {
+    var P = getPresets();
+    if (!P) return '';
+    var preset = P.getActivePreset();
+    var isBuiltin = preset.builtin;
+    var segs = preset.engineSegments || { engineRole: '', causalSteps: '' };
+    var arrowClass = _collapsed.engineSegments ? '' : ' open';
+    var bodyClass = _collapsed.engineSegments ? ' collapsed' : '';
+    var builtinNote = isBuiltin
+      ? '<div class="we-hint" style="margin-bottom:6px;color:var(--we-warning,#fdcb6e);">当前为内置预设。保存覆写时将自动创建一个副本。</div>'
+      : '';
+
+    var segRow = function (key, label, value, hint) {
+      return '' +
+        '<div class="we-input-group">' +
+          '<label>' + label + '</label>' +
+          '<textarea id="we-preset-engine-' + key + '" style="min-height:140px;" placeholder="留空 = 使用内置默认">' + esc(value || '') + '</textarea>' +
+          '<div style="display:flex;gap:6px;margin-top:4px;">' +
+            '<button class="we-btn" data-we-engine-seg-fill="' + key + '" title="把内置默认文本填入编辑框，在其基础上修改">以默认为底稿</button>' +
+            '<button class="we-btn" data-we-engine-seg-clear="' + key + '" title="清空编辑框 = 恢复使用内置默认">清空（恢复默认）</button>' +
+          '</div>' +
+          '<div style="font-size:11px;color:var(--we-text3);margin-top:3px;">' + hint + '</div>' +
+        '</div>';
+    };
+
+    return '' +
+      '<hr class="we-preset-separator">' +
+      '<div class="we-section">' +
+        '<div class="we-collapsible-header" data-we-toggle="engineSegments">' +
+          '<span class="we-section-title" style="margin:0;">引擎段落覆写（高级）</span>' +
+          '<span class="we-collapsible-arrow' + arrowClass + '">&#9654;</span>' +
+        '</div>' +
+        '<div class="we-collapsible-body' + bodyClass + '" data-we-body="engineSegments" style="max-height:900px;">' +
+          builtinNote +
+          '<div class="we-hint" style="margin-bottom:6px;">替换推演 prompt 开头的引擎人设与因果检查步骤，让世界的推演倾向贴合本世界观（如末日世界倾向恶化、日常世界节奏平缓、为自定义模块定制因果步骤）。留空的段落使用内置默认。<b>覆写不得要求违反 JSON 输出格式；持续实体 ID 协议不受覆写影响，始终生效。</b></div>' +
+          segRow('role', '引擎角色（人设与推演倾向）', segs.engineRole,
+            '示例：「你是一个冷酷的末日世界推演引擎，倾向让事态恶化，好消息必然伴随代价。只输出 JSON。」') +
+          segRow('steps', '因果检查步骤', segs.causalSteps,
+            '按本世界观的模块与题材改写检查顺序。自定义模块多的世界建议在此写明各模块的更新时机与因果条件。') +
+          '<button class="we-btn we-btn-primary" id="we-preset-save-engine-segs" style="margin-top:6px;">保存引擎段落覆写</button>' +
+        '</div>' +
+      '</div>';
+  }
+
+  // ─────────────────────────────────────────────
   // Section 3: 术语表预览 (Term Map Preview)
   // ─────────────────────────────────────────────
   function buildModuleTogglesHTML() {
@@ -1816,6 +1870,7 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
       buildPresetSelectorHTML() +
       buildModeModulesHTML() +
       buildRulesEditorHTML() +
+      buildEngineSegmentsHTML() +
       buildModuleTogglesHTML() +
       buildSchemaOverridesHTML() +
       buildPresetDetailsHTML();
@@ -2006,6 +2061,16 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
       handleSaveRules();
       return;
     }
+
+    // ── 引擎段落覆写 ──
+    if (target.id === 'we-preset-save-engine-segs' || target.closest('#we-preset-save-engine-segs')) {
+      handleSaveEngineSegments();
+      return;
+    }
+    var _segFill = target.closest('[data-we-engine-seg-fill]');
+    if (_segFill) { handleEngineSegFill(_segFill); return; }
+    var _segClear = target.closest('[data-we-engine-seg-clear]');
+    if (_segClear) { handleEngineSegClear(_segClear); return; }
 
     if (target.classList && target.classList.contains('we-module-toggle-cb')) {
       var label = target.closest('.we-module-toggle-row');
@@ -2372,6 +2437,64 @@ window.WORLD_ENGINE_PRESET_UI = (function () {
       P.saveCustomPreset(preset);
       toast('自定义规则已保存');
     }
+  }
+
+  // ── Handler: Save Engine Segments (引擎段落覆写) ──
+  function handleSaveEngineSegments() {
+    var P = getPresets();
+    if (!P) return;
+
+    var roleEl = document.getElementById('we-preset-engine-role');
+    var stepsEl = document.getElementById('we-preset-engine-steps');
+    if (!roleEl || !stepsEl) return;
+
+    // 与默认逐字相同的覆写视为未覆写：存空，避免把默认拷贝固化进预设
+    var defs = getDefaultSegs();
+    var role = (roleEl.value || '').trim();
+    var steps = (stepsEl.value || '').trim();
+    var segs = {
+      engineRole: role === defs.engineRole.trim() ? '' : role,
+      causalSteps: steps === defs.causalSteps.trim() ? '' : steps
+    };
+
+    var preset = P.getActivePreset();
+    if (preset.builtin) {
+      var copy = deepClone(preset);
+      copy.id = generateId();
+      copy.name = preset.name + ' (自定义)';
+      copy.builtin = false;
+      copy.engineSegments = segs;
+      P.saveCustomPreset(copy);
+      P.setActivePreset(copy.id);
+      toast('已创建自定义副本并保存引擎段落: ' + copy.name);
+      refreshPresetSection();
+      if (window.WORLD_ENGINE_UI && typeof window.WORLD_ENGINE_UI.refresh === 'function') {
+        window.WORLD_ENGINE_UI.refresh(false);
+      }
+    } else {
+      preset.engineSegments = segs;
+      P.saveCustomPreset(preset);
+      toast((segs.engineRole || segs.causalSteps) ? '引擎段落覆写已保存' : '引擎段落已恢复默认');
+    }
+  }
+
+  async function handleEngineSegFill(button) {
+    var key = button.getAttribute('data-we-engine-seg-fill');
+    var el = document.getElementById('we-preset-engine-' + key);
+    if (!el) return;
+    var defs = getDefaultSegs();
+    var text = key === 'role' ? defs.engineRole : defs.causalSteps;
+    if (el.value.trim() && el.value.trim() !== text.trim()) {
+      var ok = await showConfirm('编辑框已有内容，用默认文本覆盖？');
+      if (!ok) return;
+    }
+    el.value = text;
+  }
+
+  function handleEngineSegClear(button) {
+    var key = button.getAttribute('data-we-engine-seg-clear');
+    var el = document.getElementById('we-preset-engine-' + key);
+    if (el) el.value = '';
   }
 
   // ── Handler: Add Term ──
