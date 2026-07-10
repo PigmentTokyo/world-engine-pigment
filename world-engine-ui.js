@@ -4670,6 +4670,35 @@ window.WORLD_ENGINE_UI = (function() {
     wire('we-sat-forward', () => runManualEvolve('forward', 'state'));
     wire('we-sat-redo', () => runManualEvolve('redo', 'checkpoint'));
     wire('we-sat-abort', () => { evolution.abort(); showToast('已发送停止信号'); });
+
+    // [移植 v2.3.14] 「插头」总开关(球左侧第四卫星):一键联动 evolveMode + injectIntoPrompt
+    //   关闭态(插上)= evolveMode='manual'(不自动推演) + injectIntoPrompt=false(不注入)；
+    //   不新增设置字段:状态从这俩字段反推(`manual && inject===false` = 关)。
+    //   立即生效:切完调 applyInjection 让 inject 守卫生效(关→unregister,开→重注入)。
+    //   manual 自带拦 pending autoEvolveTimer 能力,无需额外 engineEnabled 守卫。
+    //   不用 we-sat-off(wire 内会拦 we-sat-off 不可点);用 .on class 标关闭态,power 永远可点。
+    const wapi = window.WORLD_ENGINE_API;
+    const readSettings = () => (wapi && wapi.getSettings ? wapi.getSettings(true) : {}) || {};
+    const isPowerOff = (s) => s.evolveMode === 'manual' && s.injectIntoPrompt === false;
+    const syncPowerState = () => {
+      const el = ball.querySelector('#we-sat-power');
+      if (el) el.classList.toggle('on', isPowerOff(readSettings()));
+    };
+    syncPowerState(); // 初始视觉态
+    wire('we-sat-power', () => {
+      const turnOff = !isPowerOff(readSettings()); // 切到对面
+      const setKV = (k, v) => {
+        const c = wapi && wapi.getSettings ? wapi.getSettings(true) : {};
+        window.WORLD_ENGINE_STORE.setItem('world_engine_settings', JSON.stringify({ ...c, [k]: v }));
+        if (wapi && wapi.getSettings) wapi.getSettings(true);
+      };
+      setKV('evolveMode', turnOff ? 'manual' : 'auto');
+      setKV('injectIntoPrompt', !turnOff); // 关=false, 开=true
+      window.WORLD_ENGINE?.applyInjection?.(); // 立即重注入:关→unregisterInjection,开→重新注入
+      syncPowerState(); // 更新 .on 视觉态
+      showToast(turnOff ? '已关闭推演与注入' : '已开启推演与注入');
+      if (typeof _currentView !== 'undefined' && _currentView === 'settings') refresh();
+    });
   }
 
   function buildInputButton() {
@@ -4692,7 +4721,8 @@ window.WORLD_ENGINE_UI = (function() {
         '<span class="we-ball-tip"></span>' +
         '<span class="we-sat we-sat-up" id="we-sat-forward" role="button" title="向前推进"><i class="fa-solid fa-forward"></i></span>' +
         '<span class="we-sat we-sat-right we-sat-off" id="we-sat-abort" role="button" title="停止推演"><i class="fa-solid fa-stop"></i></span>' +
-        '<span class="we-sat we-sat-down" id="we-sat-redo" role="button" title="重新推进"><i class="fa-solid fa-rotate-right"></i></span>';
+        '<span class="we-sat we-sat-down" id="we-sat-redo" role="button" title="重新推进"><i class="fa-solid fa-rotate-right"></i></span>' +
+        '<span class="we-sat we-sat-left" id="we-sat-power" role="button" title="插上=关闭推演与注入 / 拔下=开启"><i class="fa-solid fa-power-off"></i></span>';
       btn.onclick = () => togglePanel();
       document.body.appendChild(btn);
       wireSatellites(btn);
