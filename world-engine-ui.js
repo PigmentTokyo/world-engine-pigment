@@ -2141,6 +2141,10 @@ window.WORLD_ENGINE_UI = (function() {
     const everyX = Math.max(1, parseInt(settings.evolveEveryX) || 1);
     const readRounds = Math.min(everyX, Math.max(1, parseInt(settings.evolveReadRounds) || 1));
     const manualReadRounds = Math.max(1, parseInt(settings.manualReadRounds) || 1);
+    const apiTemperature = Number.isFinite(Number(settings.temperature)) ? Math.max(0, Number(settings.temperature)) : 0.7;
+    const apiMaxTokens = Math.max(1, parseInt(settings.maxTokens) || 8000);
+    const apiTimeoutMs = Number.isFinite(Number(settings.apiTimeoutMs)) ? Number(settings.apiTimeoutMs) : 120000;
+    const apiTimeoutSec = Math.max(0, Math.round(apiTimeoutMs / 1000));
     // 按时间模式的当前值
     const _stForTime = core.hasState() ? core.loadState() : null;
     const _cpForTime = core.restoreCheckpoint();
@@ -2181,6 +2185,21 @@ window.WORLD_ENGINE_UI = (function() {
           经酒馆后端转发（绕过浏览器跨域/CORS）
         </label>
         <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">开启后请求经 SillyTavern 后端转发到目标 API，可解决"拉不到模型/请求被拦截"。关闭则浏览器直连（需目标接口允许跨域）。非酒馆环境下自动直连。</div>
+      </div>
+      <div class="we-input-group" style="display:flex;gap:6px;">
+        <div style="flex:1;">
+          <label>温度</label>
+          <input type="number" id="we-temperature" min="0" step="0.1" value="${apiTemperature}" style="width:100%;">
+        </div>
+        <div style="flex:1;">
+          <label>最大输出 token</label>
+          <input type="number" id="we-max-tokens" min="1" step="1" value="${apiMaxTokens}" style="width:100%;">
+        </div>
+      </div>
+      <div class="we-input-group">
+        <label>请求超时（秒）</label>
+        <input type="number" id="we-api-timeout-sec" min="0" step="1" value="${apiTimeoutSec}" style="width:100%;">
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">超过该时间仍未收到完整响应会自动中止并解除「推演中」状态。0 = 不超时。</div>
       </div>`;
 
     const evolveBody = `
@@ -3394,6 +3413,9 @@ window.WORLD_ENGINE_UI = (function() {
           ),
           model: document.getElementById('we-model')?.value || 'gpt-3.5-turbo',
           useStProxy: document.getElementById('we-use-st-proxy')?.checked !== false,
+          temperature: (() => { const t = parseFloat(gv('we-temperature')); return Number.isFinite(t) ? Math.max(0, t) : 0.7; })(),
+          maxTokens: Math.max(1, parseInt(gv('we-max-tokens')) || 8000),
+          apiTimeoutMs: (() => { const s = parseFloat(gv('we-api-timeout-sec')); return Number.isFinite(s) ? Math.max(0, Math.round(s * 1000)) : 120000; })(),
           injectIntoPrompt: document.getElementById('we-inject-into-prompt')?.checked !== false,
           injectMaxChars: Math.max(0, parseInt(gv('we-inject-max-chars')) || 0),
           evolveMode: (_modeRaw === 'manual' || _modeRaw === 'time') ? _modeRaw : 'auto',
@@ -3703,6 +3725,9 @@ window.WORLD_ENGINE_UI = (function() {
           apiKey: document.getElementById('we-api-key')?.value || '',
           model: document.getElementById('we-model')?.value || '',
           useStProxy: document.getElementById('we-use-st-proxy')?.checked !== false,
+          temperature: (() => { const t = parseFloat(document.getElementById('we-temperature')?.value); return Number.isFinite(t) ? Math.max(0, t) : 0.7; })(),
+          maxTokens: Math.max(1, parseInt(document.getElementById('we-max-tokens')?.value) || 8000),
+          apiTimeoutMs: (() => { const s = parseFloat(document.getElementById('we-api-timeout-sec')?.value); return Number.isFinite(s) ? Math.max(0, Math.round(s * 1000)) : 120000; })(),
           injectIntoPrompt: document.getElementById('we-inject-into-prompt')?.checked !== false,
           injectMaxChars: Math.max(0, parseInt(document.getElementById('we-inject-max-chars')?.value) || 0)
         }));

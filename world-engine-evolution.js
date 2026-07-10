@@ -1310,7 +1310,8 @@ ${persona}`
       { key: 'output-format', label: '⑨ 输出格式与示例', content: segOutput },
       { key: 'extra', label: '⑩ 额外指令/附加提示词', content: (segExtraInstruction ? segExtraInstruction + '\n' : '') + segTone }
     ];
-    const rawResult = await api.callApi(prompt, 8000, 0.7, _abortController.signal);
+    // [移植 v2.3.21] 推演请求不再硬编码 8000/0.7，读取用户设置（默认 8000/0.7，见 api.js defaults）
+    const rawResult = await api.callApi(prompt, undefined, undefined, _abortController.signal);
     _lastPrompt = prompt;
     _lastRawResult = rawResult;
     const update = api.parseJSON(rawResult);

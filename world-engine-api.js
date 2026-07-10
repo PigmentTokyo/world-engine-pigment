@@ -43,7 +43,9 @@ window.WORLD_ENGINE_API = (function() {
       apiKey: '',
       model: 'gpt-3.5-turbo',
       temperature: 0.7,
-      maxTokens: 2000,
+      // [移植 v2.3.21·pigment 适配] 上游默认 2000；pigment 推演一直用 8000（世界状态 JSON 大，
+      // 2000 必截断），此字段此前无 UI 无调用方，默认直接取 8000 保持推演现状
+      maxTokens: 8000,
       useStProxy: true,
       injectIntoPrompt: true,
       // [移植 v2.4.1] 正文注入最大字符数。0 = 不限制
@@ -162,12 +164,36 @@ window.WORLD_ENGINE_API = (function() {
     return message || 'API 网络请求失败';
   }
 
-  // [FIX 移植自上游 2.3.15] 带超时的 fetch：把调用方传入的 signal（用户主动中止 / 切聊天）
-  //   与内部超时计时器合并到同一次请求。超时触发 => controller.abort()，但抛出的是普通 Error
-  //   （非 AbortError），这样 evolve 的 catch 会按「推演失败」处理并复位 _isRunning，状态栏显示
-  //   明确超时原因；用户主动中止仍走外部 signal 的 AbortError，buildNetworkErrorMessage 显示「已取消」。
+  function timeoutError(timeoutMs) {
+    return new Error('API 请求超时（' + Math.max(1, Math.ceil(timeoutMs / 1000)) + 's 无响应），已中止本次请求');
+  }
+
+  async function readResponseBody(resp) {
+    const text = await resp.text();
+    let data = null;
+    let parseError = null;
+    if (text) {
+      try { data = JSON.parse(text); } catch (e) { parseError = e; }
+    }
+    return { resp, data, text, parseError };
+  }
+
+  function responseDetail(result) {
+    const data = result && result.data;
+    const text = result && result.text;
+    if (data && data.error && data.error.message) return data.error.message;
+    if (data && data.message) return data.message;
+    if (data) return JSON.stringify(data);
+    return text ? String(text).slice(0, 500) : '';
+  }
+
+  // [FIX 移植自上游 2.3.15，v2.3.21 增强] 带超时的 fetch：把调用方传入的 signal（用户主动中止 /
+  //   切聊天）与内部超时计时器合并到同一次请求。超时触发 => controller.abort()，但抛出的是普通
+  //   Error（非 AbortError），这样 evolve 的 catch 会按「推演失败」处理并复位 _isRunning。
+  //   [v2.3.21] 超时覆盖完整请求生命周期：fetch resolve 只代表响应头到达，正文读取仍可能卡住
+  //   （服务端半开响应），故正文读取（readResponseBody）也在超时窗口内完成。
   //   apiTimeoutMs <= 0 时不设超时（保留旧行为）。
-  async function fetchWithTimeout(url, options) {
+  async function fetchResponseWithTimeout(url, options) {
     const { signal: externalSignal, ...rest } = options || {};
     let timeoutMs = 120000;
     try {
@@ -176,7 +202,8 @@ window.WORLD_ENGINE_API = (function() {
     } catch (e) {}
 
     if (!(timeoutMs > 0)) {
-      return fetch(url, { ...rest, signal: externalSignal || null });
+      const resp = await fetch(url, { ...rest, signal: externalSignal || null });
+      return readResponseBody(resp);
     }
 
     const controller = new AbortController();
@@ -188,11 +215,10 @@ window.WORLD_ENGINE_API = (function() {
       else externalSignal.addEventListener('abort', onExternalAbort, { once: true });
     }
     try {
-      return await fetch(url, { ...rest, signal: controller.signal });
+      const resp = await fetch(url, { ...rest, signal: controller.signal });
+      return await readResponseBody(resp);
     } catch (e) {
-      if (timedOut) {
-        throw new Error('API 请求超时（' + Math.round(timeoutMs / 1000) + 's 无响应），已中止本次推演');
-      }
+      if (timedOut) throw timeoutError(timeoutMs);
       throw e;   // 外部中止 => 原样抛 AbortError
     } finally {
       clearTimeout(timer);
@@ -201,29 +227,22 @@ window.WORLD_ENGINE_API = (function() {
   }
 
   async function fetchJson(url, options) {
-    let resp;
+    let result;
     try {
-      resp = await fetchWithTimeout(url, options);
+      result = await fetchResponseWithTimeout(url, options);
     } catch(e) {
       throw new Error(buildNetworkErrorMessage(e, url));
     }
 
+    const resp = result.resp;
     if (!resp.ok) {
-      let detail = '';
-      try {
-        const err = await resp.json();
-        detail = err.error?.message || err.message || JSON.stringify(err);
-      } catch(e) {
-        try { detail = await resp.text(); } catch(e2) {}
-      }
-      throw new Error(`HTTP ${resp.status}: ${detail || resp.statusText || '请求失败'}`);
+      throw new Error(`HTTP ${resp.status}: ${responseDetail(result) || resp.statusText || '请求失败'}`);
     }
 
-    try {
-      return await resp.json();
-    } catch(e) {
-      throw new Error('API 返回不是有效 JSON: ' + (e.message || e));
+    if (result.parseError) {
+      throw new Error('API 返回不是有效 JSON: ' + (result.parseError.message || result.parseError));
     }
+    return result.data || {};
   }
 
   // [移植 v2.3.22] API 请求参数结构化日志：核对实际请求参数用。
@@ -264,12 +283,13 @@ window.WORLD_ENGINE_API = (function() {
     const url = normalizeUrl(settings.apiUrl);
     if (!url) throw new Error('未配置 API URL，请在设置中填写');
 
-    const resolvedMaxTokens = Number(maxTokens ?? settings.maxTokens ?? 2000);
-    const resolvedTemperature = Number(temperature ?? settings.temperature ?? 0.7);
+    // [移植 v2.3.21] 未显式传参时读取用户设置（温度/最大输出 token），并做合法化夹紧
+    const selectedTemperature = temperature ?? settings.temperature;
+    const selectedMaxTokens = maxTokens ?? settings.maxTokens;
     const model = settings.model || 'gpt-3.5-turbo';
     const messages = [{ role: 'user', content: prompt }];
-    const temp = Number.isFinite(resolvedTemperature) ? resolvedTemperature : 0.7;
-    const maxTok = Number.isFinite(resolvedMaxTokens) ? resolvedMaxTokens : 2000;
+    const temp = Number.isFinite(Number(selectedTemperature)) ? Math.max(0, Number(selectedTemperature)) : 0.7;
+    const maxTok = Math.max(1, parseInt(selectedMaxTokens) || 8000);
 
     let data;
     if (canUseStProxy()) {
