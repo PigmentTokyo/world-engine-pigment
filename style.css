@@ -3222,9 +3222,13 @@
   overflow-x: auto;
   border-bottom: 1px solid var(--we-border);
   margin: 2px 0 12px;
-  scrollbar-width: none;
+  /* [移植 v2.4.1] 7 个选项卡会溢出：显示细滚动条提示可横向滚动（原为隐藏） */
+  scrollbar-width: thin;
+  scrollbar-color: var(--we-border) transparent;
 }
-.we-settings-tabs::-webkit-scrollbar { display: none; }
+.we-settings-tabs::-webkit-scrollbar { height: 4px; }
+.we-settings-tabs::-webkit-scrollbar-thumb { background: var(--we-border); border-radius: 2px; }
+.we-settings-tabs::-webkit-scrollbar-track { background: transparent; }
 .we-settings-tab {
   flex: 0 0 auto;
   padding: 7px 12px;

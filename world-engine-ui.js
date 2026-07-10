@@ -465,6 +465,7 @@ window.WORLD_ENGINE_UI = (function() {
     { key: 'preset', label: '预设' },
     { key: 'worldbook', label: '世界书' },
     { key: 'data', label: '数据' },
+    { key: 'mechanics', label: '本地机制' },
     { key: 'debug', label: '调试' }
   ];
   let _settingsTab = 'common';
@@ -792,6 +793,7 @@ window.WORLD_ENGINE_UI = (function() {
       preset: presetSettings || '<div class="we-empty">预设管理模块未加载</div>',
       worldbook: extra.worldbook || '',
       data: (extra.data || '') + (extra.backup || '') + checkpointSection,
+      mechanics: form.mechanics || '',
       debug: debugSection
     };
 
@@ -2329,6 +2331,102 @@ window.WORLD_ENGINE_UI = (function() {
         <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">限制注入到正文 prompt 的世界状态长度。默认 5000；0 = 不限制。</div>
       </div>`;
 
+    // [移植 v2.4.1] 本地机制调参：区域事件 / 事件骰子 / 风声消散 / 保留上限，关键公式直接写在设置里
+    const mech = (k, d) => { const v = settings[k]; return (v === undefined || v === null || v === '') ? d : v; };
+    const numInput = (id, key, label, d, min, step) =>
+      '<div class="we-input-group" style="flex:1;min-width:112px;margin-bottom:0;"><label>' + label + '</label>'
+      + '<input type="number" id="' + id + '" min="' + min + '" step="' + step + '" value="' + mech(key, d) + '"></div>';
+    const wideNumInput = (id, key, label, d, min, step) =>
+      '<div class="we-input-group" style="width:100%;margin-bottom:0;"><label>' + label + '</label>'
+      + '<input type="number" id="' + id + '" min="' + min + '" step="' + step + '" value="' + mech(key, d) + '"></div>';
+    const regionalBody = `
+      <div style="font-size:12px;color:var(--we-text2);line-height:1.6;margin-bottom:10px;">
+        区域突发事件是纯本地骰子：先由本地判定是否发生，再把事件类型和约束交给推演模型写成世界变化。
+        概率越高，远方灾变、治安事件、交通断裂这类背景波动越频繁。
+      </div>
+      <div class="we-input-group">
+        <label>区域突发事件参数</label>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          ${numInput('we-local-ri-chance', 'localRegionalIncidentChancePercent', '触发概率 %', 3, 0, '0.1')}
+          ${numInput('we-local-ri-duration', 'localRegionalIncidentDuration', '持续轮数', 5, 1, '1')}
+          ${numInput('we-local-ri-cooldown', 'localRegionalIncidentCooldown', '消散后冷却', 5, 0, '1')}
+        </div>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">保持默认值 = 跟随当前预设/内置配置；改动后以此处为准（pigment 的预设可自带区域事件参数）。</div>
+      </div>`;
+
+    const diceBody = `
+      <div style="font-size:12px;color:var(--we-text2);line-height:1.65;margin-bottom:10px;">
+        每条事件链每轮掷 1d100。设阶段格数 r = 当前格数 / 9。<br>
+        目标值 T = 阶段基础值 - 200 × r × (1 - r) + Lv修正 - 全局推进修正。<br>
+        若 骰值 &gt; T：推进一格；若 骰值 &lt; T × 受挫系数：倒退一格；否则保持。<br>
+        冲突型 Lv 修正 = -(Lv - 1) × 10，Lv 越高越容易爆发。推进型 Lv 修正 = +(Lv - 1) × 10，Lv 越高越难完成。
+      </div>
+      <div class="we-input-group">
+        <label>事件骰子公式参数</label>
+        <div style="margin-bottom:6px;">
+          ${wideNumInput('we-local-dice-mod', 'localEventDiceModifier', '全局推进修正', 0, -100, '1')}
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          ${numInput('we-local-setback-ratio', 'localEventSetbackRatioPercent', '受挫系数 %', 40, 0, '1')}
+          ${numInput('we-local-progress-fail-base', 'localProgressFailBase', '推进型保底 A', 2, 0, '1')}
+          ${numInput('we-local-conflict-fail-base', 'localConflictFailBase', '冲突型保底 B', 6, 1, '1')}
+        </div>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">
+          保底公式：推进型连续失败上限 = A + Lv；冲突型连续失败上限 = max(1, B - Lv)。达到上限后强制推进一格。
+        </div>
+      </div>`;
+
+    const winddecayBody = `
+      <div style="font-size:12px;color:var(--we-text2);line-height:1.65;margin-bottom:10px;">
+        风声本轮没有被同主题更新时，沉寂轮数 +1。沉寂轮数 ≤ grace 时不检查消散。<br>
+        超过 grace 后：n = 沉寂轮数 - grace - 1。<br>
+        消散率 P = clamp(base + linear × n + quadratic × n² - (Lv - 1) × 10, 5, 95)。<br>
+        掷 1d100，若 骰值 ≤ P，则该风声消散。Lv 越高，越不容易消散。
+      </div>
+      <div class="we-input-group">
+        <label>风声消散公式参数</label>
+        ${['Rumor:流言:25:1:5:3','Sentiment:舆论:8:5:2:1','Report:消息:20:2:4:2','Announcement:公告:10:4:3:1'].map(row => {
+          const p = row.split(':');
+          return '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">'
+            + '<div style="width:42px;color:var(--we-text2);font-size:12px;align-self:center;">' + p[1] + '</div>'
+            + numInput('we-local-wind-' + p[0].toLowerCase() + '-base', 'localWind' + p[0] + 'Base', 'base', p[2], 0, '1')
+            + numInput('we-local-wind-' + p[0].toLowerCase() + '-grace', 'localWind' + p[0] + 'Grace', 'grace', p[3], 0, '1')
+            + numInput('we-local-wind-' + p[0].toLowerCase() + '-linear', 'localWind' + p[0] + 'Linear', 'linear', p[4], 0, '1')
+            + numInput('we-local-wind-' + p[0].toLowerCase() + '-quadratic', 'localWind' + p[0] + 'Quadratic', 'quadratic', p[5], 0, '1')
+            + '</div>';
+        }).join('')}
+      </div>`;
+
+    const retentionBody = `
+      <div style="font-size:12px;color:var(--we-text2);line-height:1.65;margin-bottom:10px;">
+        这里控制“东西在面板里留多久”和“每类最多存多少”。<br>
+        正面终局事件（已爆发 / 已完成）保留轮数 = 基础保留 + Lv × 每级额外保留。<br>
+        负面终局事件（已消散 / 已失败）下一轮清退；影响链、已终结仇敌、账本分别按各自保存轮数清退。
+      </div>
+      <div class="we-input-group">
+        <label>保留轮数</label>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          ${numInput('we-local-terminal-base', 'localTerminalBaseKeepRounds', '终局基础保留', 2, 0, '1')}
+          ${numInput('we-local-terminal-level', 'localTerminalLevelKeepRounds', '每级额外保留', 2, 0, '1')}
+          ${numInput('we-local-influence-keep', 'localInfluenceKeepRounds', '影响链保留', 8, 1, '1')}
+          ${numInput('we-local-enemy-keep', 'localEnemyTerminalKeepRounds', '已终结仇敌保留', 20, 1, '1')}
+          ${numInput('we-local-ledger-keep', 'localLedgerKeepRounds', '账本保存轮数', 20, 1, '1')}
+        </div>
+      </div>
+      <div class="we-input-group">
+        <label>容量上限</label>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          ${numInput('we-local-cap-events', 'localCapEvents', '事件上限', 16, 1, '1')}
+          ${numInput('we-local-cap-factions', 'localCapFactions', '势力上限', 15, 1, '1')}
+          ${numInput('we-local-cap-winds', 'localCapWinds', '风声上限', 12, 1, '1')}
+          ${numInput('we-local-cap-trends', 'localCapWorldTrends', '大势上限', 4, 1, '1')}
+          ${numInput('we-local-cap-influence', 'localCapInfluence', '影响链上限', 12, 1, '1')}
+          ${numInput('we-local-cap-enemies', 'localCapEnemies', '仇敌上限', 8, 1, '1')}
+          ${numInput('we-local-cap-econ', 'localCapEconomySignals', '经济信号上限', 8, 1, '1')}
+          ${numInput('we-local-cap-blackbox', 'localCapBlackbox', '黑盒总上限', 12, 1, '1')}
+        </div>
+      </div>`;
+
     const displayMode = settings.displayMode === 'expand' ? 'expand' : 'mask';
     const _curTheme = getStoredTheme();
     const _themeOpts = WE_THEMES.map(t => '<option value="' + t.id + '"' + (t.id === _curTheme ? ' selected' : '') + '>' + t.name + '</option>').join('');
@@ -2352,7 +2450,11 @@ window.WORLD_ENGINE_UI = (function() {
       evolve: sec('set-evolve', '推演模式', evolveBody),
       filter: sec('set-filter', '输入输出过滤器', filterBody),
       display: sec('set-display', '界面显示', displayBody),
-      inject: sec('set-inject', '正文注入', injectBody)
+      inject: sec('set-inject', '正文注入', injectBody),
+      mechanics: sec('set-regional', '区域事件', regionalBody)
+        + sec('set-dice', '事件骰子', diceBody)
+        + sec('set-winddecay', '风声消散', winddecayBody)
+        + sec('set-retention', '保留上限', retentionBody)
     };
   }
 
@@ -3481,7 +3583,44 @@ window.WORLD_ENGINE_UI = (function() {
           evolveTimeMul2: parseFloat(gv('we-time-mul2')) || 0,
           evolveTimeMul3: parseFloat(gv('we-time-mul3')) || 0,
           evolveTimeThreshold: Math.max(1, parseInt(gv('we-time-threshold')) || 1),
-          evolveTimeMaxRounds: Math.max(1, parseInt(gv('we-time-maxrounds')) || 10)
+          evolveTimeMaxRounds: Math.max(1, parseInt(gv('we-time-maxrounds')) || 10),
+          // [移植 v2.4.1] 本地机制调参
+          localRegionalIncidentChancePercent: Math.min(100, Math.max(0, parseFloat(gv('we-local-ri-chance')) || 0)),
+          localRegionalIncidentDuration: Math.max(1, parseInt(gv('we-local-ri-duration')) || 5),
+          localRegionalIncidentCooldown: Math.max(0, parseInt(gv('we-local-ri-cooldown')) || 0),
+          localEventDiceModifier: Math.min(100, Math.max(-100, parseInt(gv('we-local-dice-mod')) || 0)),
+          localEventSetbackRatioPercent: Math.min(100, Math.max(0, parseFloat(gv('we-local-setback-ratio')) || 0)),
+          localProgressFailBase: Math.max(0, parseInt(gv('we-local-progress-fail-base')) || 0),
+          localConflictFailBase: Math.max(1, parseInt(gv('we-local-conflict-fail-base')) || 6),
+          localTerminalBaseKeepRounds: Math.max(0, parseInt(gv('we-local-terminal-base')) || 0),
+          localTerminalLevelKeepRounds: Math.max(0, parseInt(gv('we-local-terminal-level')) || 0),
+          localInfluenceKeepRounds: Math.max(1, parseInt(gv('we-local-influence-keep')) || 8),
+          localEnemyTerminalKeepRounds: Math.max(1, parseInt(gv('we-local-enemy-keep')) || 20),
+          localLedgerKeepRounds: Math.max(1, parseInt(gv('we-local-ledger-keep')) || 20),
+          localCapEvents: Math.max(1, parseInt(gv('we-local-cap-events')) || 16),
+          localCapFactions: Math.max(1, parseInt(gv('we-local-cap-factions')) || 15),
+          localCapWinds: Math.max(1, parseInt(gv('we-local-cap-winds')) || 12),
+          localCapWorldTrends: Math.max(1, parseInt(gv('we-local-cap-trends')) || 4),
+          localCapInfluence: Math.max(1, parseInt(gv('we-local-cap-influence')) || 12),
+          localCapEnemies: Math.max(1, parseInt(gv('we-local-cap-enemies')) || 8),
+          localCapEconomySignals: Math.max(1, parseInt(gv('we-local-cap-econ')) || 8),
+          localCapBlackbox: Math.max(1, parseInt(gv('we-local-cap-blackbox')) || 12),
+          localWindAnnouncementBase: Math.min(95, Math.max(0, parseFloat(gv('we-local-wind-announcement-base')) || 0)),
+          localWindAnnouncementGrace: Math.max(0, parseInt(gv('we-local-wind-announcement-grace')) || 0),
+          localWindAnnouncementLinear: Math.max(0, parseFloat(gv('we-local-wind-announcement-linear')) || 0),
+          localWindAnnouncementQuadratic: Math.max(0, parseFloat(gv('we-local-wind-announcement-quadratic')) || 0),
+          localWindReportBase: Math.min(95, Math.max(0, parseFloat(gv('we-local-wind-report-base')) || 0)),
+          localWindReportGrace: Math.max(0, parseInt(gv('we-local-wind-report-grace')) || 0),
+          localWindReportLinear: Math.max(0, parseFloat(gv('we-local-wind-report-linear')) || 0),
+          localWindReportQuadratic: Math.max(0, parseFloat(gv('we-local-wind-report-quadratic')) || 0),
+          localWindRumorBase: Math.min(95, Math.max(0, parseFloat(gv('we-local-wind-rumor-base')) || 0)),
+          localWindRumorGrace: Math.max(0, parseInt(gv('we-local-wind-rumor-grace')) || 0),
+          localWindRumorLinear: Math.max(0, parseFloat(gv('we-local-wind-rumor-linear')) || 0),
+          localWindRumorQuadratic: Math.max(0, parseFloat(gv('we-local-wind-rumor-quadratic')) || 0),
+          localWindSentimentBase: Math.min(95, Math.max(0, parseFloat(gv('we-local-wind-sentiment-base')) || 0)),
+          localWindSentimentGrace: Math.max(0, parseInt(gv('we-local-wind-sentiment-grace')) || 0),
+          localWindSentimentLinear: Math.max(0, parseFloat(gv('we-local-wind-sentiment-linear')) || 0),
+          localWindSentimentQuadratic: Math.max(0, parseFloat(gv('we-local-wind-sentiment-quadratic')) || 0)
         };
         // a 不得超过 X（每次推演的轮数）
         ns.evolveReadRounds = Math.min(ns.evolveReadRounds, ns.evolveEveryX);

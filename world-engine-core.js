@@ -19,6 +19,16 @@ window.WORLD_ENGINE_CORE = (function() {
     progress: ['已完成', '已失败']
   };
 
+  // [移植 v2.4.1] 容量上限调参读取（设置缺失/非法时回退出厂值）
+  function _capSettings() {
+    return window.WORLD_ENGINE_API && window.WORLD_ENGINE_API.getSettings ? window.WORLD_ENGINE_API.getSettings() : {};
+  }
+
+  function capSetting(key, fallback) {
+    const n = Number(_capSettings()[key]);
+    return Math.max(1, Math.round(Number.isFinite(n) ? n : fallback));
+  }
+
   function getDefaultState() {
     return {
       round: 0,
@@ -311,7 +321,7 @@ window.WORLD_ENGINE_CORE = (function() {
       if (f.powerPillars.length > 3) f.powerPillars.length = 3;
     }
     state.worldTrends = state.worldTrends || [];
-    if (state.worldTrends.length > 4) state.worldTrends.length = 4;
+    if (state.worldTrends.length > capSetting('localCapWorldTrends', 4)) state.worldTrends.length = capSetting('localCapWorldTrends', 4);
     state.winds = state.winds || [];
     state.winds = state.winds.map((wind, index) => {
       wind.topic = wind.topic || wind.content || `风声${index + 1}`;
@@ -671,7 +681,7 @@ window.WORLD_ENGINE_CORE = (function() {
     } else {
       state.events.unshift(event);
     }
-    if (state.events.length > 16) state.events.pop();
+    if (state.events.length > capSetting('localCapEvents', 16)) state.events.length = capSetting('localCapEvents', 16);
     saveState(state);
   }
 
@@ -695,7 +705,7 @@ window.WORLD_ENGINE_CORE = (function() {
     } else {
       state.factions.unshift(faction);
     }
-    if (state.factions.length > 15) state.factions.pop();
+    if (state.factions.length > capSetting('localCapFactions', 15)) state.factions.length = capSetting('localCapFactions', 15);
     saveState(state);
   }
 
@@ -712,7 +722,7 @@ window.WORLD_ENGINE_CORE = (function() {
       state.worldTrends[idx] = { ...state.worldTrends[idx], ...trend };
     } else {
       state.worldTrends.unshift(trend);
-      if (state.worldTrends.length > 4) state.worldTrends.length = 4;
+      if (state.worldTrends.length > capSetting('localCapWorldTrends', 4)) state.worldTrends.length = capSetting('localCapWorldTrends', 4);
     }
     saveState(state);
   }
@@ -729,7 +739,7 @@ window.WORLD_ENGINE_CORE = (function() {
     const idx = state.winds.findIndex(existing => existing.topic === wind.topic);
     if (idx !== -1) state.winds[idx] = { ...state.winds[idx], ...wind };
     else state.winds.unshift(wind);
-    if (state.winds.length > 12) state.winds.pop();
+    if (state.winds.length > capSetting('localCapWinds', 12)) state.winds.length = capSetting('localCapWinds', 12);
     saveState(state);
   }
 

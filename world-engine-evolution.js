@@ -36,6 +36,50 @@ window.WORLD_ENGINE_EVOLUTION = (function() {
     sentiment: { base: 8, grace: 5, linear: 2, quadratic: 1 }
   };
 
+  // ========== [移植 v2.4.1] 本地机制调参读取 ==========
+  //   设置缺失/非法时回退到上面各常量的出厂值，行为与旧版硬编码一致。
+  function localSettings() {
+    return api && api.getSettings ? api.getSettings() : {};
+  }
+
+  function numSetting(key, fallback, min, max) {
+    const n = Number(localSettings()[key]);
+    let v = Number.isFinite(n) ? n : fallback;
+    if (min !== undefined) v = Math.max(min, v);
+    if (max !== undefined) v = Math.min(max, v);
+    return v;
+  }
+
+  function intSetting(key, fallback, min, max) {
+    return Math.round(numSetting(key, fallback, min, max));
+  }
+
+  function capSetting(key, fallback) {
+    return intSetting(key, fallback, 1);
+  }
+
+  // 风声消散表：按类型读取用户调参，缺省回退 WIND_DECAY 出厂值
+  function tunedWindDecayTable() {
+    const table = {};
+    const prefixes = {
+      announcement: 'localWindAnnouncement',
+      report: 'localWindReport',
+      rumor: 'localWindRumor',
+      sentiment: 'localWindSentiment'
+    };
+    for (const type of Object.keys(WIND_DECAY)) {
+      const d = WIND_DECAY[type];
+      const p = prefixes[type];
+      table[type] = {
+        base: numSetting(p + 'Base', d.base, 0, 95),
+        grace: intSetting(p + 'Grace', d.grace, 0),
+        linear: numSetting(p + 'Linear', d.linear, 0),
+        quadratic: numSetting(p + 'Quadratic', d.quadratic, 0)
+      };
+    }
+    return table;
+  }
+
   let _lastPrompt = '';
   let _lastRawResult = '';
   let _lastPromptSegments = [];
@@ -103,6 +147,22 @@ window.WORLD_ENGINE_EVOLUTION = (function() {
     return REGIONAL_INCIDENT_CONFIG;
   }
 
+  // [移植 v2.4.1·pigment 适配] 区域事件参数：用户设置 > 预设 > 内置。
+  //   上游没有预设层，直接读设置；pigment 的预设可自带 regionalIncidents，
+  //   故约定「设置保持出厂默认 = 跟随预设/内置」，用户改过（≠默认）才覆盖预设值。
+  function tunedRegionalConfig() {
+    const cfg = getRegionalConfig();
+    const chancePct = numSetting('localRegionalIncidentChancePercent', 3, 0, 100);
+    const duration = intSetting('localRegionalIncidentDuration', 5, 1);
+    const cooldown = intSetting('localRegionalIncidentCooldown', 5, 0);
+    return {
+      ...cfg,
+      chance: chancePct !== 3 ? chancePct / 100 : cfg.chance,
+      durationRounds: duration !== 5 ? duration : cfg.durationRounds,
+      cooldownRounds: cooldown !== 5 ? cooldown : cfg.cooldownRounds
+    };
+  }
+
   function ensureRegionalIncident(state) {
     if (!state.regionalIncident) {
       state.regionalIncident = {
@@ -120,7 +180,7 @@ window.WORLD_ENGINE_EVOLUTION = (function() {
   }
 
   function getIncidentTypeLabel(type) {
-    const config = getRegionalConfig();
+    const config = tunedRegionalConfig();
     const found = config.typeWeights.find(t => t.type === type);
     return found ? found.label : type;
   }
@@ -165,7 +225,9 @@ window.WORLD_ENGINE_EVOLUTION = (function() {
       const curve = typeof config.curve === 'function'
         ? config.curve(r)
         : 200 * r * (1 - r);
-      const threshold = Math.round(stageBase - curve + levelAdjust);
+      // [移植 v2.4.1] thresholdModifier：全局推进修正（正值降低目标值=更易推进），可选，默认 0
+      const modifier = Number.isFinite(Number(config.thresholdModifier)) ? Number(config.thresholdModifier) : 0;
+      const threshold = Math.round(stageBase - curve + levelAdjust - modifier);
       const dice = Math.floor(randomFn() * 100) + 1;
       const setbackRatio = Number.isFinite(Number(config.setbackRatio)) ? Number(config.setbackRatio) : 0.4;
       if (dice > threshold) return { kind: 'success', dice, threshold };
@@ -380,6 +442,7 @@ window.WORLD_ENGINE_EVOLUTION = (function() {
     }
   };
 
+  // 出厂默认（同时是测试基准与调参回退值）。运行时请经 getLifecycleConfigs() 取调参后的版本。
   const LIFECYCLE_CONFIGS = {
     enemies: { cap: 8, terminalField: 'status', terminalRetain: ['已终结'], retainRounds: 20, sinceField: '_terminalSince', sinceDefault: 'falsy' },
     influence: { cap: 12, createdField: '_createdRound', expireRounds: 8, roundOffset: 1 },
@@ -396,6 +459,32 @@ window.WORLD_ENGINE_EVOLUTION = (function() {
     economySignals: { cap: 8 },
     blackbox: { totalCap: 12, buckets: ['secretActions', 'secretAssets'] }
   };
+
+  // [移植 v2.4.1] 保留轮数/容量上限调参：在出厂配置上套用户设置（缺省回退出厂值）
+  function getLifecycleConfigs() {
+    return {
+      ...LIFECYCLE_CONFIGS,
+      enemies: {
+        ...LIFECYCLE_CONFIGS.enemies,
+        cap: capSetting('localCapEnemies', 8),
+        retainRounds: intSetting('localEnemyTerminalKeepRounds', 20, 1)
+      },
+      influence: {
+        ...LIFECYCLE_CONFIGS.influence,
+        cap: capSetting('localCapInfluence', 12),
+        expireRounds: intSetting('localInfluenceKeepRounds', 8, 1)
+      },
+      events: {
+        ...LIFECYCLE_CONFIGS.events,
+        retainRounds: function (item) {
+          return intSetting('localTerminalBaseKeepRounds', 2, 0)
+            + (item.level || 1) * intSetting('localTerminalLevelKeepRounds', 2, 0);
+        }
+      },
+      economySignals: { cap: capSetting('localCapEconomySignals', 8) },
+      blackbox: { ...LIFECYCLE_CONFIGS.blackbox, totalCap: capSetting('localCapBlackbox', 12) }
+    };
+  }
 
   const Lifecycle = {
     capList(list, cap) {
@@ -464,7 +553,7 @@ window.WORLD_ENGINE_EVOLUTION = (function() {
   };
 
   function buildRegionalIncidentPrompt(picked) {
-    const config = getRegionalConfig();
+    const config = tunedRegionalConfig();
     const typeInfo = config.typeWeights.find(t => t.type === picked.type);
     const guide = (typeInfo && typeInfo.guide) || INCIDENT_TYPE_GUIDE[picked.type] || '';
     return `
@@ -524,7 +613,7 @@ type：${picked.type}
   function rollRegionalIncident(state, randomFn = Math.random) {
     ensureRegionalIncident(state);
     const incident = state.regionalIncident;
-    const config = getRegionalConfig();
+    const config = tunedRegionalConfig();
     const roll = DiceEngine.rollTrigger(config, incident, randomFn);
     Object.assign(incident, roll.patch);
 
@@ -568,7 +657,7 @@ type：${picked.type}
   function mergeRegionalIncident(state, update) {
     ensureRegionalIncident(state);
     const incident = state.regionalIncident;
-    const config = getRegionalConfig();
+    const config = tunedRegionalConfig();
 
     // 本轮没有本地骰子触发，不接受 API 自发生成
     if (!incident.active) {
@@ -657,7 +746,9 @@ type：${picked.type}
         progressMax: 9,
         base: EVENT_STAGE_BASE,
         defaultBase: 85,
-        setbackRatio: 0.4,
+        // [移植 v2.4.1] 受挫系数与全局推进修正可调（默认 40% / 0 = 原硬编码行为）
+        setbackRatio: numSetting('localEventSetbackRatioPercent', 40, 0, 100) / 100,
+        thresholdModifier: numSetting('localEventDiceModifier', 0, -100, 100),
         levelAdjust: function (item, level, type) {
           return type === 'progress' ? (level - 1) * 10 : -((level - 1) * 10);
         }
@@ -687,7 +778,10 @@ type：${picked.type}
 
   function getMaxFails(ev) {
     const level = ev.level || 1;
-    return ev.type === 'progress' ? 2 + level : 6 - level;
+    // [移植 v2.4.1] 保底可调：推进型上限 = A + Lv；冲突型上限 = max(1, B - Lv)（默认 A=2 B=6）
+    const progressBase = intSetting('localProgressFailBase', 2, 0);
+    const conflictBase = intSetting('localConflictFailBase', 6, 1);
+    return ev.type === 'progress' ? progressBase + level : Math.max(1, conflictBase - level);
   }
 
   function logEruption(state, ev) {
@@ -707,7 +801,8 @@ type：${picked.type}
         defaultType: 'rumor',
         levelField: 'level',
         quietField: 'quietRounds',
-        table: WIND_DECAY
+        // [移植 v2.4.1] 消散表按用户调参构建（默认 = WIND_DECAY 出厂值）
+        table: tunedWindDecayTable()
       }, wind, randomFn);
 
       if (roll.decayed) decayed.push(wind);
@@ -908,14 +1003,14 @@ type：${picked.type}
       else state.enemies.unshift(en);
     }
     // 已终结的仇敌保留20轮后清理
-    state.enemies = Lifecycle.pruneTerminal(state.enemies || [], LIFECYCLE_CONFIGS.enemies, state.round).items;
-    Lifecycle.capList(state.enemies, LIFECYCLE_CONFIGS.enemies.cap);
+    state.enemies = Lifecycle.pruneTerminal(state.enemies || [], getLifecycleConfigs().enemies, state.round).items;
+    Lifecycle.capList(state.enemies, getLifecycleConfigs().enemies.cap);
   }
 
   function mergeBlackbox(state, update) {
     if (!update.blackbox) return;
     state.blackbox = update.blackbox;
-    Lifecycle.capBlackbox(state.blackbox, LIFECYCLE_CONFIGS.blackbox);
+    Lifecycle.capBlackbox(state.blackbox, getLifecycleConfigs().blackbox);
   }
 
   function mergeEvents(state, update) {
@@ -968,10 +1063,10 @@ type：${picked.type}
           state.influenceChain.unshift(influence);
         }
       }
-      Lifecycle.capList(state.influenceChain, LIFECYCLE_CONFIGS.influence.cap);
+      Lifecycle.capList(state.influenceChain, getLifecycleConfigs().influence.cap);
     }
     // Influence entries expire after 8 rounds; updates to the same trigger do not renew them.
-    const cleanedInfluence = Lifecycle.pruneExpired(state.influenceChain || [], LIFECYCLE_CONFIGS.influence, state.round);
+    const cleanedInfluence = Lifecycle.pruneExpired(state.influenceChain || [], getLifecycleConfigs().influence, state.round);
     if (cleanedInfluence.items.length !== (state.influenceChain || []).length) {
       console.log('[World Engine] auto-removed influence entries:', cleanedInfluence.removed
         .map(influence => influence.trigger)
@@ -1441,7 +1536,7 @@ ${persona}`
 
       // economy signals 上限
       if (state.economy && state.economy.signals) {
-        Lifecycle.capList(state.economy.signals, LIFECYCLE_CONFIGS.economySignals.cap);
+        Lifecycle.capList(state.economy.signals, getLifecycleConfigs().economySignals.cap);
       }
 
       // 区域突发事件合并
@@ -1455,14 +1550,14 @@ ${persona}`
       // - 负面终局（已消散/已失败）：下一轮即删
       // - 正面终局（已爆发/已完成）：进入终局起保留 2+level*2 轮（Lv1=4/Lv2=6/Lv3=8/Lv4=10），
       //   留出余波铺陈时间，到期自动清退
-      const cleanedEvents = Lifecycle.pruneTerminal(state.events || [], LIFECYCLE_CONFIGS.events, state.round);
+      const cleanedEvents = Lifecycle.pruneTerminal(state.events || [], getLifecycleConfigs().events, state.round);
       if (cleanedEvents.items.length !== (state.events || []).length) {
         state._terminalEventsThisRound = cleanedEvents.removed.map(e => JSON.parse(JSON.stringify(e)));
         console.log('[世界引擎] 🧹 自动清理事件链:', cleanedEvents.removed.map(e => e.name).join('、'));
       }
       state.events = cleanedEvents.items;
 
-      const cleanedTrends = Lifecycle.pruneTerminal(state.worldTrends || [], LIFECYCLE_CONFIGS.trends, state.round);
+      const cleanedTrends = Lifecycle.pruneTerminal(state.worldTrends || [], getLifecycleConfigs().trends, state.round);
       if (cleanedTrends.items.length !== (state.worldTrends || []).length) {
         console.log('[世界引擎] 🧹 自动清理天下大势:', cleanedTrends.removed.map(t => t.name).join('、'));
       }
