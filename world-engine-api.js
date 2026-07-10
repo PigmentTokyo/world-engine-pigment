@@ -224,6 +224,32 @@ window.WORLD_ENGINE_API = (function() {
     }
   }
 
+  // [移植 v2.3.22] API 请求参数结构化日志：核对实际请求参数用。
+  //   不输出 API Key，也不展开完整 prompt 正文（只给字符数）。
+  function timeoutSeconds(timeoutMs) {
+    timeoutMs = Number(timeoutMs) || 0;
+    return timeoutMs > 0 ? Math.max(1, Math.ceil(timeoutMs / 1000)) : 0;
+  }
+
+  function messageChars(messages) {
+    return (messages || []).reduce((total, msg) => total + String(msg && msg.content || '').length, 0);
+  }
+
+  function logRequestParams(label, target, settings, body) {
+    console.log('[世界引擎] API 请求参数:', {
+      useStProxy: settings.useStProxy !== false,
+      transport: label,
+      target,
+      model: body.model,
+      temperature: body.temperature,
+      max_tokens: body.max_tokens,
+      timeout_sec: timeoutSeconds(settings.apiTimeoutMs),
+      message_count: Array.isArray(body.messages) ? body.messages.length : 0,
+      prompt_chars: messageChars(body.messages),
+      stream: false
+    });
+  }
+
   /**
    * 调用独立 API（非酒馆自带），OpenAI 兼容格式
    */
@@ -247,7 +273,7 @@ window.WORLD_ENGINE_API = (function() {
     if (canUseStProxy()) {
       // 经由 SillyTavern 后端转发（服务器对服务器，无浏览器 CORS）
       const base = getApiBase(settings);
-      console.log('[世界引擎] 调用 API（经 ST 后端转发）:', base, model);
+      logRequestParams('st-proxy', base, settings, { model, temperature: temp, max_tokens: maxTok, messages });
       data = await fetchJson('/api/backends/chat-completions/generate', {
         method: 'POST',
         headers: getContextHeaders(),
@@ -270,7 +296,7 @@ window.WORLD_ENGINE_API = (function() {
       // 回退：浏览器直连（非酒馆环境/独立运行，会受 CORS 限制）
       const headers = { 'Content-Type': 'application/json' };
       if (settings.apiKey) headers['Authorization'] = 'Bearer ' + settings.apiKey;
-      console.log('[世界引擎] 调用 API（浏览器直连）:', url, model);
+      logRequestParams('direct', url, settings, { model, temperature: temp, max_tokens: maxTok, messages });
       data = await fetchJson(url, {
         method: 'POST',
         headers: headers,
