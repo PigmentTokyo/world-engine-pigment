@@ -51,6 +51,8 @@ window.WORLD_ENGINE_API = (function() {
       evolveMode: 'auto',
       evolveEveryX: 1,
       evolveReadRounds: 1,
+      // [移植 v2.3.20 区间] 手动推演读取轮数上限（存档点锚定，实际读 min(经过轮数, 此上限)）
+      manualReadRounds: 1,
       evolveFilterRegex: '',
       worldbookTrigger: false,
       tonePrompt: '',
