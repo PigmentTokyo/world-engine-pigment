@@ -129,7 +129,9 @@
 
     termMap: {},
 
-    customRules: ''
+    customRules: '',
+
+    engineSegments: { engineRole: '', causalSteps: '' }
   };
 
   // ── 2. 现代都市 ─────────────────────────────
@@ -287,7 +289,9 @@
       '山寨': '据点'
     },
 
-    customRules: ''
+    customRules: '',
+
+    engineSegments: { engineRole: '', causalSteps: '' }
   };
 
   // ── 3. 赛博朋克 / 科幻 ─────────────────────
@@ -445,7 +449,9 @@
       '山寨': '据点'
     },
 
-    customRules: ''
+    customRules: '',
+
+    engineSegments: { engineRole: '', causalSteps: '' }
   };
 
   // ── 4. 西方奇幻 ─────────────────────────────
@@ -603,7 +609,9 @@
       '山寨': '据点'
     },
 
-    customRules: ''
+    customRules: '',
+
+    engineSegments: { engineRole: '', causalSteps: '' }
   };
 
   // ── 5. 末日废土 ─────────────────────────────
@@ -761,7 +769,9 @@
       '山寨': '藏身处'
     },
 
-    customRules: ''
+    customRules: '',
+
+    engineSegments: { engineRole: '', causalSteps: '' }
   };
 
   // ═════════════════════════════════════════════
@@ -1220,6 +1230,12 @@
       termMap: termMap,
       ui: normalizeUI(source.ui),
       customRules: normalizeText(source.customRules, ''),
+      // 引擎段落覆写：留空 = 使用内置默认。只存覆写不存默认拷贝
+      //（默认文本单一真相源 = world-engine-evolution.js 的 DEFAULT_SEGS）。
+      engineSegments: {
+        engineRole: normalizeText(source.engineSegments && source.engineSegments.engineRole, ''),
+        causalSteps: normalizeText(source.engineSegments && source.engineSegments.causalSteps, '')
+      },
       schemaOverrides: normalizeSchemaOverrides(source.schemaOverrides),
       disabledModules: Array.isArray(source.disabledModules)
         ? source.disabledModules.filter(function (m) { return typeof m === 'string' && m; })

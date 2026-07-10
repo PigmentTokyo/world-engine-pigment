@@ -89,4 +89,49 @@ assert(/10\. /.test(DEF_STEPS), '默认因果步骤应含 10 步');
   assert.ok(!assembleArea.includes('你是一个世界推演引擎'), '默认引擎角色文本不得在组装区重复内联');
 }
 
+// 8) 预设 schema：normalizePreset 往返、存量预设兼容、内置预设含空字段
+{
+  const mem = {};
+  window.WORLD_ENGINE_STORE = {
+    getItem: (k) => (mem[k] !== undefined ? mem[k] : null),
+    setItem: (k, v) => { mem[k] = v; },
+    removeItem: (k) => { delete mem[k]; }
+  };
+  eval.call(globalThis, fs.readFileSync(path.join(root, 'world-engine-presets.js'), 'utf8'));
+  const P = window.WORLD_ENGINE_PRESETS;
+
+  // 存量预设（无 engineSegments）→ 规范化为双空
+  const legacy = P.normalizePreset ? P.normalizePreset({ id: 'l', name: '存量' }) : null;
+  if (legacy) {
+    assert.deepStrictEqual(legacy.engineSegments, { engineRole: '', causalSteps: '' });
+  }
+
+  // 覆写往返无损（trim 后保留）
+  if (P.normalizePreset) {
+    const round = P.normalizePreset({
+      id: 'r', name: '往返',
+      engineSegments: { engineRole: '  自定义人设\n第二行  ', causalSteps: 'S1\nS2' }
+    });
+    assert.strictEqual(round.engineSegments.engineRole, '自定义人设\n第二行');
+    assert.strictEqual(round.engineSegments.causalSteps, 'S1\nS2');
+    // 导出→再导入（JSON 往返）
+    const round2 = P.normalizePreset(JSON.parse(JSON.stringify(round)));
+    assert.deepStrictEqual(round2.engineSegments, round.engineSegments);
+  }
+
+  // 内置预设全部带空字段（跟随默认）
+  const builtins = P.getBuiltinPresets ? P.getBuiltinPresets() : (P.getAllPresets ? P.getAllPresets().filter(x => x.builtin) : []);
+  assert.ok(builtins.length >= 5, '应有至少 5 个内置预设，实际 ' + builtins.length);
+  for (const b of builtins) {
+    assert.deepStrictEqual(b.engineSegments, { engineRole: '', causalSteps: '' }, b.id + ' 内置预设应为空覆写');
+  }
+
+  // 活动预设带覆写时，evolution 端到端读到覆写
+  const withOverride = { id: 'w', name: 'W', engineSegments: { engineRole: '', causalSteps: '定制步骤' } };
+  window.WORLD_ENGINE_PRESETS = { getActivePreset: () => withOverride };
+  const segs = EVO.getEngineSegments();
+  assert.strictEqual(segs.causalSteps, '定制步骤');
+  assert.strictEqual(segs.engineRole, DEF_ROLE);
+}
+
 console.log('engine segments tests passed');
