@@ -1578,7 +1578,7 @@
     factions: '势力',
     winds: '风声',
     influence: '影响链',
-    contact: '主动接触与信息传播',
+    contact: '信息传播与知情边界',
     reputation: '声誉',
     economy: '经济',
     enemies: '仇敌录',
@@ -2053,7 +2053,7 @@
       + '    "summaryEmpty": "世界尚未开始时显示的一句话",\n'
       + '    "moduleLabels": {\n'
       + '      "world": "模块一：世界运转", "events": "模块二：事件链", "factions": "模块三：势力",\n'
-      + '      "winds": "模块四：风声", "influence": "模块五：影响链", "contact": "模块六：主动接触与信息传播",\n'
+      + '      "winds": "模块四：风声", "influence": "模块五：影响链", "contact": "模块六：信息传播与知情边界",\n'
       + '      "reputation": "模块七：声誉", "economy": "模块八：经济", "enemies": "模块九：仇敌录",\n'
       + '      "regional": "模块十：区域突发事件", "blackbox": "模块十一：信息黑盒", "trends": "模块十二：天下大势"\n'
       + '    }\n'
