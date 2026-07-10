@@ -11,6 +11,7 @@ window.WORLD_ENGINE_UI = (function() {
   let editingFaction = null;
   let editingWind = null;
   let editingTrend = null;
+  let editingDigest = null;
   let editingEnemy = null;
   let editingInfluence = null;
   let editingRI = null;
@@ -187,7 +188,7 @@ window.WORLD_ENGINE_UI = (function() {
 
   // [移植 v2.3.20] 任一编辑器处于输入状态：后台自动刷新须暂缓
   function isEditingPanelContent() {
-    if (editingEvent || editingFaction || editingWind || editingTrend ||
+    if (editingEvent || editingFaction || editingWind || editingTrend || editingDigest ||
         editingEnemy || editingInfluence || editingRI || editingSecret || editingEconomy) return true;
 
     // 少数内容使用 contentEditable 行内编辑，不经过上面的编辑状态变量。
@@ -322,6 +323,26 @@ window.WORLD_ENGINE_UI = (function() {
   function UMOTTO(id) { var P = _PRE(); return (P && P.uiMotto) ? P.uiMotto(id) : (SECTION_MOTTOS[id] || ''); }
   function USUM() { var P = _PRE(); return (P && P.uiSummaryEmpty) ? P.uiSummaryEmpty() : '\u4e16\u754c\u6b63\u5728\u82cf\u9192\uff0c\u4e00\u5207\u5c1a\u672a\u53ef\u77e5\u3002'; }
   function digestHtml(s) { var d = s && s.worldDigest; if (!d || d === '\u4e16\u754c\u6b63\u5728\u82cf\u9192\uff0c\u4e00\u5207\u5c1a\u672a\u53ef\u77e5\u3002') return USUM(); return u(d); }
+
+  // [\u79fb\u690d v2.3.20] \u4e16\u754c\u6458\u8981\u5361\u7247\uff1a\u884c\u5185\u7f16\u8f91\u5165\u53e3\uff08\u4ec5\u7f16\u8f91\uff0c\u4e0d\u63d0\u4f9b\u590d\u5236\u6216\u5220\u9664\uff09\u3002
+  //   \u663e\u793a\u8d70 digestHtml\uff08\u7a7a\u6458\u8981\u7ed9\u9884\u8bbe\u5360\u4f4d\u8bed\uff09\uff0c\u7f16\u8f91\u6846\u91cc\u662f\u539f\u59cb worldDigest\u3002
+  function renderWorldDigest(s, scope) {
+    const isEditing = editingDigest?.scope === scope;
+    const editor = isEditing
+      ? '<div class="we-event-editor we-digest-editor" data-digest-scope="' + h(scope) + '">'
+        + '<button class="we-event-editor-close we-digest-editor-close" title="\u53d6\u6d88"><i class="fa-solid fa-xmark"></i></button>'
+        + '<textarea class="we-digest-edit-text" rows="6">' + h(s.worldDigest || '') + '</textarea>'
+        + '<div class="we-event-editor-footer"><button class="we-btn we-btn-primary we-digest-editor-save">\u4fdd\u5b58</button></div>'
+        + '</div>'
+      : '<div class="we-digest">' + digestHtml(s) + '</div>';
+
+    return '<div class="we-section we-digest-card" id="we-sec-digest">'
+      + '<div class="we-section-title">' + UL('\u4e16\u754c\u6458\u8981') + '</div>'
+      + editor
+      + '<div class="we-event-actions">'
+      + '<button class="we-icon-btn we-digest-edit" data-digest-scope="' + h(scope) + '" title="\u7f16\u8f91"><i class="fa-solid fa-pen"></i></button>'
+      + '</div></div>';
+  }
 
   const STABILITY_TIER_COLOR = {
     天下太平: '#69b68e', 暗流浮动: '#58b8a9', 局势紧张: '#d0aa58',
@@ -519,7 +540,7 @@ window.WORLD_ENGINE_UI = (function() {
 
     return renderWorldCore(s)
       + '<div class="we-nav-list" style="--we-tier-color:' + tierColor + ';">' + navRows + '</div>'
-      + '<div class="we-section" id="we-sec-digest"><div class="we-section-title">' + UL('世界摘要') + '</div><div class="we-digest">' + digestHtml(s) + '</div></div>';
+      + renderWorldDigest(s, scope);
   }
 
   function renderHomeView(s, layer, scope) {
@@ -550,7 +571,7 @@ window.WORLD_ENGINE_UI = (function() {
 
     return renderWorldCore(s)
       + '<div class="we-nav-list" style="--we-tier-color:' + tierColor + ';">' + navRows + '</div>'
-      + '<div class="we-section" id="we-sec-digest"><div class="we-section-title">' + UL('世界摘要') + '</div><div class="we-digest">' + digestHtml(s) + '</div></div>';
+      + renderWorldDigest(s, scope);
   }
 
   function genericValueText(value) {
@@ -723,7 +744,7 @@ window.WORLD_ENGINE_UI = (function() {
   function renderHomeViewExpanded(s, layer, scope) {
     const order = ['trends', 'regional', 'events', 'winds', 'influence', 'reputation', 'factions', 'enemies', 'economy', 'blackbox'];
     return renderWorldCore(s)
-      + '<div class="we-section" id="we-sec-digest"><div class="we-section-title">' + UL('世界摘要') + '</div><div class="we-digest">' + digestHtml(s) + '</div></div>'
+      + renderWorldDigest(s, scope)
       + (isFreePresetMode() ? renderActiveDescriptorSections(s, scope, '') : order.map(id => renderModuleSection(id, s, scope, '')).join(''))
       + renderSection('事件账本', 'ledger', renderLedger(s.memories));
   }
@@ -3160,6 +3181,31 @@ window.WORLD_ENGINE_UI = (function() {
         arr.splice(index + 1, 0, JSON.parse(JSON.stringify(arr[index])));  // 就近插入
         saveScopedState(scope, state);
         showToast('已复制');
+        refresh();
+      };
+    });
+
+    // ===== [移植 v2.3.20] 世界摘要编辑器事件（仅编辑，不提供复制或删除） =====
+    document.querySelectorAll('.we-digest-edit').forEach(button => {
+      button.onclick = () => {
+        editingDigest = { scope: button.dataset.digestScope || 'state' };
+        refresh();
+      };
+    });
+    document.querySelectorAll('.we-digest-editor-close').forEach(button => {
+      button.onclick = () => { editingDigest = null; refresh(); };
+    });
+    document.querySelectorAll('.we-digest-editor-save').forEach(button => {
+      button.onclick = () => {
+        const editor = button.closest('.we-digest-editor');
+        if (!editor) return;
+        const scope = editor.dataset.digestScope || 'state';
+        const scopedState = loadScopedState(scope);
+        const value = editor.querySelector('.we-digest-edit-text')?.value.trim() || '';
+        scopedState.worldDigest = value;
+        saveScopedState(scope, scopedState);
+        editingDigest = null;
+        showToast('世界摘要已保存');
         refresh();
       };
     });
