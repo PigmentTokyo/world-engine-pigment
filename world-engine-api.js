@@ -46,6 +46,8 @@ window.WORLD_ENGINE_API = (function() {
       maxTokens: 2000,
       useStProxy: true,
       injectIntoPrompt: true,
+      // [移植 v2.4.1] 正文注入最大字符数。0 = 不限制
+      injectMaxChars: 5000,
       evolveMode: 'auto',
       evolveEveryX: 1,
       evolveReadRounds: 1,

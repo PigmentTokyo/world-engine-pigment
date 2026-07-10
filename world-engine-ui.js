@@ -2256,6 +2256,7 @@ window.WORLD_ENGINE_UI = (function() {
         <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">每行一条；支持纯 pattern（默认 g 全局）或 /pattern/flags 字面量。不影响聊天正文，也不影响日期抓取。</div>
       </div>`;
 
+    const injectMaxChars = Number.isFinite(Number(settings.injectMaxChars)) ? Math.max(0, Math.floor(Number(settings.injectMaxChars))) : 5000;
     const injectBody = `
       <div class="we-input-group">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
@@ -2263,6 +2264,11 @@ window.WORLD_ENGINE_UI = (function() {
           注入正文
         </label>
         <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">关闭后不会将当前状态或存档点注入聊天正文。</div>
+      </div>
+      <div class="we-input-group">
+        <label>正文注入最大字符数</label>
+        <input type="number" id="we-inject-max-chars" min="0" step="100" value="${injectMaxChars}" style="width:100%;">
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">限制注入到正文 prompt 的世界状态长度。默认 5000；0 = 不限制。</div>
       </div>`;
 
     const displayMode = settings.displayMode === 'expand' ? 'expand' : 'mask';
@@ -3371,6 +3377,7 @@ window.WORLD_ENGINE_UI = (function() {
           model: document.getElementById('we-model')?.value || 'gpt-3.5-turbo',
           useStProxy: document.getElementById('we-use-st-proxy')?.checked !== false,
           injectIntoPrompt: document.getElementById('we-inject-into-prompt')?.checked !== false,
+          injectMaxChars: Math.max(0, parseInt(gv('we-inject-max-chars')) || 0),
           evolveMode: (_modeRaw === 'manual' || _modeRaw === 'time') ? _modeRaw : 'auto',
           evolveEveryX: Math.max(1, parseInt(document.getElementById('we-evolve-everyx')?.value) || 1),
           evolveReadRounds: Math.max(1, parseInt(document.getElementById('we-evolve-readrounds')?.value) || 1),
@@ -3674,7 +3681,8 @@ window.WORLD_ENGINE_UI = (function() {
           apiKey: document.getElementById('we-api-key')?.value || '',
           model: document.getElementById('we-model')?.value || '',
           useStProxy: document.getElementById('we-use-st-proxy')?.checked !== false,
-          injectIntoPrompt: document.getElementById('we-inject-into-prompt')?.checked !== false
+          injectIntoPrompt: document.getElementById('we-inject-into-prompt')?.checked !== false,
+          injectMaxChars: Math.max(0, parseInt(document.getElementById('we-inject-max-chars')?.value) || 0)
         }));
         if (api.getSettings) api.getSettings(true);
         fetchBtn.disabled = true;

@@ -204,7 +204,15 @@ ${rulesSummary}
       context = window.WORLD_ENGINE_PRESETS.applyDisplayTerms(context);
     }
 
-    return context.substring(0, 5000);
+    // [移植 v2.4.1] 注入长度上限改为可配置：默认 5000，0 = 不限制
+    let maxChars = 5000;
+    try {
+      const api = window.WORLD_ENGINE_API;
+      const settings = api && api.getSettings ? api.getSettings() : {};
+      const configured = Number(settings.injectMaxChars);
+      if (Number.isFinite(configured)) maxChars = Math.max(0, Math.floor(configured));
+    } catch (e) {}
+    return maxChars > 0 ? context.substring(0, maxChars) : context;
   }
 
   return { buildContext };
