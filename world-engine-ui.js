@@ -2467,6 +2467,11 @@ window.WORLD_ENGINE_UI = (function() {
         <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">关闭后悬浮球隐藏，可从输入框左侧「魔法棒」扩展菜单打开本面板；向前推进 / 重新推进 / 停止 / 插头按钮移到面板标题栏。</div>
       </div>
       <div class="we-input-group">
+        <label>快速回复按钮</label>
+        <button class="we-btn" id="we-add-qr" style="width:100%;">添加「🌍面板 / ▶推演」到快速回复</button>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">需启用酒馆自带的 Quick Reply 扩展。创建「世界引擎」按钮组（消息为 /we-panel 与 /we-evolve 斜杠命令），可在快速回复设置里自行改名或增删；重复点击不会重复添加。</div>
+      </div>
+      <div class="we-input-group">
         <label>主页显示模式</label>
         <select id="we-display-mode" style="width:100%;">
           <option value="mask" ${displayMode === 'mask' ? 'selected' : ''}>遮蔽模式（主页 + 分页进入）</option>
@@ -3700,6 +3705,9 @@ window.WORLD_ENGINE_UI = (function() {
     // 主题配色：即时应用 + 持久化，不 refresh（纯 CSS，避免清空正在编辑的设置表单）
     const themeSel = document.getElementById('we-theme-select');
     if (themeSel) themeSel.onchange = () => setTheme(themeSel.value);
+
+    const addQrBtn = document.getElementById('we-add-qr');
+    if (addQrBtn) addQrBtn.onclick = () => handleAddQuickReplies();
 
     // 推演模式切换：按轮显示 X/a，按时间显示时间组，手动显示手动读取轮数
     const evolveModeSel = document.getElementById('we-evolve-mode');
@@ -5043,6 +5051,69 @@ window.WORLD_ENGINE_UI = (function() {
     ensureExtras();
   }
 
+  // 斜杠命令：/we-panel 开关面板、/we-evolve 向前推进。
+  //   快速回复按钮的执行载体（消息以 / 开头即按命令执行），也可直接在输入框敲。
+  //   兼容两代注册 API：新版 SlashCommandParser / 旧版 registerSlashCommand。
+  let _slashRegistered = false;
+  function registerSlashCommands() {
+    if (_slashRegistered) return;
+    let ctx = null;
+    try { ctx = SillyTavern.getContext(); } catch (e) { return; }
+    if (!ctx) return;
+    const commands = [
+      { name: 'we-panel', help: '开关世界引擎面板', fn: () => { togglePanel(); return ''; } },
+      { name: 'we-evolve', help: '世界引擎：向前推进一轮（同悬浮球▶钮）', fn: () => { runManualEvolve('forward', 'state'); return ''; } }
+    ];
+    try {
+      if (ctx.SlashCommandParser && ctx.SlashCommand && typeof ctx.SlashCommand.fromProps === 'function') {
+        for (const c of commands) {
+          ctx.SlashCommandParser.addCommandObject(ctx.SlashCommand.fromProps({
+            name: c.name,
+            callback: async () => c.fn(),
+            helpString: c.help
+          }));
+        }
+        _slashRegistered = true;
+      } else if (typeof ctx.registerSlashCommand === 'function') {
+        for (const c of commands) {
+          ctx.registerSlashCommand(c.name, () => c.fn(), [], '– ' + c.help, true, true);
+        }
+        _slashRegistered = true;
+      }
+    } catch (e) {
+      console.warn('[世界引擎] 斜杠命令注册失败', e);
+    }
+  }
+
+  // 一键添加「世界引擎」快速回复按钮组（需启用酒馆 Quick Reply 扩展）。
+  //   幂等：组/按钮已存在则跳过。按钮消息即斜杠命令，用户可在快速回复设置里自行增删改。
+  async function handleAddQuickReplies() {
+    const qr = window.quickReplyApi;
+    if (!qr || typeof qr.createQuickReply !== 'function') {
+      showToast('未检测到快速回复扩展（Quick Reply），请先在酒馆扩展里启用', true);
+      return;
+    }
+    const SET = '世界引擎';
+    try {
+      let set = null;
+      try { set = qr.getSetByName ? qr.getSetByName(SET) : null; } catch (e) {}
+      if (!set) await qr.createSet(SET, { isVisible: true });
+      const ensure = (label, message, title) => {
+        try {
+          if (qr.getQrByLabel && qr.getQrByLabel(SET, label)) return;
+        } catch (e) {}
+        qr.createQuickReply(SET, label, { message: message, title: title });
+      };
+      ensure('🌍面板', '/we-panel', '开关世界引擎面板');
+      ensure('▶推演', '/we-evolve', '世界引擎：向前推进一轮');
+      try { qr.addGlobalSet(SET, { isVisible: true }); } catch (e) { /* 已链接为全局时可能抛错，无碍 */ }
+      showToast('已添加「世界引擎」快速回复按钮（🌍面板 / ▶推演）');
+    } catch (e) {
+      console.error('[世界引擎] 添加快速回复失败', e);
+      showToast('添加失败: ' + (e && e.message || e), true);
+    }
+  }
+
   // 悬浮球开/关两条路径共用的初始化：状态接口、面板、魔法棒入口、观察器、标题栏推进钮
   function ensureExtras() {
     // 兼容旧的外部状态接口：保留隐藏元素，转发到地球状态机
@@ -5068,6 +5139,7 @@ window.WORLD_ENGINE_UI = (function() {
 
     buildPanel();
     ensureWandMenuEntry();
+    registerSlashCommands();
     updateHeaderEvolveVisibility();
     observeInputButton();
   }
