@@ -94,6 +94,12 @@ window.WORLD_ENGINE_UI = (function() {
           <div class="we-header-top">
             <span class="we-panel-title">世界引擎</span>
             <span class="we-header-round" id="we-header-round"></span>
+            <span class="we-header-evolve" id="we-header-evolve">
+              <button class="we-hdr-btn we-hdr-forward" title="向前推进"><i class="fa-solid fa-forward"></i></button>
+              <button class="we-hdr-btn we-hdr-redo" title="重新推进"><i class="fa-solid fa-rotate-right"></i></button>
+              <button class="we-hdr-btn we-hdr-abort we-hdr-btn-off" title="停止推演"><i class="fa-solid fa-stop"></i></button>
+              <button class="we-hdr-btn we-hdr-power" title="插上=关闭推演与注入 / 拔下=开启"><i class="fa-solid fa-power-off"></i></button>
+            </span>
           </div>
           <div class="we-header-mood" id="we-header-mood">
             <span class="we-header-dot"></span>
@@ -115,6 +121,23 @@ window.WORLD_ENGINE_UI = (function() {
     panelBodyElement = panel.querySelector('#we-panel-body');
 
     panel.querySelector('.we-panel-close').onclick = () => hidePanel();
+
+    // 标题栏推进按钮组（悬浮球关闭时的替代入口；we-hdr-btn-off 时不可点）
+    const hdrWire = (cls, fn) => {
+      const el = panel.querySelector(cls);
+      if (!el) return;
+      el.onclick = (e) => {
+        e.stopPropagation(); e.preventDefault();
+        if (el.classList.contains('we-hdr-btn-off')) return;
+        fn();
+      };
+    };
+    hdrWire('.we-hdr-forward', () => runManualEvolve('forward', 'state'));
+    hdrWire('.we-hdr-redo', () => runManualEvolve('redo', 'checkpoint'));
+    hdrWire('.we-hdr-abort', () => { evolution.abort(); showToast('已发送停止信号'); });
+    hdrWire('.we-hdr-power', togglePowerSwitch);
+    updateHeaderEvolveVisibility();
+
     initDrag(panel, panel.querySelector('.we-panel-header'));
     initResize(panel, panel.querySelector('.we-panel-resize'));
     applySavedPanelRect(panel);
@@ -2437,6 +2460,13 @@ window.WORLD_ENGINE_UI = (function() {
         <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">切换即时生效，无需保存。深色：墨玉 / 夜阑 / 深海 / 夜合；浅色：云白 / 早樱。</div>
       </div>
       <div class="we-input-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="we-show-ball" ${settings.showFloatingBall !== false ? 'checked' : ''}>
+          显示悬浮球
+        </label>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">关闭后悬浮球隐藏，可从输入框左侧「魔法棒」扩展菜单打开本面板；向前推进 / 重新推进 / 停止 / 插头按钮移到面板标题栏。</div>
+      </div>
+      <div class="we-input-group">
         <label>主页显示模式</label>
         <select id="we-display-mode" style="width:100%;">
           <option value="mask" ${displayMode === 'mask' ? 'selected' : ''}>遮蔽模式（主页 + 分页进入）</option>
@@ -3578,6 +3608,7 @@ window.WORLD_ENGINE_UI = (function() {
           evolveFilterRegex: gv('we-filter-regex') || '',
           worldbookTrigger: document.getElementById('we-worldbook-trigger')?.checked === true,
           displayMode: document.getElementById('we-display-mode')?.value === 'expand' ? 'expand' : 'mask',
+          showFloatingBall: document.getElementById('we-show-ball')?.checked !== false,
           // 按时间模式
           evolveTimeFront: Math.max(0, parseInt(gv('we-time-front')) || 0),
           evolveTimeBack: Math.max(0, parseInt(gv('we-time-back')) || 0),
@@ -3631,6 +3662,7 @@ window.WORLD_ENGINE_UI = (function() {
         ns.evolveReadRounds = Math.min(ns.evolveReadRounds, ns.evolveEveryX);
         window.WORLD_ENGINE_STORE.setItem('world_engine_settings', JSON.stringify(ns));
         if (window.WORLD_ENGINE_API) window.WORLD_ENGINE_API.getSettings(true);
+        buildInputButton();   // 悬浮球开关即时生效（关→移除球，开→重建；标题栏推进钮随之切换）
 
         let filterBadCount = 0;
         try {
@@ -4378,7 +4410,8 @@ window.WORLD_ENGINE_UI = (function() {
     handle.style.cursor = 'grab';
 
     handle.addEventListener('mousedown', function(e) {
-      if (e.target.closest('.we-panel-close') || e.target.closest('.we-panel-header-actions')) return;
+      if (e.target.closest('.we-panel-close') || e.target.closest('.we-panel-header-actions')
+        || e.target.closest('.we-header-evolve') || e.target.closest('.we-panel-corner-actions')) return;
       dragging = true;
       const rect = panel.getBoundingClientRect();
       startX = e.clientX; startY = e.clientY;
@@ -4632,6 +4665,13 @@ window.WORLD_ENGINE_UI = (function() {
     if (fwd) fwd.classList.toggle('we-sat-off', !!active);
     if (redo) redo.classList.toggle('we-sat-off', !!active);
     if (ab) ab.classList.toggle('we-sat-off', !active);
+    // 面板标题栏推进按钮组（悬浮球关闭时的替代入口）同步禁用态
+    const hFwd = document.querySelector('.we-hdr-forward');
+    const hRedo = document.querySelector('.we-hdr-redo');
+    const hAb = document.querySelector('.we-hdr-abort');
+    if (hFwd) hFwd.classList.toggle('we-hdr-btn-off', !!active);
+    if (hRedo) hRedo.classList.toggle('we-hdr-btn-off', !!active);
+    if (hAb) hAb.classList.toggle('we-hdr-btn-off', !active);
     const ball = document.getElementById('we-input-btn');
     if (ball && active) {
       ball.classList.add('we-ball-evolving');
@@ -4791,7 +4831,10 @@ window.WORLD_ENGINE_UI = (function() {
   function observeInputButton() {
     if (inputButtonObserver || !document.body) return;
     inputButtonObserver = new MutationObserver(() => {
-      if (!document.getElementById('we-input-btn')) {
+      // 球被酒馆重绘冲掉时重建（仅在启用时）；魔法棒菜单出现/被重建时补入口
+      const needBall = isBallEnabled() && !document.getElementById('we-input-btn');
+      const needWand = !document.getElementById('we-wand-entry') && !!document.getElementById('extensionsMenu');
+      if (needBall || needWand) {
         clearTimeout(inputButtonRetryTimer);
         inputButtonRetryTimer = setTimeout(buildInputButton, 50);
       }
@@ -4869,6 +4912,39 @@ window.WORLD_ENGINE_UI = (function() {
   }
 
   // 给悬浮球的三颗卫星按钮绑事件；阻止冒泡，避免触发拖拽 / 打开面板
+  // [移植 v2.3.14] 「插头」总开关公用逻辑:一键联动 evolveMode + injectIntoPrompt。
+  //   关闭态(插上)= evolveMode='manual'(不自动推演) + injectIntoPrompt=false(不注入)；
+  //   不新增设置字段:状态从这俩字段反推(`manual && inject===false` = 关)。
+  //   立即生效:切完调 applyInjection 让 inject 守卫生效(关→unregister,开→重注入)。
+  //   球卫星钮与面板标题栏钮共用（悬浮球可关闭后,标题栏是备用入口）。
+  function readPowerSettings() {
+    const wapi = window.WORLD_ENGINE_API;
+    return (wapi && wapi.getSettings ? wapi.getSettings(true) : {}) || {};
+  }
+  function isPowerOff(s) { return s.evolveMode === 'manual' && s.injectIntoPrompt === false; }
+  function syncPowerVisual() {
+    const off = isPowerOff(readPowerSettings());
+    const sat = document.getElementById('we-sat-power');
+    if (sat) sat.classList.toggle('on', off);
+    const hdr = document.querySelector('.we-hdr-power');
+    if (hdr) hdr.classList.toggle('on', off);
+  }
+  function togglePowerSwitch() {
+    const wapi = window.WORLD_ENGINE_API;
+    const turnOff = !isPowerOff(readPowerSettings()); // 切到对面
+    const setKV = (k, v) => {
+      const c = wapi && wapi.getSettings ? wapi.getSettings(true) : {};
+      window.WORLD_ENGINE_STORE.setItem('world_engine_settings', JSON.stringify({ ...c, [k]: v }));
+      if (wapi && wapi.getSettings) wapi.getSettings(true);
+    };
+    setKV('evolveMode', turnOff ? 'manual' : 'auto');
+    setKV('injectIntoPrompt', !turnOff); // 关=false, 开=true
+    window.WORLD_ENGINE?.applyInjection?.(); // 立即重注入:关→unregisterInjection,开→重新注入
+    syncPowerVisual();
+    showToast(turnOff ? '已关闭推演与注入' : '已开启推演与注入');
+    if (typeof _currentView !== 'undefined' && _currentView === 'settings') refresh();
+  }
+
   function wireSatellites(ball) {
     const wire = (id, fn) => {
       const el = ball.querySelector('#' + id);
@@ -4885,39 +4961,53 @@ window.WORLD_ENGINE_UI = (function() {
     wire('we-sat-forward', () => runManualEvolve('forward', 'state'));
     wire('we-sat-redo', () => runManualEvolve('redo', 'checkpoint'));
     wire('we-sat-abort', () => { evolution.abort(); showToast('已发送停止信号'); });
+    // 插头钮不用 we-sat-off(wire 内会拦不可点);用 .on class 标关闭态,power 永远可点。
+    syncPowerVisual(); // 初始视觉态
+    wire('we-sat-power', togglePowerSwitch);
+  }
 
-    // [移植 v2.3.14] 「插头」总开关(球左侧第四卫星):一键联动 evolveMode + injectIntoPrompt
-    //   关闭态(插上)= evolveMode='manual'(不自动推演) + injectIntoPrompt=false(不注入)；
-    //   不新增设置字段:状态从这俩字段反推(`manual && inject===false` = 关)。
-    //   立即生效:切完调 applyInjection 让 inject 守卫生效(关→unregister,开→重注入)。
-    //   manual 自带拦 pending autoEvolveTimer 能力,无需额外 engineEnabled 守卫。
-    //   不用 we-sat-off(wire 内会拦 we-sat-off 不可点);用 .on class 标关闭态,power 永远可点。
-    const wapi = window.WORLD_ENGINE_API;
-    const readSettings = () => (wapi && wapi.getSettings ? wapi.getSettings(true) : {}) || {};
-    const isPowerOff = (s) => s.evolveMode === 'manual' && s.injectIntoPrompt === false;
-    const syncPowerState = () => {
-      const el = ball.querySelector('#we-sat-power');
-      if (el) el.classList.toggle('on', isPowerOff(readSettings()));
-    };
-    syncPowerState(); // 初始视觉态
-    wire('we-sat-power', () => {
-      const turnOff = !isPowerOff(readSettings()); // 切到对面
-      const setKV = (k, v) => {
-        const c = wapi && wapi.getSettings ? wapi.getSettings(true) : {};
-        window.WORLD_ENGINE_STORE.setItem('world_engine_settings', JSON.stringify({ ...c, [k]: v }));
-        if (wapi && wapi.getSettings) wapi.getSettings(true);
-      };
-      setKV('evolveMode', turnOff ? 'manual' : 'auto');
-      setKV('injectIntoPrompt', !turnOff); // 关=false, 开=true
-      window.WORLD_ENGINE?.applyInjection?.(); // 立即重注入:关→unregisterInjection,开→重新注入
-      syncPowerState(); // 更新 .on 视觉态
-      showToast(turnOff ? '已关闭推演与注入' : '已开启推演与注入');
-      if (typeof _currentView !== 'undefined' && _currentView === 'settings') refresh();
-    });
+  // 悬浮球是否启用（设置项，默认开；关闭后从酒馆「魔法棒」扩展菜单打开面板）
+  function isBallEnabled() {
+    try {
+      const s = window.WORLD_ENGINE_API && window.WORLD_ENGINE_API.getSettings ? window.WORLD_ENGINE_API.getSettings() : {};
+      return s.showFloatingBall !== false;
+    } catch (e) { return true; }
+  }
+
+  // 酒馆输入框左侧「魔法棒」扩展菜单入口：点击开关世界引擎面板。
+  //   与悬浮球并存；悬浮球关闭后这是唯一入口。幂等，可反复调用。
+  function ensureWandMenuEntry() {
+    try {
+      const menu = document.getElementById('extensionsMenu');
+      if (!menu || document.getElementById('we-wand-entry')) return;
+      const item = document.createElement('div');
+      item.id = 'we-wand-entry';
+      item.className = 'list-group-item flex-container flexGap5 interactable';
+      item.tabIndex = 0;
+      item.innerHTML = '<i class="fa-solid fa-globe"></i><span>世界引擎</span>';
+      item.addEventListener('click', () => togglePanel());
+      menu.appendChild(item);
+    } catch (e) {}
+  }
+
+  // 面板标题栏的推进按钮组：悬浮球关闭时显示（卫星钮的替代入口）
+  function updateHeaderEvolveVisibility() {
+    const cluster = document.getElementById('we-header-evolve');
+    if (!cluster) return;
+    cluster.classList.toggle('we-show', !isBallEnabled());
+    syncPowerVisual();
   }
 
   function buildInputButton() {
     if (!document.body) return;
+
+    // 悬浮球关闭：移除现有球（不影响魔法棒入口与状态横幅），推进钮走面板标题栏
+    if (!isBallEnabled()) {
+      const existing = document.getElementById('we-input-btn');
+      if (existing) existing.remove();
+      ensureExtras();
+      return;
+    }
 
     let btn = document.getElementById('we-input-btn');
     if (!btn) {
@@ -4950,6 +5040,11 @@ window.WORLD_ENGINE_UI = (function() {
       applyBallPos(btn);
     }
 
+    ensureExtras();
+  }
+
+  // 悬浮球开/关两条路径共用的初始化：状态接口、面板、魔法棒入口、观察器、标题栏推进钮
+  function ensureExtras() {
     // 兼容旧的外部状态接口：保留隐藏元素，转发到地球状态机
     let statusIndicator = document.getElementById('we-external-status');
     if (!statusIndicator) {
@@ -4962,14 +5057,18 @@ window.WORLD_ENGINE_UI = (function() {
     window.__WE_SetExternalStatus = function(text, isError) {
       const el = document.getElementById('we-external-status');
       if (el) el.textContent = text;
-      setBallState(text || '', !!isError);
-      // 进度类（第 N/X 轮/天）只在悬浮球上显示；其余状态走屏幕顶部横幅
-      if (text && !/第\s*\d+\s*\/\s*\d+\s*[轮天]/.test(text)) {
+      setBallState(text || '', !!isError);   // 球不存在时内部自动跳过
+      // 进度类（第 N/X 轮/天）只在悬浮球上显示；其余状态走屏幕顶部横幅。
+      // 悬浮球关闭时进度类也走横幅，否则轮次进度无处可看。
+      const isProgress = text && /第\s*\d+\s*\/\s*\d+\s*[轮天]/.test(text);
+      if (text && (!isProgress || !document.getElementById('we-input-btn'))) {
         showTopStatus(text, !!isError);
       }
     };
 
     buildPanel();
+    ensureWandMenuEntry();
+    updateHeaderEvolveVisibility();
     observeInputButton();
   }
 

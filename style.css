@@ -431,6 +431,37 @@
   cursor: help;
 }
 
+/* 标题栏推进按钮组：悬浮球关闭时显示（卫星钮的替代入口） */
+.we-header-evolve {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+}
+.we-header-evolve.we-show { display: inline-flex; }
+.we-hdr-btn {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--we-bg2);
+  border: 1px solid var(--we-border);
+  border-radius: 6px;
+  color: var(--we-text2);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0;
+}
+.we-hdr-btn:hover { color: var(--we-text); border-color: var(--we-accent); }
+.we-hdr-btn.we-hdr-btn-off { opacity: 0.35; pointer-events: none; }
+.we-hdr-abort { color: #ffb3b3; }
+/* 插头关闭态：红标提示「已关推演与注入」（与悬浮球卫星 .on 同语义） */
+.we-hdr-power.on {
+  color: var(--we-danger, #d66f68);
+  border-color: var(--we-danger, #d66f68);
+}
+
 .we-panel-close {
   background: none;
   border: none;

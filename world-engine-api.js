@@ -48,6 +48,8 @@ window.WORLD_ENGINE_API = (function() {
       maxTokens: 8000,
       useStProxy: true,
       injectIntoPrompt: true,
+      // 悬浮球开关：关闭后从酒馆「魔法棒」扩展菜单打开面板，推进钮移到面板标题栏
+      showFloatingBall: true,
       // [移植 v2.4.1] 正文注入最大字符数。0 = 不限制
       injectMaxChars: 5000,
       evolveMode: 'auto',
