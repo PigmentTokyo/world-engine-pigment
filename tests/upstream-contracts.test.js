@@ -26,11 +26,17 @@ assert(evolution.includes("localDistantEventCooldown', 5, 0"), 'Pigment 应允�
 assert(evolution.includes("localNearEventCooldown', 5, 0"), 'Pigment 应允许随机事件冷却为 0');
 assert(evolution.includes('筹划、试探、调查起步或矛盾初现'));
 assert(evolution.includes('传播可以处于起始阶段'));
+assert(evolution.includes('- events.desc：不得超过100个汉字。'), '应保留 private d66e278 的放宽字数上限');
+assert(evolution.includes('- worldTrends.description：不得超过200个汉字。'));
 
 const rules = read('world-engine-rules-loader.js');
 assert(rules.includes('事项即使仍处于筹划、试探、调查起步或矛盾初现阶段'));
 assert(rules.includes('不要求预先证明会持续多个轮次'));
 assert(!rules.includes('只有同时满足以下条件，才允许创建事件链'));
+assert(rules.includes('【世界引擎·正文行为规则】'), '应使用上游 74d5d97 的题材中立行为规则');
+assert(!rules.includes('世界是活的，不围着{{user}}转'), '不得回退到古风口吻行为规则');
+assert(rules.includes('banditry 有组织劫掠'), '应使用上游 b409790 的通用区域事件措辞');
+assert(!rules.includes('山贼、水匪、流寇'), '规则文本不得回退到古风区域事件例子');
 
 const ui = read('world-engine-ui.js');
 for (const id of [
@@ -44,4 +50,4 @@ assert(css.includes(':root[data-we-theme="paper"]'));
 assert(css.includes('.we-event-level-badge'));
 assert(css.includes('--we-text3: #687481'));
 
-console.log('upstream-contracts tests: anchor / exclusions / settings / prompts / themes passed');
+console.log('upstream-contracts tests: anchor / exclusions / settings / prompts / themes / neutral rules / length limits passed');
