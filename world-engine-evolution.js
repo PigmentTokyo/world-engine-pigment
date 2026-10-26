@@ -1178,12 +1178,12 @@ ${JSON.stringify(sample || [], null, 2)}
 
 ### 输出字数限制
 以下限制按中文汉字计数，标点符号、空格、数字和英文字母不计入字数；但仍要求表达简洁，不得用大量标点或英文绕过限制。
-- events.desc：不得超过50个汉字。
-- factions.currentGoal：不得超过50个汉字。
-- winds.content：不得超过50个汉字。
-- influenceChain.impact：不得超过50个汉字。
-- influenceChain.fallout：不得超过50个汉字。
-- worldTrends.description：不得超过100个汉字。
+- events.desc：不得超过100个汉字。
+- factions.currentGoal：不得超过100个汉字。
+- winds.content：不得超过100个汉字。
+- influenceChain.impact：不得超过100个汉字。
+- influenceChain.fallout：不得超过100个汉字。
+- worldTrends.description：不得超过200个汉字。
 
 ### events（事件链数组）
 创建或更新 events 前，先按核心目标或矛盾、主要对象和连续执行过程匹配已有主事项；同一事项的步骤、阻碍、代价、局部结果和善后必须沿用原 id。已经出现具体迹象、尚有发展空间的事项，可以以 id:null 新建；事项不必已经成熟，也不必预先证明一定会跨越多个轮次。筹划、试探、调查起步或矛盾初现都可以成为事件链的早期阶段。若内容明显属于已有事项的步骤、阻碍或直接后果，则沿用原 id。事件类型不同不自动构成拆链理由；只有形成可独立演化的冲突或推进事项时才分别建链。
