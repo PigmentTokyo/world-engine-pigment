@@ -202,6 +202,10 @@ window.WORLD_ENGINE_INJECT = (function() {
 区域事件：${riText}
 黑盒：${blackboxText}
     `.trim();
+    // 自由/混合预设的自定义模块：状态原本只进推演，不进正文；这里追加到世界状态末尾（计入注入上限，超限时随世界状态一起截）。
+    // classic 预设没有自定义模块，输出与之前逐字一致。
+    const customText = buildCustomModulesText(worldState);
+    if (customText) statePart += '\n' + customText;
     let rulesPart = String(rulesSummary || '').replace(/\s+$/, '');
 
     // Apply display-only preset terminology to the final context shown to the
@@ -220,6 +224,84 @@ window.WORLD_ENGINE_INJECT = (function() {
       if (Number.isFinite(configured)) maxChars = Math.max(0, Math.floor(configured));
     } catch (e) {}
     return fitToLimit(statePart, rulesPart, maxChars);
+  }
+
+  // ── 自定义模块 → 正文注入文本 ──
+  function getActiveCustomDescriptors() {
+    const rules = window.WORLD_ENGINE_RULES;
+    if (!rules || typeof rules.getActiveModuleDescriptors !== 'function') return [];
+    try {
+      return rules.getActiveModuleDescriptors().filter(d =>
+        d && d.kind === 'custom' && d.enabled !== false && d.container && d.container !== 'none');
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function formatCustomValue(value) {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'boolean') return value ? '是' : '否';
+    if (Array.isArray(value)) return value.map(formatCustomValue).filter(Boolean).join('、');
+    if (typeof value === 'object') {
+      return Object.keys(value).filter(k => k.charAt(0) !== '_')
+        .map(k => { const v = formatCustomValue(value[k]); return v ? `${k}:${v}` : ''; })
+        .filter(Boolean).join('，');
+    }
+    return String(value).trim();
+  }
+
+  function customFieldLabel(descriptor, key) {
+    const spec = descriptor.fields && descriptor.fields[key];
+    return (spec && (spec.label || spec.title)) || key;
+  }
+
+  // 单条记录：「标题（徽标｜徽标）副标题；字段：值；…」。有 display 配置就按它挑字段，否则用全部 schema 字段。
+  function formatCustomItem(descriptor, item) {
+    const display = descriptor.display || {};
+    const fieldKeys = Object.keys(descriptor.fields || {});
+    const titleKey = display.titleField || descriptor.itemKey || 'name';
+    const badgeKeys = Array.isArray(display.badgeFields) ? display.badgeFields : [];
+    const subtitleKey = display.subtitleField || '';
+    const used = new Set([titleKey, subtitleKey].concat(badgeKeys));
+    const bodyKeys = Array.isArray(display.bodyFields) && display.bodyFields.length
+      ? display.bodyFields
+      : fieldKeys.filter(k => !used.has(k));
+    const title = formatCustomValue(item[titleKey]);
+    const badges = badgeKeys.map(k => formatCustomValue(item[k])).filter(Boolean);
+    const subtitle = subtitleKey ? formatCustomValue(item[subtitleKey]) : '';
+    const body = bodyKeys
+      .filter(k => k.charAt(0) !== '_' && !used.has(k))
+      .map(k => { const v = formatCustomValue(item[k]); return v ? `${customFieldLabel(descriptor, k)}：${v}` : ''; })
+      .filter(Boolean);
+    let head = title || '（未命名）';
+    if (badges.length) head += `（${badges.join('｜')}）`;
+    if (subtitle) head += ` ${subtitle}`;
+    return body.length ? `${head}；${body.join('；')}` : head;
+  }
+
+  function buildCustomModulesText(worldState) {
+    const descriptors = getActiveCustomDescriptors();
+    if (!descriptors.length) return '';
+    const lines = descriptors.map(d => {
+      const name = String(d.title || d.name || d.id).replace(/^模块[^：:]*[：:]\s*/, '');
+      const field = d.field || d.id;
+      const value = worldState ? worldState[field] : undefined;
+      if (d.container === 'array') {
+        const items = Array.isArray(value) ? value.filter(it => it && typeof it === 'object') : [];
+        if (!items.length) return `${name}：无`;
+        return `${name}：\n` + items.map(it => '- ' + formatCustomItem(d, it)).join('\n');
+      }
+      if (d.container === 'object') {
+        const obj = value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+        const parts = obj ? Object.keys(d.fields || obj)
+          .map(k => { const v = formatCustomValue(obj[k]); return v ? `${customFieldLabel(d, k)}：${v}` : ''; })
+          .filter(Boolean) : [];
+        return `${name}：${parts.length ? parts.join('；') : '无'}`;
+      }
+      const scalar = formatCustomValue(value);
+      return `${name}：${scalar || '无'}`;
+    });
+    return lines.join('\n');
   }
 
   // 注入长度上限：行为规则整段保留，只截世界状态部分（原先整体截尾，最先丢的是末尾的行为规则）。
