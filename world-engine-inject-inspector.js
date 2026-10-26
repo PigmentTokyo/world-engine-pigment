@@ -40,7 +40,7 @@ window.WORLD_ENGINE_INJECT_INSPECTOR = (function() {
   function snapEnv(ctx) {
     const api = window.WORLD_ENGINE_API;
     const core = window.WORLD_ENGINE_CORE;
-    let injectEnabled = true, registeredAtSend = false, sameLayerReroll = false, round = null;
+    let injectEnabled = true, registeredAtSend = false, sameLayerReroll = false, round = null, truncation = null;
 
     try { injectEnabled = !(api && api.getSettings && api.getSettings(true).injectIntoPrompt === false); } catch (e) {}
 
@@ -49,6 +49,10 @@ window.WORLD_ENGINE_INJECT_INSPECTOR = (function() {
       const ep = ctx && ctx.extensionPrompts;
       const entry = ep && ep[INJECTION_NAME];
       registeredAtSend = !!(entry && entry.value && String(entry.value).length);
+      // 长度/截断信息：只有最近一次 buildContext 的输出正是本轮注册的那份时才采用，否则不猜。
+      const built = registeredAtSend && window.WORLD_ENGINE_INJECT && window.WORLD_ENGINE_INJECT.getLastBuildInfo
+        ? window.WORLD_ENGINE_INJECT.getLastBuildInfo() : null;
+      if (built && built.text === String(entry.value)) truncation = built.info;
     } catch (e) {}
 
     // 同层重 roll 判据（与 world-engine.js applyInjectionForCurrentRound 同一 fingerprint 口径）。
@@ -61,7 +65,7 @@ window.WORLD_ENGINE_INJECT_INSPECTOR = (function() {
 
     try { round = core && core.loadState ? core.loadState().round : null; } catch (e) {}
 
-    return { injectEnabled, registeredAtSend, sameLayerReroll, round };
+    return { injectEnabled, registeredAtSend, sameLayerReroll, round, truncation };
   }
 
   // —— 对话补全：从真·最终 chat 数组采 role 分好的链（克隆，不持有 live 引用） ——
@@ -88,6 +92,7 @@ window.WORLD_ENGINE_INJECT_INSPECTOR = (function() {
       injectEnabled: env.injectEnabled,
       registeredAtSend: env.registeredAtSend,
       sameLayerReroll: env.sameLayerReroll,
+      truncation: env.truncation,
       landed: landed,
       messageCount: messages.length,
       messages: messages,
@@ -115,6 +120,7 @@ window.WORLD_ENGINE_INJECT_INSPECTOR = (function() {
       injectEnabled: env.injectEnabled,
       registeredAtSend: env.registeredAtSend,
       sameLayerReroll: env.sameLayerReroll,
+      truncation: env.truncation,
       landed: landed,
       promptLength: text.length,
       ourExcerpt: excerpt,

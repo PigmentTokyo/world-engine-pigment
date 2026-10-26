@@ -2062,6 +2062,24 @@ window.WORLD_ENGINE_UI = (function() {
       + (when ? ' · ' + h(when) : '')
       + '</div>';
 
+    // 注入长度与截断（行为规则整段保留，只截世界状态）
+    const tr = snap.truncation;
+    if (tr) {
+      const limitText = tr.maxChars > 0 ? tr.maxChars + ' 字' : '不限制';
+      let line, color = 'var(--we-text3)';
+      if (!tr.truncated) {
+        line = '注入长度：' + tr.injectedLength + ' 字 / 上限 ' + limitText + ' · 未截断';
+      } else {
+        color = '#d29922';
+        line = '⚠️ 已截断：完整 ' + tr.fullLength + ' 字 → 实际注入 ' + tr.injectedLength + ' 字（上限 ' + limitText + '）'
+          + ' · 世界状态保留 ' + tr.keptStateLength + ' / ' + tr.stateLength + ' 字 · 行为规则 ' + tr.rulesLength + ' 字完整保留';
+        if (tr.overLimit) line += ' · 上限小于行为规则所需长度，实际注入超出上限，建议调大「正文注入最大字符数」';
+      }
+      html += '<div class="we-inject-truncation" style="font-size:11px;color:' + color + ';margin-bottom:6px;">' + h(line) + '</div>';
+    } else if (snap.registeredAtSend) {
+      html += '<div class="we-inject-truncation" style="font-size:11px;color:var(--we-text3);margin-bottom:6px;">注入长度：无法确认本轮注册内容的截断情况</div>';
+    }
+
     // role 徽标 + 右对齐字数
     const roleColor = { system: '#a371f7', user: '#58a6ff', assistant: '#3fb950', tool: '#d29922' };
     const roleBadge = (role) => {
@@ -2364,7 +2382,7 @@ window.WORLD_ENGINE_UI = (function() {
       <div class="we-input-group">
         <label>正文注入最大字符数</label>
         <input type="number" id="we-inject-max-chars" min="0" step="100" value="${injectMaxChars}" style="width:100%;">
-        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">限制注入到正文 prompt 的世界状态长度。默认 5000；0 = 不限制。</div>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">限制注入到正文 prompt 的总长度。默认 5000；0 = 不限制。超出时只截世界状态部分，行为规则始终完整保留；是否截断可在调试页「注入自检」查看。</div>
       </div>
       <div class="we-input-group">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">

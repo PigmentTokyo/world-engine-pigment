@@ -174,6 +174,11 @@
 
           registerInjection(context);
           console.log(`[世界引擎] 注入完成 (round ${currentRound}, ${context.length} chars)${stateOverride ? ' [存档点]' : ''}`);
+          const built = inject.getLastBuildInfo ? inject.getLastBuildInfo() : null;
+          if (built && built.text === context && built.info.truncated) {
+            const t = built.info;
+            console.warn(`[世界引擎] 注入超出上限已截断：完整 ${t.fullLength} → ${t.injectedLength} chars（上限 ${t.maxChars}），世界状态保留 ${t.keptStateLength}/${t.stateLength}，行为规则完整保留`);
+          }
         } catch(e) {
           console.error('[世界引擎] 注入处理失败', e);
         }

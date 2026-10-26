@@ -188,7 +188,7 @@ window.WORLD_ENGINE_INJECT = (function() {
     }
     const blackboxText = boxParts.length ? boxParts.join(' | ') : '无暗面信息';
 
-    let context = `
+    let statePart = `
 【世界状态】
 轮次：${worldState.round}
 摘要：${worldState.worldDigest}
@@ -201,14 +201,14 @@ window.WORLD_ENGINE_INJECT = (function() {
 经济：${econText}
 区域事件：${riText}
 黑盒：${blackboxText}
-
-${rulesSummary}
     `.trim();
+    let rulesPart = String(rulesSummary || '').replace(/\s+$/, '');
 
     // Apply display-only preset terminology to the final context shown to the
     // writing model. Backend state and evolution JSON keep canonical labels.
     if (window.WORLD_ENGINE_PRESETS && window.WORLD_ENGINE_PRESETS.applyDisplayTerms) {
-      context = window.WORLD_ENGINE_PRESETS.applyDisplayTerms(context);
+      statePart = window.WORLD_ENGINE_PRESETS.applyDisplayTerms(statePart);
+      rulesPart = window.WORLD_ENGINE_PRESETS.applyDisplayTerms(rulesPart);
     }
 
     // [移植 v2.4.1] 注入长度上限改为可配置：默认 5000，0 = 不限制
@@ -219,8 +219,56 @@ ${rulesSummary}
       const configured = Number(settings.injectMaxChars);
       if (Number.isFinite(configured)) maxChars = Math.max(0, Math.floor(configured));
     } catch (e) {}
-    return maxChars > 0 ? context.substring(0, maxChars) : context;
+    return fitToLimit(statePart, rulesPart, maxChars);
   }
 
-  return { buildContext };
+  // 注入长度上限：行为规则整段保留，只截世界状态部分（原先整体截尾，最先丢的是末尾的行为规则）。
+  // 截断时在世界状态末尾留一行提示，告诉正文模型后面还有内容被省略。
+  // 上限连「世界状态标题 + 提示 + 完整规则」都放不下时，仍保留完整规则，总长会超出上限（overLimit）。
+  const RULES_SEPARATOR = '\n\n';
+  const TRUNCATION_NOTE = '\n[世界状态超出注入上限，以下内容已省略]';
+  let _lastBuildInfo = null;
+
+  function fitToLimit(statePart, rulesPart, maxChars) {
+    const join = (a, b) => (b ? a + RULES_SEPARATOR + b : a);
+    const full = join(statePart, rulesPart);
+    const info = {
+      maxChars: maxChars,
+      fullLength: full.length,
+      stateLength: statePart.length,
+      rulesLength: rulesPart.length,
+      keptStateLength: statePart.length,
+      truncated: false,
+      overLimit: false,
+    };
+    let out = full;
+    if (maxChars > 0 && full.length > maxChars) {
+      const budget = maxChars - rulesPart.length - (rulesPart ? RULES_SEPARATOR.length : 0) - TRUNCATION_NOTE.length;
+      const headerEnd = statePart.indexOf('\n');
+      const header = headerEnd >= 0 ? statePart.slice(0, headerEnd) : statePart;
+      let kept;
+      if (budget <= header.length) {
+        kept = header;
+      } else {
+        kept = statePart.slice(0, budget);
+        // 尽量断在整行或分号处，避免把半条事件/风声送进正文
+        const cut = Math.max(kept.lastIndexOf('\n'), kept.lastIndexOf('；'));
+        if (cut > header.length && cut >= kept.length - 300) kept = kept.slice(0, cut);
+      }
+      out = join(kept + TRUNCATION_NOTE, rulesPart);
+      info.truncated = true;
+      info.keptStateLength = kept.length;
+      info.overLimit = out.length > maxChars;
+    }
+    info.injectedLength = out.length;
+    _lastBuildInfo = { info: info, text: out };
+    return out;
+  }
+
+  // 最近一次 buildContext 的长度与截断信息（副本）；text 供注入自检比对它是否就是本轮注册的那份。
+  function getLastBuildInfo() {
+    return _lastBuildInfo ? { info: Object.assign({}, _lastBuildInfo.info), text: _lastBuildInfo.text } : null;
+  }
+
+  return { buildContext, getLastBuildInfo };
 })();
