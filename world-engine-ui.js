@@ -2263,6 +2263,13 @@ window.WORLD_ENGINE_UI = (function() {
           <option value="manual" ${mode === 'manual' ? 'selected' : ''}>手动（仅点「手动推演」才触发）</option>
         </select>
       </div>
+      <div class="we-input-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="we-first-layer-ai-opening" ${settings.firstLayerIsAiOpening !== false ? 'checked' : ''}>
+          首楼为 AI 开场白
+        </label>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">默认勾选：推演读取对话时忽略第 0 层（开场白不当作已发生的剧情）；取消勾选后，第 0 层按普通对话参与推演。</div>
+      </div>
       <div class="we-input-group" id="we-evolve-everyx-group" style="${mode === 'auto' ? '' : 'display:none;'}">
         <label>每几轮推演一次（X）</label>
         <input type="number" id="we-evolve-everyx" min="1" step="1" value="${everyX}" style="width:100%;">
@@ -3675,6 +3682,7 @@ window.WORLD_ENGINE_UI = (function() {
           injectIntoPrompt: document.getElementById('we-inject-into-prompt')?.checked !== false,
           injectMaxChars: Math.max(0, parseInt(gv('we-inject-max-chars')) || 0),
           injectAllLevels: document.getElementById('we-inject-all-levels')?.checked === true,
+          firstLayerIsAiOpening: document.getElementById('we-first-layer-ai-opening')?.checked !== false,
           evolveMode: (_modeRaw === 'manual' || _modeRaw === 'time') ? _modeRaw : 'auto',
           evolveEveryX: Math.max(1, parseInt(document.getElementById('we-evolve-everyx')?.value) || 1),
           evolveReadRounds: Math.max(1, parseInt(document.getElementById('we-evolve-readrounds')?.value) || 1),

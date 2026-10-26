@@ -371,7 +371,8 @@
       }
 
       function buildDialogueText(chat, readRounds, settings) {
-        const start = Math.max(0, chat.length - readRounds * 2);
+        // [移植上游 48ea4b9] 首楼为 AI 开场白时，第 0 层不作为已发生剧情读入推演
+        const start = Math.max(settings.firstLayerIsAiOpening !== false ? 1 : 0, chat.length - readRounds * 2);
         return chat.slice(start)
           .map(m => (m.is_user ? '用户' : 'AI') + '：' + core.filterDialogue((m.mes || '').trim(), settings))
           .filter(line => line.length > 3)

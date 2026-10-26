@@ -49,6 +49,8 @@ window.WORLD_ENGINE_API = (function() {
       // [移植上游 1211a27] 仅 API fault 自动重试；0 = 不重试。
       apiAutoRetries: 0,
       useStProxy: true,
+      // [移植上游 48ea4b9] 首楼为 AI 开场白：推演读取对话时忽略第 0 层
+      firstLayerIsAiOpening: true,
       injectIntoPrompt: true,
       // 悬浮球开关：关闭后从酒馆「魔法棒」扩展菜单打开面板，推进钮移到面板标题栏
       showFloatingBall: true,
